@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Upload API</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; background: #f0f8ff; }
+        .success { color: green; background: #e8f5e9; padding: 15px; border-radius: 5px; margin: 10px 0; border: 2px solid #4caf50; }
+        .error { color: red; background: #ffebee; padding: 15px; border-radius: 5px; margin: 10px 0; border: 2px solid #f44336; }
+        .info { color: blue; background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 10px 0; border: 2px solid #2196f3; }
+        button { padding: 12px 24px; font-size: 16px; cursor: pointer; background: #2196f3; color: white; border: none; border-radius: 5px; margin: 10px 5px; }
+        button:hover { background: #1976d2; }
+        .step { margin: 20px 0; padding: 20px; border-radius: 8px; border: 2px solid #ddd; }
+        .step h3 { margin-top: 0; color: #333; }
+        pre { background: #f8f8f8; padding: 10px; border-radius: 3px; overflow-x: auto; white-space: pre-wrap; }
+        .code { background: #2d3748; color: #e2e8f0; padding: 15px; border-radius: 5px; font-family: monospace; margin: 10px 0; }
+        input[type="file"] { margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Test Upload API Functionality</h1>
+    <p>Testing if the upload API endpoints are working correctly.</p>
+
+    <div class="step">
+        <h3>Step 1: Test API Connection</h3>
+        <button onclick="testAPIConnection()">Test Backend API</button>
+        <div id="api-result"></div>
+    </div>
+
+    <div class="step">
+        <h3>Step 2: Test File Upload</h3>
+        <input type="file" id="fileInput" accept="audio/*" multiple>
+        <button onclick="testFileUpload()">Upload Test File</button>
+        <div id="upload-result"></div>
+    </div>
+
+    <div class="step">
+        <h3>Step 3: Test Folder Creation</h3>
+        <input type="text" id="folderName" placeholder="Enter folder name" style="padding: 8px; margin: 10px 0;">
+        <button onclick="testFolderCreation()">Create Test Folder</button>
+        <div id="folder-result"></div>
+    </div>
+
+    <div class="step">
+        <h3>Step 4: Open App</h3>
+        <button onclick="openApp()">Open sync2gear App</button>
+        <p>Then try uploading files manually</p>
+        <div id="app-result"></div>
+    </div>
+
+    <script>
+        async function testAPIConnection() {
+            const result = document.getElementById('api-result');
+            result.innerHTML = '<div class="info">Testing API connection...</div>';
+
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/');
+                if (response.ok) {
+                    const data = await response.json();
+                    result.innerHTML = `
+                        <div class="success">
+                            <h3>✅ Backend API is running</h3>
+                            <p>Response: ${response.status}</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    result.innerHTML = `
+                        <div class="error">
+                            <h3>❌ API Error</h3>
+                            <p>Status: ${response.status}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                result.innerHTML = `
+                    <div class="error">
+                        <h3>❌ Connection Failed</h3>
+                        <p>Backend server may not be running</p>
+                        <p>Error: ${error.message}</p>
+                        <p>Make sure to run: <code>python manage.py runserver</code></p>
+                    </div>
+                `;
+            }
+        }
+
+        async function testFileUpload() {
+            const fileInput = document.getElementById('fileInput');
+            const result = document.getElementById('upload-result');
+
+            if (!fileInput.files || fileInput.files.length === 0) {
+                result.innerHTML = '<div class="error">❌ Please select a file first</div>';
+                return;
+            }
+
+            const file = fileInput.files[0];
+            result.innerHTML = '<div class="info">Uploading file...</div>';
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch('http://localhost:8000/api/v1/music/files/', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        // Note: Don't set Content-Type for FormData, let browser set it
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    result.innerHTML = `
+                        <div class="success">
+                            <h3>✅ File Upload Successful</h3>
+                            <p>File: ${file.name}</p>
+                            <p>Response: ${response.status}</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    const errorText = await response.text();
+                    result.innerHTML = `
+                        <div class="error">
+                            <h3>❌ Upload Failed</h3>
+                            <p>Status: ${response.status}</p>
+                            <p>Response: ${errorText}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                result.innerHTML = `
+                    <div class="error">
+                        <h3>❌ Upload Error</h3>
+                        <p>Error: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function testFolderCreation() {
+            const folderName = document.getElementById('folderName').value.trim();
+            const result = document.getElementById('folder-result');
+
+            if (!folderName) {
+                result.innerHTML = '<div class="error">❌ Please enter a folder name</div>';
+                return;
+            }
+
+            result.innerHTML = '<div class="info">Creating folder...</div>';
+
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/music/folders/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: folderName,
+                        type: 'music'
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    result.innerHTML = `
+                        <div class="success">
+                            <h3>✅ Folder Created Successfully</h3>
+                            <p>Folder: ${folderName}</p>
+                            <p>Response: ${response.status}</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    const errorText = await response.text();
+                    result.innerHTML = `
+                        <div class="error">
+                            <h3>❌ Folder Creation Failed</h3>
+                            <p>Status: ${response.status}</p>
+                            <p>Response: ${errorText}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                result.innerHTML = `
+                    <div class="error">
+                        <h3>❌ Folder Creation Error</h3>
+                        <p>Error: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        function openApp() {
+            window.open('http://localhost:5173', '_blank');
+            document.getElementById('app-result').innerHTML = `
+                <div class="success">
+                    <h3>✅ App Opened</h3>
+                    <p>Try uploading files in the Music Library section</p>
+                </div>
+            `;
+        }
+
+        // Auto-test on load
+        window.onload = function() {
+            setTimeout(testAPIConnection, 1000);
+        };
+    </script>
+</body>
+</html>

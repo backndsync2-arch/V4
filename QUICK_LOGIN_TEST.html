@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quick Login Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; }
+        .success { color: green; background: #e8f5e9; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .error { color: red; background: #ffebee; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .info { color: blue; background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        button { padding: 12px 24px; font-size: 16px; cursor: pointer; background: #2196f3; color: white; border: none; border-radius: 5px; margin: 10px 5px; }
+        button:hover { background: #1976d2; }
+        .test-result { margin: 20px 0; padding: 15px; border-radius: 5px; border: 2px solid #ddd; }
+    </style>
+</head>
+<body>
+    <h1>🚀 Quick Login Test</h1>
+    <p>Test if login is working after the fix</p>
+
+    <button onclick="clearAndTest()">Clear Data & Test Login</button>
+    <button onclick="directLoginTest()">Direct API Test</button>
+    <button onclick="goToApp()">Go to App</button>
+
+    <div id="results"></div>
+
+    <script>
+        async function clearAndTest() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<div class="info">Step 1: Clearing browser data...</div>';
+
+            // Clear everything
+            localStorage.clear();
+            sessionStorage.clear();
+
+            results.innerHTML += '<div class="success">✅ Data cleared</div>';
+            results.innerHTML += '<div class="info">Step 2: Testing backend login...</div>';
+
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/auth/login/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'admin@sync2gear.com',
+                        password: 'admin123'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    results.innerHTML += '<div class="success">✅ Backend login works!</div>';
+                    results.innerHTML += '<div class="info">Step 3: Opening app in new tab...</div>';
+
+                    // Open the app
+                    window.open('http://localhost:5173', '_blank');
+                    results.innerHTML += '<div class="success">🎉 App opened! Try logging in now.</div>';
+                } else {
+                    results.innerHTML += '<div class="error">❌ Backend login failed: ' + JSON.stringify(data) + '</div>';
+                }
+            } catch (error) {
+                results.innerHTML += '<div class="error">❌ Network error: ' + error.message + '</div>';
+                results.innerHTML += '<div class="error">Make sure both servers are running!</div>';
+            }
+        }
+
+        async function directLoginTest() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<div class="info">Testing direct API call...</div>';
+
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/auth/login/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'admin@sync2gear.com',
+                        password: 'admin123'
+                    })
+                });
+
+                const data = await response.json();
+
+                results.innerHTML += '<div class="test-result ' + (response.ok ? 'success' : 'error') + '">';
+                results.innerHTML += '<h3>API Test Result</h3>';
+                results.innerHTML += '<strong>Status:</strong> ' + response.status + '<br>';
+                results.innerHTML += '<strong>Success:</strong> ' + response.ok + '<br>';
+                results.innerHTML += '<strong>Response:</strong><br><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                results.innerHTML += '</div>';
+            } catch (error) {
+                results.innerHTML += '<div class="test-result error">';
+                results.innerHTML += '<h3>Network Error</h3>';
+                results.innerHTML += '<strong>Error:</strong> ' + error.message + '<br>';
+                results.innerHTML += '<strong>Check:</strong> Is backend running on port 8000?<br>';
+                results.innerHTML += '</div>';
+            }
+        }
+
+        function goToApp() {
+            window.open('http://localhost:5173', '_blank');
+        }
+
+        // Auto-clear on load
+        window.onload = function() {
+            document.getElementById('results').innerHTML = '<div class="info">🔧 Auth code has been restored. Ready to test!</div>';
+        };
+    </script>
+</body>
+</html>

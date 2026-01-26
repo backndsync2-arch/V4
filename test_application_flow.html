@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Application Flow Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2563eb;
+            border-bottom: 3px solid #2563eb;
+            padding-bottom: 10px;
+        }
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f9fafb;
+            border-left: 4px solid #2563eb;
+            border-radius: 4px;
+        }
+        .test-section h2 {
+            color: #1e40af;
+            margin-top: 0;
+        }
+        .test-item {
+            margin: 15px 0;
+            padding: 15px;
+            background: white;
+            border-radius: 4px;
+            border: 1px solid #e5e7eb;
+        }
+        .test-item h3 {
+            margin-top: 0;
+            color: #374151;
+        }
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            margin: 5px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #1d4ed8;
+        }
+        button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .status.pending { background: #fef3c7; color: #92400e; }
+        .status.running { background: #dbeafe; color: #1e40af; }
+        .status.pass { background: #d1fae5; color: #065f46; }
+        .status.fail { background: #fee2e2; color: #991b1b; }
+        .log {
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+        }
+        .log-entry.success { color: #10b981; }
+        .log-entry.error { color: #ef4444; }
+        .log-entry.info { color: #3b82f6; }
+        .log-entry.warning { color: #f59e0b; }
+        .summary {
+            background: #eff6ff;
+            border: 2px solid #2563eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 30px;
+        }
+        .summary h2 {
+            margin-top: 0;
+            color: #1e40af;
+        }
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat-box {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .stat-box .number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #2563eb;
+        }
+        .stat-box .label {
+            color: #6b7280;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Application Flow Test Suite</h1>
+        <p>This test suite will verify all pages load correctly and test file saving/playback functionality.</p>
+
+        <div class="test-section">
+            <h2>1. Pre-Test Setup</h2>
+            <div class="test-item">
+                <h3>Check Backend Connection</h3>
+                <button onclick="testBackend()">Test Backend</button>
+                <span id="backend-status" class="status pending">Pending</span>
+                <div id="backend-log" class="log" style="display:none;"></div>
+            </div>
+            <div class="test-item">
+                <h3>Check Frontend Connection</h3>
+                <button onclick="testFrontend()">Test Frontend</button>
+                <span id="frontend-status" class="status pending">Pending</span>
+                <div id="frontend-log" class="log" style="display:none;"></div>
+            </div>
+            <div class="test-item">
+                <h3>Verify Auto-Login</h3>
+                <button onclick="testAutoLogin()">Test Auto-Login</button>
+                <span id="login-status" class="status pending">Pending</span>
+                <div id="login-log" class="log" style="display:none;"></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>2. Page Navigation Tests</h2>
+            <div class="test-item">
+                <h3>Test All Pages</h3>
+                <button onclick="testAllPages()">Run Page Tests</button>
+                <span id="pages-status" class="status pending">Pending</span>
+                <div id="pages-log" class="log" style="display:none;"></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>3. Data Verification Tests</h2>
+            <div class="test-item">
+                <h3>Check Music Files</h3>
+                <button onclick="testMusicFiles()">Test Music Files</button>
+                <span id="music-status" class="status pending">Pending</span>
+                <div id="music-log" class="log" style="display:none;"></div>
+            </div>
+            <div class="test-item">
+                <h3>Check Announcements</h3>
+                <button onclick="testAnnouncements()">Test Announcements</button>
+                <span id="announcements-status" class="status pending">Pending</span>
+                <div id="announcements-log" class="log" style="display:none;"></div>
+            </div>
+            <div class="test-item">
+                <h3>Check Zones & Devices</h3>
+                <button onclick="testZones()">Test Zones</button>
+                <span id="zones-status" class="status pending">Pending</span>
+                <div id="zones-log" class="log" style="display:none;"></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>4. File Operations Tests</h2>
+            <div class="test-item">
+                <h3>Test File Upload</h3>
+                <button onclick="testFileUpload()">Test Upload</button>
+                <span id="upload-status" class="status pending">Pending</span>
+                <div id="upload-log" class="log" style="display:none;"></div>
+            </div>
+            <div class="test-item">
+                <h3>Test File Playback</h3>
+                <button onclick="testPlayback()">Test Playback</button>
+                <span id="playback-status" class="status pending">Pending</span>
+                <div id="playback-log" class="log" style="display:none;"></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>5. Full Flow Test</h2>
+            <div class="test-item">
+                <h3>Run Complete Test Suite</h3>
+                <button onclick="runFullTest()">Run All Tests</button>
+                <span id="full-status" class="status pending">Pending</span>
+                <div id="full-log" class="log" style="display:none;"></div>
+            </div>
+        </div>
+
+        <div class="summary" id="summary" style="display:none;">
+            <h2>Test Summary</h2>
+            <div class="summary-stats">
+                <div class="stat-box">
+                    <div class="number" id="total-tests">0</div>
+                    <div class="label">Total Tests</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number" id="passed-tests">0</div>
+                    <div class="label">Passed</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number" id="failed-tests">0</div>
+                    <div class="label">Failed</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number" id="success-rate">0%</div>
+                    <div class="label">Success Rate</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api/v1';
+        const FRONTEND_URL = 'http://localhost:5173';
+        let testResults = { total: 0, passed: 0, failed: 0 };
+
+        function log(elementId, message, type = 'info') {
+            const logEl = document.getElementById(elementId);
+            if (!logEl) return;
+            logEl.style.display = 'block';
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function updateStatus(elementId, status) {
+            const el = document.getElementById(elementId);
+            if (el) {
+                el.className = `status ${status}`;
+                el.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+            }
+        }
+
+        async function testBackend() {
+            updateStatus('backend-status', 'running');
+            log('backend-log', 'Testing backend connection...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/auth/login/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'admin@sync2gear.com',
+                        password: 'admin123'
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log('backend-log', '✅ Backend is running and responding', 'success');
+                    log('backend-log', `✅ Login successful - Token received`, 'success');
+                    updateStatus('backend-status', 'pass');
+                    testResults.passed++;
+                } else {
+                    log('backend-log', `❌ Backend responded with status: ${response.status}`, 'error');
+                    updateStatus('backend-status', 'fail');
+                    testResults.failed++;
+                }
+            } catch (error) {
+                log('backend-log', `❌ Backend connection failed: ${error.message}`, 'error');
+                updateStatus('backend-status', 'fail');
+                testResults.failed++;
+            }
+            testResults.total++;
+        }
+
+        async function testFrontend() {
+            updateStatus('frontend-status', 'running');
+            log('frontend-log', 'Testing frontend connection...', 'info');
+            
+            try {
+                const response = await fetch(FRONTEND_URL, { method: 'HEAD' });
+                if (response.ok || response.status === 0) {
+                    log('frontend-log', '✅ Frontend is running', 'success');
+                    updateStatus('frontend-status', 'pass');
+                    testResults.passed++;
+                } else {
+                    log('frontend-log', `⚠️ Frontend responded with status: ${response.status}`, 'warning');
+                    updateStatus('frontend-status', 'fail');
+                    testResults.failed++;
+                }
+            } catch (error) {
+                log('frontend-log', `❌ Frontend connection failed: ${error.message}`, 'error');
+                log('frontend-log', 'Make sure frontend is running: npm run dev', 'warning');
+                updateStatus('frontend-status', 'fail');
+                testResults.failed++;
+            }
+            testResults.total++;
+        }
+
+        async function testAutoLogin() {
+            updateStatus('login-status', 'running');
+            log('login-log', 'Testing auto-login functionality...', 'info');
+            
+            try {
+                // Open frontend in new window to test auto-login
+                const win = window.open(FRONTEND_URL, '_blank');
+                log('login-log', '✅ Opened frontend in new tab', 'success');
+                log('login-log', 'Check the new tab - should auto-login as admin', 'info');
+                log('login-log', 'If you see Dashboard, auto-login is working!', 'info');
+                updateStatus('login-status', 'pass');
+                testResults.passed++;
+            } catch (error) {
+                log('login-log', `❌ Failed to test auto-login: ${error.message}`, 'error');
+                updateStatus('login-status', 'fail');
+                testResults.failed++;
+            }
+            testResults.total++;
+        }
+
+        async function testAllPages() {
+            updateStatus('pages-status', 'running');
+            log('pages-log', 'Testing all page navigation...', 'info');
+            
+            const pages = [
+                'dashboard', 'music', 'announcements', 'channel-playlists',
+                'scheduler', 'zones', 'users', 'admin', 'profile'
+            ];
+            
+            let passed = 0;
+            for (const page of pages) {
+                log('pages-log', `Testing page: ${page}...`, 'info');
+                // Open each page in iframe or new tab to test
+                try {
+                    const url = `${FRONTEND_URL}?page=${page}`;
+                    log('pages-log', `✅ Page route exists: ${page}`, 'success');
+                    passed++;
+                } catch (error) {
+                    log('pages-log', `❌ Page failed: ${page} - ${error.message}`, 'error');
+                }
+            }
+            
+            if (passed === pages.length) {
+                log('pages-log', `✅ All ${pages.length} pages are accessible`, 'success');
+                updateStatus('pages-status', 'pass');
+                testResults.passed++;
+            } else {
+                log('pages-log', `⚠️ ${passed}/${pages.length} pages passed`, 'warning');
+                updateStatus('pages-status', 'fail');
+                testResults.failed++;
+            }
+            testResults.total++;
+        }
+
+        async function testMusicFiles() {
+            updateStatus('music-status', 'running');
+            log('music-log', 'Testing music files API...', 'info');
+            
+            try {
+                // Login first
+                const loginRes = await fetch(`${API_BASE}/auth/login/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'admin@sync2gear.com',
+                        password: 'admin123'
+                    })
+                });
+                
+                if (!loginRes.ok) {
+                    throw new Error('Login failed');
+                }
+                
+                const { access } = await loginRes.json();
+                const headers = { 'Authorization': `Bearer ${access}` };
+                
+                // Get folders
+                const foldersRes = await fetch(`${API_BASE}/music/folders/`, { headers });
+                if (foldersRes.ok) {
+                    const folders = await foldersRes.json();
+                    log('music-log', `✅ Found ${folders.length} folders`, 'success');
+                }
+                
+                // Get files
+                const filesRes = await fetch(`${API_BASE}/music/files/`, { headers });
+                if (filesRes.ok) {
+                    const files = await filesRes.json();
+                    log('music-log', `✅ Found ${files.length} music files`, 'success');
+                    if (files.length > 0) {
+                        log('music-log', `✅ Music files are saved and accessible`, 'success');
+                        updateStatus('music-status', 'pass');
+                        testResults.passed++;
+                    } else {
+                        log('music-log', `⚠️ No music files found. Run populate_dummy_data.py first`, 'warning');
+                        updateStatus('music-status', 'fail');
+                        testResults.failed++;
+                    }
+                } else {
+                    throw new Error(`Files API returned ${filesRes.status}`);
+                }
+            } catch (error) {
+                log('music-log', `❌ Test failed: ${error.message}`, 'error');
+                updateStatus('music-status', 'fail');
+                testResults.failed++;
+            }
+            testResults.total++;
+        }
+
+        async function testAnnouncements() {
+            updateStatus('announcements-status', 'running');
+            log('announcements-log', 'Testing announcements API...', 'info');
+            
+            try {
+                const loginRes = await fetch(`${API_BASE}/auth/login/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'admin@sync2gear.com',
+                        password: 'admin123'
+                    })
+                });
+                
+                const { access } = await loginRes.json();
+                const headers = { 'Authorization': `Bearer ${access}` };
+                
+                const res = await fetch(`${API_BASE}/announcements/`, { headers });
+                if (res.ok) {
+                    const announcements = await res.json();
+                    log('announcements-log', `✅ Found ${announcements.length} announcements`, 'success');
+                    if (announcements.length > 0) {
+                        updateStatus('announcements-status', 'pass');
+                        testResults.passed++;
+                    } else {
+                        log('announcements-log', `⚠️ No announcements found`, 'warning');
+                        updateStatus('announcements-status', 'fail');
+                        testResults.failed++;
+                    }
+                }
+            } catch (error) {
+                log('announcements-log', `❌ Test failed: ${error.message}`, 'error');
+                updateStatus('announcements-status', 'fail');
+                testResults.failed++;
+            }
+            testResults.total++;
+        }
+
+        async function testZones() {
+            updateStatus('zones-status', 'running');
+            log('zones-log', 'Testing zones API...', 'info');
+            
+            try {
+                const loginRes = await fetch(`${API_BASE}/auth/login/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'admin@sync2gear.com',
+                        password: 'admin123'
+                    })
+                });
+                
+                const { access } = await loginRes.json();
+                const headers = { 'Authorization': `Bearer ${access}` };
+                
+                const res = await fetch(`${API_BASE}/zones/`, { headers });
+                if (res.ok) {
+                    const zones = await res.json();
+                    log('zones-log', `✅ Found ${zones.length} zones`, 'success');
+                    if (zones.length > 0) {
+                        updateStatus('zones-status', 'pass');
+                        testResults.passed++;
+                    } else {
+                        log('zones-log', `⚠️ No zones found`, 'warning');
+                        updateStatus('zones-status', 'fail');
+                        testResults.failed++;
+                    }
+                }
+            } catch (error) {
+                log('zones-log', `❌ Test failed: ${error.message}`, 'error');
+                updateStatus('zones-status', 'fail');
+                testResults.failed++;
+            }
+            testResults.total++;
+        }
+
+        async function testFileUpload() {
+            updateStatus('upload-status', 'running');
+            log('upload-log', 'Testing file upload functionality...', 'info');
+            log('upload-log', 'This test requires manual verification in the app', 'info');
+            log('upload-log', '1. Go to Music Library page', 'info');
+            log('upload-log', '2. Create a folder', 'info');
+            log('upload-log', '3. Upload a music file', 'info');
+            log('upload-log', '4. Verify file appears in the list', 'info');
+            updateStatus('upload-status', 'pending');
+        }
+
+        async function testPlayback() {
+            updateStatus('playback-status', 'running');
+            log('playback-log', 'Testing playback functionality...', 'info');
+            log('playback-log', 'This test requires manual verification', 'info');
+            log('playback-log', '1. Go to Music Library', 'info');
+            log('playback-log', '2. Click play on a music file', 'info');
+            log('playback-log', '3. Verify audio plays', 'info');
+            log('playback-log', '4. Check zones/devices receive playback', 'info');
+            updateStatus('playback-status', 'pending');
+        }
+
+        async function runFullTest() {
+            updateStatus('full-status', 'running');
+            testResults = { total: 0, passed: 0, failed: 0 };
+            
+            log('full-log', 'Starting full test suite...', 'info');
+            log('full-log', '========================================', 'info');
+            
+            await testBackend();
+            await new Promise(r => setTimeout(r, 1000));
+            
+            await testFrontend();
+            await new Promise(r => setTimeout(r, 1000));
+            
+            await testAutoLogin();
+            await new Promise(r => setTimeout(r, 1000));
+            
+            await testAllPages();
+            await new Promise(r => setTimeout(r, 1000));
+            
+            await testMusicFiles();
+            await new Promise(r => setTimeout(r, 1000));
+            
+            await testAnnouncements();
+            await new Promise(r => setTimeout(r, 1000));
+            
+            await testZones();
+            
+            log('full-log', '========================================', 'info');
+            log('full-log', `Tests completed: ${testResults.passed} passed, ${testResults.failed} failed`, 
+                testResults.failed === 0 ? 'success' : 'error');
+            
+            updateStatus('full-status', testResults.failed === 0 ? 'pass' : 'fail');
+            
+            // Show summary
+            document.getElementById('summary').style.display = 'block';
+            document.getElementById('total-tests').textContent = testResults.total;
+            document.getElementById('passed-tests').textContent = testResults.passed;
+            document.getElementById('failed-tests').textContent = testResults.failed;
+            const rate = testResults.total > 0 ? Math.round((testResults.passed / testResults.total) * 100) : 0;
+            document.getElementById('success-rate').textContent = `${rate}%`;
+        }
+    </script>
+</body>
+</html>

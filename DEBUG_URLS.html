@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug URLs</title>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        .debug { background: #f8f8f8; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .error { background: #ffebee; border: 1px solid #f44336; }
+        .success { background: #e8f5e9; border: 1px solid #4caf50; }
+        .info { background: #e3f2fd; border: 1px solid #2196f3; }
+        pre { white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>🔧 URL Debug Tool</h1>
+
+    <div class="debug info">
+        <h3>API Configuration Check</h3>
+        <div id="config"></div>
+    </div>
+
+    <div class="debug">
+        <h3>Test API Call</h3>
+        <button onclick="testAPICall()">Test API Call</button>
+        <div id="api-test"></div>
+    </div>
+
+    <script>
+        async function testAPICall() {
+            const result = document.getElementById('api-test');
+            result.innerHTML = '<div class="info">Testing API call...</div>';
+
+            try {
+                // Test the correct URL that should work
+                const response = await fetch('http://localhost:8000/api/v1/auth/login/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'admin@sync2gear.com',
+                        password: 'admin123'
+                    })
+                });
+
+                const data = await response.json();
+
+                result.innerHTML += '<div class="success">✅ API call to CORRECT URL works!</div>';
+                result.innerHTML += '<pre>Response: ' + JSON.stringify(data, null, 2) + '</pre>';
+                result.innerHTML += '<div class="info">So the backend API works. The frontend is calling the wrong URL.</div>';
+
+            } catch (error) {
+                result.innerHTML += '<div class="error">❌ API call failed: ' + error.message + '</div>';
+            }
+
+            // Also test the wrong URL that the frontend is hitting
+            try {
+                result.innerHTML += '<div class="info">Testing wrong URL that frontend hits...</div>';
+                const wrongResponse = await fetch('http://localhost:8000/api/auth/login/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'admin@sync2gear.com',
+                        password: 'admin123'
+                    })
+                });
+
+                result.innerHTML += '<div class="error">❌ Wrong URL returns 404 (as expected)</div>';
+                result.innerHTML += '<div class="info">The frontend is calling /api/auth/login/ instead of /api/v1/auth/login/</div>';
+            } catch (error) {
+                result.innerHTML += '<div class="error">❌ Wrong URL error: ' + error.message + '</div>';
+            }
+        }
+
+        // Initialize
+        window.onload = function() {
+            document.getElementById('config').innerHTML = `
+                <strong>PROBLEM IDENTIFIED:</strong><br>
+                Frontend calls: http://localhost:8000/api/auth/login/ (WRONG)<br>
+                Backend expects: http://localhost:8000/api/v1/auth/login/ (CORRECT)<br>
+                <br>
+                <strong>API_BASE_URL is set to:</strong> http://localhost:8000/api/v1<br>
+                <strong>But frontend is using:</strong> http://localhost:8000/api/ (missing v1)<br>
+                <br>
+                The apiFetch function is not using API_BASE_URL correctly.
+            `;
+        };
+    </script>
+</body>
+</html>

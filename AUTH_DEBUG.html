@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auth Debug Tool</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #f5f5f5; }
+        .debug { background: white; padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #ddd; }
+        .error { background: #ffebee; border-color: #f44336; }
+        .success { background: #e8f5e9; border-color: #4caf50; }
+        .info { background: #e3f2fd; border-color: #2196f3; }
+        button { padding: 8px 16px; margin: 5px; cursor: pointer; }
+        pre { background: #f8f8f8; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Auth Debug Tool</h1>
+
+    <div class="debug info">
+        <h3>Current Environment</h3>
+        <div id="env-info"></div>
+    </div>
+
+    <div class="debug">
+        <h3>Step 1: Check Auth State</h3>
+        <button onclick="checkAuthState()">Check Auth State</button>
+        <div id="auth-state"></div>
+    </div>
+
+    <div class="debug">
+        <h3>Step 2: Test Direct API Call</h3>
+        <button onclick="testDirectAPI()">Test Direct API</button>
+        <div id="api-test"></div>
+    </div>
+
+    <div class="debug">
+        <h3>Step 3: Simulate Login Flow</h3>
+        <button onclick="simulateLoginFlow()">Simulate Login</button>
+        <div id="login-flow"></div>
+    </div>
+
+    <div class="debug">
+        <h3>Step 4: Clear Everything</h3>
+        <button onclick="clearEverything()">Clear All Data</button>
+        <div id="clear-result"></div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `debug ${type}`;
+            div.innerHTML = `<pre>${message}</pre>`;
+            document.body.appendChild(div);
+            return div;
+        }
+
+        function checkAuthState() {
+            const result = document.getElementById('auth-state');
+            const auth = {
+                accessToken: localStorage.getItem('access_token'),
+                refreshToken: localStorage.getItem('refresh_token'),
+                user: localStorage.getItem('sync2gear_user'),
+                attempts: localStorage.getItem('sync2gear_login_attempts'),
+                lockout: localStorage.getItem('sync2gear_login_lock_until'),
+                lastActivity: localStorage.getItem('sync2gear_last_activity'),
+                impersonating: localStorage.getItem('sync2gear_impersonating')
+            };
+
+            result.innerHTML = '<h4>LocalStorage Auth State:</h4><pre>' + JSON.stringify(auth, null, 2) + '</pre>';
+
+            // Check if tokens exist
+            if (auth.accessToken) {
+                result.innerHTML += '<div class="success">✅ Access token exists</div>';
+            } else {
+                result.innerHTML += '<div class="error">❌ No access token</div>';
+            }
+
+            // Check if user exists
+            if (auth.user) {
+                try {
+                    const userData = JSON.parse(auth.user);
+                    result.innerHTML += '<div class="success">✅ User data exists: ' + userData.name + ' (' + userData.role + ')</div>';
+                } catch (e) {
+                    result.innerHTML += '<div class="error">❌ User data corrupted</div>';
+                }
+            } else {
+                result.innerHTML += '<div class="error">❌ No user data</div>';
+            }
+
+            // Check lockout
+            if (auth.lockout) {
+                const lockoutTime = new Date(parseInt(auth.lockout));
+                const now = new Date();
+                if (lockoutTime > now) {
+                    result.innerHTML += '<div class="error">🚫 ACCOUNT LOCKED until ' + lockoutTime.toLocaleString() + '</div>';
+                } else {
+                    result.innerHTML += '<div class="info">📅 Lockout expired</div>';
+                }
+            }
+        }
+
+        async function testDirectAPI() {
+            const result = document.getElementById('api-test');
+            result.innerHTML = '<div class="info">Testing API...</div>';
+
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/auth/login/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'admin@sync2gear.com',
+                        password: 'admin123'
+                    })
+                });
+
+                const data = await response.json();
+
+                result.innerHTML = `
+                    <h4>API Response:</h4>
+                    <div class="${response.ok ? 'success' : 'error'}">
+                        <strong>Status:</strong> ${response.status} ${response.statusText}<br>
+                        <strong>Success:</strong> ${response.ok}<br>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                result.innerHTML = `
+                    <h4 class="error">API Error:</h4>
+                    <pre>${error.message}</pre>
+                    <div class="error">❌ Cannot connect to backend. Is it running?</div>
+                `;
+            }
+        }
+
+        async function simulateLoginFlow() {
+            const result = document.getElementById('login-flow');
+            result.innerHTML = '<div class="info">Simulating login flow...</div>';
+
+            // Step 1: Call login API
+            result.innerHTML += '<br><strong>Step 1:</strong> Calling login API...';
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/auth/login/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'admin@sync2gear.com',
+                        password: 'admin123'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    result.innerHTML += ' ✅<br>';
+                    result.innerHTML += '<strong>Step 2:</strong> Storing tokens...';
+
+                    // Step 2: Store tokens (simulate what auth.tsx does)
+                    localStorage.setItem('access_token', data.access);
+                    localStorage.setItem('refresh_token', data.refresh);
+                    localStorage.setItem('sync2gear_user', JSON.stringify(data.user));
+
+                    result.innerHTML += ' ✅<br>';
+                    result.innerHTML += '<strong>Step 3:</strong> Testing token validation...';
+
+                    // Step 3: Test token with /me endpoint
+                    const meResponse = await fetch('http://localhost:8000/api/v1/auth/me/', {
+                        headers: { 'Authorization': `Bearer ${data.access}` }
+                    });
+
+                    if (meResponse.ok) {
+                        result.innerHTML += ' ✅<br>';
+                        result.innerHTML += '<div class="success">🎉 LOGIN FLOW WORKS! Try the app now.</div>';
+                    } else {
+                        const meData = await meResponse.json();
+                        result.innerHTML += ' ❌<br>';
+                        result.innerHTML += '<div class="error">Token validation failed: ' + JSON.stringify(meData) + '</div>';
+                    }
+                } else {
+                    result.innerHTML += ' ❌<br>';
+                    result.innerHTML += '<div class="error">Login failed: ' + JSON.stringify(data) + '</div>';
+                }
+            } catch (error) {
+                result.innerHTML += ' ❌<br>';
+                result.innerHTML += '<div class="error">Network error: ' + error.message + '</div>';
+            }
+        }
+
+        function clearEverything() {
+            const result = document.getElementById('clear-result');
+            localStorage.clear();
+            sessionStorage.clear();
+            result.innerHTML = '<div class="success">🗑️ All browser data cleared!</div>';
+        }
+
+        // Initialize
+        window.onload = function() {
+            document.getElementById('env-info').innerHTML = `
+                <strong>Current URL:</strong> ${window.location.href}<br>
+                <strong>User Agent:</strong> ${navigator.userAgent}<br>
+                <strong>LocalStorage Available:</strong> ${typeof localStorage !== 'undefined'}<br>
+                <strong>Fetch Available:</strong> ${typeof fetch !== 'undefined'}
+            `;
+        };
+    </script>
+</body>
+</html>

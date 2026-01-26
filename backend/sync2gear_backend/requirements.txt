@@ -1,0 +1,49 @@
+# Django Core
+Django==5.0.1
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.1
+django-cors-headers==4.3.1
+django-environ==0.11.2
+django-storages==1.14.2
+django-extensions==3.2.3
+
+# WebSocket & Real-time
+channels==4.0.0
+channels-redis==4.1.0
+daphne==4.0.0
+
+# Database
+psycopg2-binary==2.9.9
+
+# Task Queue
+celery==5.3.4
+redis==5.0.1
+
+# AWS Storage
+boto3==1.34.18
+
+# Audio Processing
+mutagen==1.47.0
+Pillow==10.2.0
+
+# AI/TTS
+google-cloud-texttospeech==2.16.0
+openai>=2.15.0
+anthropic==0.18.1
+
+# Production Server
+gunicorn==21.2.0
+
+# Utilities
+python-dotenv==1.0.0
+drf-spectacular==0.27.1
+cryptography==42.0.5  # For encrypted API keys
+
+# Testing
+pytest==7.4.4
+pytest-django==4.8.0
+pytest-cov==4.1.0
+factory-boy==3.3.0
+
+# Monitoring (optional)
+sentry-sdk==1.40.6

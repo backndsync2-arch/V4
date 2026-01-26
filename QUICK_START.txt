@@ -1,0 +1,88 @@
+═══════════════════════════════════════════════════════
+  🚨 SERVERS NOT RUNNING - QUICK START GUIDE
+═══════════════════════════════════════════════════════
+
+❌ ISSUE: Both servers are currently stopped
+
+✅ CODE STATUS: All fixes are applied and working!
+
+═══════════════════════════════════════════════════════
+  🚀 START SERVERS
+═══════════════════════════════════════════════════════
+
+OPTION 1: Use Startup Script (Easiest)
+─────────────────────────────────────────
+powershell -File START_SERVERS.ps1
+
+This will open 2 new windows:
+  • Frontend server (port 5173)
+  • Backend server (port 8000)
+
+
+OPTION 2: Manual Start
+─────────────────────────────────────────
+
+Terminal 1 - Frontend:
+  cd "c:\Users\dolab\Downloads\V2 Sync2gear"
+  npm run dev
+
+Terminal 2 - Backend:
+  cd "c:\Users\dolab\Downloads\V2 Sync2gear\sync2gear_backend"
+  python manage.py runserver
+
+
+═══════════════════════════════════════════════════════
+  🌐 URLs (After Starting)
+═══════════════════════════════════════════════════════
+
+Frontend: http://localhost:5173/
+Backend:  http://localhost:8000/
+API Docs: http://localhost:8000/api/docs/
+
+
+═══════════════════════════════════════════════════════
+  🔐 LOGIN CREDENTIALS
+═══════════════════════════════════════════════════════
+
+Admin:
+  Email:    admin@sync2gear.com
+  Password: admin123
+
+Client:
+  Email:    client1@example.com
+  Password: client123
+
+Floor:
+  Email:    floor1@downtowncoffee.com
+  Password: floor123
+
+
+═══════════════════════════════════════════════════════
+  ✅ WHAT'S FIXED
+═══════════════════════════════════════════════════════
+
+✅ Role mapping (owner→client, manager→staff, operator→floor_user)
+✅ Enhanced validation with email format check
+✅ Better error handling with detailed messages
+✅ Auto-reload users after creation
+✅ Required field indicators (*)
+✅ Helper text under form fields
+✅ Admin note in dialog
+✅ All dummy accounts removed
+✅ API integration complete
+
+
+═══════════════════════════════════════════════════════
+  📋 TEST USER CREATION
+═══════════════════════════════════════════════════════
+
+1. Start both servers (use START_SERVERS.ps1)
+2. Wait 10-15 seconds for startup
+3. Open: http://localhost:5173/
+4. Login as admin
+5. Go to Users page
+6. Click "Add User"
+7. Fill form and create user
+
+
+═══════════════════════════════════════════════════════

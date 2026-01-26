@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Login Lockout</title>
+</head>
+<body>
+    <h1>Clear Login Lockout</h1>
+    <button onclick="clearLockout()">Clear Lockout</button>
+    <button onclick="testLogin()">Test Login</button>
+    <div id="result"></div>
+
+    <script>
+        function clearLockout() {
+            localStorage.removeItem('sync2gear_login_attempts');
+            localStorage.removeItem('sync2gear_login_lock_until');
+            document.getElementById('result').innerHTML = '<p style="color: green;">✅ Lockout cleared!</p>';
+        }
+
+        async function testLogin() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Testing login...</p>';
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/auth/login/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'admin@sync2gear.com',
+                        password: 'admin123'
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <p style="color: green;">✅ Login successful!</p>
+                        <p>User: ${data.user.name}</p>
+                        <p>Email: ${data.user.email}</p>
+                        <p>Role: ${data.user.role}</p>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <p style="color: red;">❌ Login failed</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <p style="color: red;">❌ Error: ${error.message}</p>
+                    <p>Make sure the backend is running on http://localhost:8000</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Upload Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; background: #f0f8ff; }
+        .success { color: green; background: #e8f5e9; padding: 15px; border-radius: 5px; margin: 10px 0; border: 2px solid #4caf50; }
+        .error { color: red; background: #ffebee; padding: 15px; border-radius: 5px; margin: 10px 0; border: 2px solid #f44336; }
+        .info { color: blue; background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 10px 0; border: 2px solid #2196f3; }
+        button { padding: 12px 24px; font-size: 16px; cursor: pointer; background: #2196f3; color: white; border: none; border-radius: 5px; margin: 10px 5px; }
+        button:hover { background: #1976d2; }
+        .step { margin: 20px 0; padding: 20px; border-radius: 8px; border: 2px solid #ddd; }
+        .step h3 { margin-top: 0; color: #333; }
+        pre { background: #f8f8f8; padding: 10px; border-radius: 3px; overflow-x: auto; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Simple Upload Test</h1>
+    <p>Step-by-step debugging of the upload dialog issue.</p>
+
+    <div class="step">
+        <h3>Step 1: Open the App</h3>
+        <button onclick="openApp()">Open sync2gear</button>
+        <div id="app-result"></div>
+    </div>
+
+    <div class="step">
+        <h3>Step 2: Check Console Logs</h3>
+        <p>After opening the app:</p>
+        <ol>
+            <li>Press F12 to open Developer Tools</li>
+            <li>Go to Console tab</li>
+            <li>Navigate to Music Library</li>
+            <li>Click the "Upload Music" button</li>
+            <li>Look for this log: <code>Upload button clicked, setting isUploadOpen to true</code></li>
+        </ol>
+        <div id="console-check"></div>
+    </div>
+
+    <div class="step">
+        <h3>Step 3: Check Dialog Logs</h3>
+        <p>If you see the button click log, also look for:</p>
+        <pre>UploadDialog render: { open: true, folders: X, uploadType: "music" }</pre>
+        <div id="dialog-check"></div>
+    </div>
+
+    <div class="step">
+        <h3>Step 4: Visual Check</h3>
+        <p>If you see both logs but no dialog appears:</p>
+        <ul>
+            <li>Check if there's a modal overlay (dark background)</li>
+            <li>Look for dialog content that might be off-screen</li>
+            <li>Try scrolling the page</li>
+            <li>Check if other dialogs work (try creating a folder)</li>
+        </ul>
+        <div id="visual-check"></div>
+    </div>
+
+    <div class="step error">
+        <h3>❌ If Button Click Log Missing</h3>
+        <p>The issue is with the button click handler. Possible causes:</p>
+        <ul>
+            <li>Button is not rendered (check if it's visible)</li>
+            <li>onClick handler is not attached</li>
+            <li>Component is not re-rendering</li>
+            <li>JavaScript error preventing execution</li>
+        </ul>
+        <p>Check: Is the "Upload Music" button visible on the page?</p>
+    </div>
+
+    <div class="step error">
+        <h3>❌ If Dialog Log Missing</h3>
+        <p>The issue is with dialog rendering. Possible causes:</p>
+        <ul>
+            <li>UploadDialog component not imported</li>
+            <li>Dialog props not passed correctly</li>
+            <li>Dialog component has an error</li>
+            <li>CSS/z-index issue hiding the dialog</li>
+        </ul>
+    </div>
+
+    <div class="step success">
+        <h3>✅ If Both Logs Appear</h3>
+        <p>The logic is working, but dialog is not visible. This is a UI issue:</p>
+        <ul>
+            <li>Dialog positioned off-screen</li>
+            <li>Dialog behind other elements (z-index)</li>
+            <li>Dialog content not rendering due to error</li>
+            <li>CSS issue with modal overlay</li>
+        </ul>
+    </div>
+
+    <script>
+        function openApp() {
+            window.open('http://localhost:5173', '_blank');
+            document.getElementById('app-result').innerHTML = `
+                <div class="info">
+                    <h3>📱 App Opened</h3>
+                    <p>Follow the steps above to debug the upload dialog issue.</p>
+                    <p>Report back what console logs you see (or don't see).</p>
+                </div>
+            `;
+        }
+
+        // Auto-populate instructions
+        window.onload = function() {
+            document.getElementById('console-check').innerHTML = `
+                <div class="info">
+                    <h3>🔍 Expected Console Output</h3>
+                    <p>You should see:</p>
+                    <pre>Upload button clicked, setting isUploadOpen to true</pre>
+                    <p>If you don't see this, the button click is not working.</p>
+                </div>
+            `;
+
+            document.getElementById('dialog-check').innerHTML = `
+                <div class="info">
+                    <h3>🔍 Expected Dialog Log</h3>
+                    <p>You should see:</p>
+                    <pre>UploadDialog render: { open: true, folders: X, uploadType: "music" }</pre>
+                    <p>If you don't see this, the dialog is not rendering.</p>
+                </div>
+            `;
+
+            document.getElementById('visual-check').innerHTML = `
+                <div class="info">
+                    <h3>👁️ Visual Debugging</h3>
+                    <p>If logs appear but no dialog:</p>
+                    <ul>
+                        <li>Look for a dark overlay covering the screen</li>
+                        <li>Check if dialog appears at the very top or bottom</li>
+                        <li>Try pressing Escape to close any hidden dialogs</li>
+                        <li>Check Network tab for any failed requests</li>
+                    </ul>
+                </div>
+            `;
+        };
+    </script>
+</body>
+</html>

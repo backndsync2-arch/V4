@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sync2gear - Launch & Test Portal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .section {
+            margin-bottom: 40px;
+        }
+        
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .links-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .link-card {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            padding: 25px;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        
+        .link-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.2);
+            border-color: #667eea;
+        }
+        
+        .link-card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.3em;
+        }
+        
+        .link-card p {
+            color: #666;
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+        
+        .link-card .url {
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #667eea;
+            word-break: break-all;
+            border: 1px solid #e9ecef;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        
+        .status.ready {
+            background: #28a745;
+            color: white;
+        }
+        
+        .status.pending {
+            background: #ffc107;
+            color: #333;
+        }
+        
+        .credentials {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 25px;
+            margin-top: 20px;
+        }
+        
+        .credential-card {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .credential-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.1);
+        }
+        
+        .credential-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+        
+        .cred-field {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        
+        .cred-label {
+            font-weight: bold;
+            min-width: 100px;
+            color: #333;
+        }
+        
+        .cred-value {
+            font-family: 'Courier New', monospace;
+            color: #667eea;
+            flex: 1;
+            word-break: break-all;
+        }
+        
+        .copy-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-left: 10px;
+            font-size: 0.85em;
+            transition: background 0.3s ease;
+        }
+        
+        .copy-btn:hover {
+            background: #5568d3;
+        }
+        
+        .instructions {
+            background: #e7f3ff;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            border-radius: 6px;
+            margin-top: 20px;
+        }
+        
+        .instructions h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        
+        .instructions ol {
+            margin-left: 20px;
+        }
+        
+        .instructions li {
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        
+        .badge.admin {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .badge.client {
+            background: #28a745;
+            color: white;
+        }
+        
+        .badge.floor {
+            background: #17a2b8;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 sync2gear Launch Portal</h1>
+            <p>Quick access to all application endpoints and test credentials</p>
+        </div>
+        
+        <div class="content">
+            <!-- Application Links -->
+            <div class="section">
+                <h2>📍 Application Links</h2>
+                <div class="links-grid">
+                    <a href="http://localhost:5173" target="_blank" class="link-card">
+                        <h3>🎨 Frontend Application <span class="status pending">Requires Node.js</span></h3>
+                        <p>Main React application interface</p>
+                        <div class="url">http://localhost:5173</div>
+                    </a>
+                    
+                    <a href="http://localhost:8000/api/docs/" target="_blank" class="link-card">
+                        <h3>📚 API Documentation (Swagger) <span class="status ready">Ready</span></h3>
+                        <p>Interactive API documentation and testing</p>
+                        <div class="url">http://localhost:8000/api/docs/</div>
+                    </a>
+                    
+                    <a href="http://localhost:8000/api/redoc/" target="_blank" class="link-card">
+                        <h3>📖 API Documentation (ReDoc) <span class="status ready">Ready</span></h3>
+                        <p>Alternative API documentation format</p>
+                        <div class="url">http://localhost:8000/api/redoc/</div>
+                    </a>
+                    
+                    <a href="http://localhost:8000/admin/" target="_blank" class="link-card">
+                        <h3>⚙️ Django Admin Panel <span class="status ready">Ready</span></h3>
+                        <p>Backend administration interface</p>
+                        <div class="url">http://localhost:8000/admin/</div>
+                    </a>
+                    
+                    <a href="http://localhost:8000/api/" target="_blank" class="link-card">
+                        <h3>🔌 API Base Endpoint <span class="status ready">Ready</span></h3>
+                        <p>Root API endpoint</p>
+                        <div class="url">http://localhost:8000/api/</div>
+                    </a>
+                </div>
+            </div>
+            
+            <!-- Test Credentials -->
+            <div class="section">
+                <h2>🔐 Test Login Credentials</h2>
+                <p style="margin-bottom: 20px; color: #666;">Use these credentials to test different user roles and permissions:</p>
+                
+                <div class="credentials">
+                    <!-- Admin User -->
+                    <div class="credential-card">
+                        <h3>👑 Admin User <span class="badge admin">ADMIN</span></h3>
+                        <div class="cred-field">
+                            <span class="cred-label">Email:</span>
+                            <span class="cred-value" id="admin-email">admin@sync2gear.com</span>
+                            <button class="copy-btn" onclick="copyToClipboard('admin@sync2gear.com')">Copy</button>
+                        </div>
+                        <div class="cred-field">
+                            <span class="cred-label">Password:</span>
+                            <span class="cred-value" id="admin-password">admin123</span>
+                            <button class="copy-btn" onclick="copyToClipboard('admin123')">Copy</button>
+                        </div>
+                        <div style="margin-top: 15px; padding: 10px; background: #fff3cd; border-radius: 6px; font-size: 0.9em; color: #856404;">
+                            <strong>Access:</strong> Full system access, manage all clients, view system statistics, no client assigned
+                        </div>
+                    </div>
+                    
+                    <!-- Client User -->
+                    <div class="credential-card">
+                        <h3>🏢 Client User <span class="badge client">CLIENT</span></h3>
+                        <div class="cred-field">
+                            <span class="cred-label">Email:</span>
+                            <span class="cred-value" id="client-email">client1@example.com</span>
+                            <button class="copy-btn" onclick="copyToClipboard('client1@example.com')">Copy</button>
+                        </div>
+                        <div class="cred-field">
+                            <span class="cred-label">Password:</span>
+                            <span class="cred-value" id="client-password">client123</span>
+                            <button class="copy-btn" onclick="copyToClipboard('client123')">Copy</button>
+                        </div>
+                        <div style="margin-top: 15px; padding: 10px; background: #d4edda; border-radius: 6px; font-size: 0.9em; color: #155724;">
+                            <strong>Access:</strong> Downtown Coffee Shop - Full access to music library, announcements, schedules, zones, and devices
+                        </div>
+                    </div>
+                    
+                    <!-- Floor User -->
+                    <div class="credential-card">
+                        <h3>👤 Floor User <span class="badge floor">FLOOR</span></h3>
+                        <div class="cred-field">
+                            <span class="cred-label">Email:</span>
+                            <span class="cred-value" id="floor-email">floor1@downtowncoffee.com</span>
+                            <button class="copy-btn" onclick="copyToClipboard('floor1@downtowncoffee.com')">Copy</button>
+                        </div>
+                        <div class="cred-field">
+                            <span class="cred-label">Password:</span>
+                            <span class="cred-value" id="floor-password">floor123</span>
+                            <button class="copy-btn" onclick="copyToClipboard('floor123')">Copy</button>
+                        </div>
+                        <div style="margin-top: 15px; padding: 10px; background: #d1ecf1; border-radius: 6px; font-size: 0.9em; color: #0c5460;">
+                            <strong>Access:</strong> Downtown Coffee Shop - Floor staff access, control playback, view zones and devices
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick Start Instructions -->
+            <div class="section">
+                <h2>🚀 Quick Start Instructions</h2>
+                <div class="instructions">
+                    <h3>Step 1: Start Backend Server</h3>
+                    <ol>
+                        <li>Open PowerShell or Command Prompt</li>
+                        <li>Navigate to: <code>C:\Users\dolab\Downloads\sync2gear_backend</code></li>
+                        <li>Run: <code>.\START_SERVER.ps1</code> (or <code>START_SERVER.bat</code>)</li>
+                        <li>Wait for: <code>Starting development server at http://127.0.0.1:8000/</code></li>
+                    </ol>
+                    
+                    <h3 style="margin-top: 30px;">Step 2: Start Frontend Server (If Node.js is installed)</h3>
+                    <ol>
+                        <li>Open a new PowerShell or Command Prompt window</li>
+                        <li>Navigate to: <code>C:\Users\dolab\Downloads\V2 Sync2gear</code></li>
+                        <li>Run: <code>npm install</code> (first time only)</li>
+                        <li>Run: <code>npm run dev</code></li>
+                        <li>Wait for: <code>Local: http://localhost:5173/</code></li>
+                    </ol>
+                    
+                    <h3 style="margin-top: 30px;">Step 3: Test the Application</h3>
+                    <ol>
+                        <li>Click on "Frontend Application" link above (or go to http://localhost:5173)</li>
+                        <li>Click "Sign In" button</li>
+                        <li>Use any of the test credentials above</li>
+                        <li>Explore the dashboard, music library, announcements, scheduler, and zones</li>
+                    </ol>
+                    
+                    <h3 style="margin-top: 30px;">Step 4: Test API Directly</h3>
+                    <ol>
+                        <li>Click on "API Documentation (Swagger)" link above</li>
+                        <li>Try the authentication endpoints</li>
+                        <li>Use the "Authorize" button to login with test credentials</li>
+                        <li>Test other API endpoints</li>
+                    </ol>
+                </div>
+            </div>
+            
+            <!-- Sample Data Info -->
+            <div class="section">
+                <h2>📊 Sample Data Available</h2>
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 10px;">
+                    <p style="margin-bottom: 15px;"><strong>For Downtown Coffee Shop client:</strong></p>
+                    <ul style="margin-left: 30px; line-height: 2;">
+                        <li><strong>Zones:</strong> Main Floor, Kitchen</li>
+                        <li><strong>Devices:</strong> Main Floor Speaker, Kitchen Speaker</li>
+                        <li><strong>Folders:</strong> Jazz Collection (Music), Daily Announcements</li>
+                        <li><strong>Playback States:</strong> Configured for each zone</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(function() {
+                // Show feedback
+                event.target.textContent = 'Copied!';
+                event.target.style.background = '#28a745';
+                setTimeout(function() {
+                    event.target.textContent = 'Copy';
+                    event.target.style.background = '#667eea';
+                }, 2000);
+            }, function(err) {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                textArea.style.position = 'fixed';
+                textArea.style.opacity = '0';
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    event.target.textContent = 'Copied!';
+                    event.target.style.background = '#28a745';
+                    setTimeout(function() {
+                        event.target.textContent = 'Copy';
+                        event.target.style.background = '#667eea';
+                    }, 2000);
+                } catch (err) {
+                    alert('Failed to copy. Please copy manually: ' + text);
+                }
+                document.body.removeChild(textArea);
+            });
+        }
+        
+        // Check if servers are running
+        window.addEventListener('load', function() {
+            // Check backend
+            fetch('http://localhost:8000/api/', { method: 'HEAD', mode: 'no-cors' })
+                .catch(() => {
+                    console.log('Backend server may not be running');
+                });
+            
+            // Check frontend
+            fetch('http://localhost:5173/', { method: 'HEAD', mode: 'no-cors' })
+                .catch(() => {
+                    console.log('Frontend server may not be running');
+                });
+        });
+    </script>
+</body>
+</html>

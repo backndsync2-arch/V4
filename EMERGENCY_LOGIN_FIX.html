@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Emergency Login Fix</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .success { color: green; padding: 10px; background: #e8f5e9; border-radius: 5px; margin: 10px 0; }
+        .error { color: red; padding: 10px; background: #ffebee; border-radius: 5px; margin: 10px 0; }
+        .info { color: blue; padding: 10px; background: #e3f2fd; border-radius: 5px; margin: 10px 0; }
+        button { padding: 10px 20px; margin: 10px 5px; font-size: 16px; cursor: pointer; }
+        .step { margin: 20px 0; padding: 15px; border: 2px solid #ddd; border-radius: 8px; }
+        .step h3 { margin-top: 0; color: #333; }
+    </style>
+</head>
+<body>
+    <h1>🚨 Emergency Login Fix</h1>
+
+    <div class="step">
+        <h3>Step 1: Clear All Lockouts</h3>
+        <button onclick="clearLockouts()">Clear Lockouts</button>
+        <div id="lockout-status"></div>
+    </div>
+
+    <div class="step">
+        <h3>Step 2: Test Backend Login</h3>
+        <button onclick="testBackendLogin()">Test Backend</button>
+        <div id="backend-status"></div>
+    </div>
+
+    <div class="step">
+        <h3>Step 3: Test Frontend Login</h3>
+        <button onclick="testFrontendLogin()">Test Frontend</button>
+        <div id="frontend-status"></div>
+    </div>
+
+    <div class="step">
+        <h3>Step 4: Clear All Data & Retry</h3>
+        <button onclick="nuclearReset()">Nuclear Reset</button>
+        <div id="reset-status"></div>
+    </div>
+
+    <script>
+        function clearLockouts() {
+            const status = document.getElementById('lockout-status');
+            try {
+                localStorage.removeItem('sync2gear_login_attempts');
+                localStorage.removeItem('sync2gear_login_lock_until');
+                localStorage.removeItem('sync2gear_user');
+                localStorage.removeItem('sync2gear_impersonating');
+                localStorage.removeItem('sync2gear_last_activity');
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
+                status.innerHTML = '<div class="success">✅ All lockouts and stored data cleared!</div>';
+            } catch (e) {
+                status.innerHTML = '<div class="error">❌ Failed to clear: ' + e.message + '</div>';
+            }
+        }
+
+        async function testBackendLogin() {
+            const status = document.getElementById('backend-status');
+            status.innerHTML = '<div class="info">Testing backend login...</div>';
+
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/auth/login/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'admin@sync2gear.com',
+                        password: 'admin123'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    status.innerHTML = `
+                        <div class="success">
+                            <h4>✅ Backend Login WORKS!</h4>
+                            <p>User: ${data.user.name}</p>
+                            <p>Email: ${data.user.email}</p>
+                            <p>Role: ${data.user.role}</p>
+                            <p>Token: ${data.access.substring(0, 50)}...</p>
+                        </div>
+                    `;
+                } else {
+                    status.innerHTML = `
+                        <div class="error">
+                            <h4>❌ Backend Login FAILED</h4>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                status.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Backend Error</h4>
+                        <p>${error.message}</p>
+                        <p>Make sure backend is running on http://localhost:8000</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function testFrontendLogin() {
+            const status = document.getElementById('frontend-status');
+            status.innerHTML = '<div class="info">Testing frontend login...</div>';
+
+            try {
+                // Try to access the frontend
+                const response = await fetch('http://localhost:5173', {
+                    method: 'GET'
+                });
+
+                if (response.ok) {
+                    status.innerHTML = `
+                        <div class="success">
+                            <h4>✅ Frontend Server RUNNING</h4>
+                            <p>Now try logging in at: <a href="http://localhost:5173" target="_blank">http://localhost:5173</a></p>
+                        </div>
+                    `;
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                status.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Frontend Server NOT RUNNING</h4>
+                        <p>${error.message}</p>
+                        <p>Start frontend: npm run dev</p>
+                    </div>
+                `;
+            }
+        }
+
+        function nuclearReset() {
+            const status = document.getElementById('reset-status');
+            try {
+                // Clear ALL localStorage
+                localStorage.clear();
+
+                // Clear sessionStorage too
+                sessionStorage.clear();
+
+                status.innerHTML = `
+                    <div class="success">
+                        <h4>🔥 Nuclear Reset Complete</h4>
+                        <p>All browser data cleared</p>
+                        <p>Now try refreshing the app and logging in</p>
+                    </div>
+                `;
+            } catch (e) {
+                status.innerHTML = '<div class="error">❌ Reset failed: ' + e.message + '</div>';
+            }
+        }
+
+        // Auto-clear on load
+        window.onload = function() {
+            clearLockouts();
+        };
+    </script>
+</body>
+</html>

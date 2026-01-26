@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Real-Time Features Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 1000px; margin: 0 auto; background: #f0f8ff; }
+        .test-section { margin: 20px 0; padding: 20px; border-radius: 8px; border: 2px solid #ddd; }
+        .success { background: #e8f5e9; border-color: #4caf50; }
+        .error { background: #ffebee; border-color: #f44336; }
+        .info { background: #e3f2fd; border-color: #2196f3; }
+        .warning { background: #fff3e0; border-color: #ff9800; }
+        button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; }
+        .connect { background: #4caf50; color: white; }
+        .disconnect { background: #f44336; color: white; }
+        .test { background: #2196f3; color: white; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; font-family: monospace; }
+        .online { background: #e8f5e9; color: #2e7d32; }
+        .offline { background: #ffebee; color: #c62828; }
+        pre { background: #f8f8f8; padding: 10px; border-radius: 3px; overflow-x: auto; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>🚀 WebSocket Real-Time Features Test</h1>
+    <p>Test the real-time features implementation</p>
+
+    <div class="test-section info">
+        <h3>📡 WebSocket Connection Status</h3>
+        <div id="ws-status" class="status offline">Not Connected</div>
+        <button class="connect" onclick="connectWebSocket()">Connect WebSocket</button>
+        <button class="disconnect" onclick="disconnectWebSocket()">Disconnect</button>
+        <button class="test" onclick="testHeartbeat()">Test Heartbeat</button>
+    </div>
+
+    <div class="test-section info">
+        <h3>📱 Device Status Monitoring</h3>
+        <div id="device-events" class="status">No device events received</div>
+    </div>
+
+    <div class="test-section info">
+        <h3>⏰ Schedule Execution Monitoring</h3>
+        <div id="schedule-events" class="status">No schedule events received</div>
+    </div>
+
+    <div class="test-section warning">
+        <h3>🔔 System Notifications</h3>
+        <div id="system-events" class="status">No system notifications received</div>
+    </div>
+
+    <div class="test-section info">
+        <h3>🎵 Playback Updates</h3>
+        <div id="playback-events" class="status">No playback updates received</div>
+    </div>
+
+    <div class="test-section info">
+        <h3>🧪 Manual Tests</h3>
+        <button class="test" onclick="testDeviceHeartbeat()">Simulate Device Ping</button>
+        <button class="test" onclick="testScheduleExecution()">Simulate Schedule Execution</button>
+        <button class="test" onclick="testSystemNotification()">Send Test Notification</button>
+        <div id="test-results"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        const statusDiv = document.getElementById('ws-status');
+        const deviceEvents = document.getElementById('device-events');
+        const scheduleEvents = document.getElementById('schedule-events');
+        const systemEvents = document.getElementById('system-events');
+        const playbackEvents = document.getElementById('playback-events');
+        const testResults = document.getElementById('test-results');
+
+        function updateStatus(message, isOnline = false) {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${isOnline ? 'online' : 'offline'}`;
+        }
+
+        function connectWebSocket() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                updateStatus('Already connected', true);
+                return;
+            }
+
+            // Get token from localStorage (assuming user is logged in)
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                updateStatus('No access token found. Please login first.', false);
+                return;
+            }
+
+            updateStatus('Connecting...', false);
+
+            const wsUrl = `ws://localhost:8000/ws/events/?token=${token}`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = function(event) {
+                console.log('WebSocket connected:', event);
+                updateStatus('Connected to global events WebSocket', true);
+            };
+
+            ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('WebSocket message received:', data);
+                    handleWebSocketMessage(data);
+                } catch (error) {
+                    console.error('Error parsing WebSocket message:', error);
+                }
+            };
+
+            ws.onclose = function(event) {
+                console.log('WebSocket closed:', event);
+                updateStatus(`Disconnected (code: ${event.code})`, false);
+                ws = null;
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                updateStatus('Connection error', false);
+            };
+        }
+
+        function disconnectWebSocket() {
+            if (ws) {
+                ws.close(1000, 'Manual disconnect');
+                ws = null;
+            }
+            updateStatus('Disconnected', false);
+        }
+
+        function testHeartbeat() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'ping' }));
+                testResults.innerHTML = '<div class="success">✅ Heartbeat sent</div>';
+            } else {
+                testResults.innerHTML = '<div class="error">❌ WebSocket not connected</div>';
+            }
+        }
+
+        function handleWebSocketMessage(data) {
+            switch (data.type) {
+                case 'device_status_change':
+                    deviceEvents.innerHTML = `
+                        <div class="success">
+                            📱 Device "${data.data.device_name}" ${data.data.is_online ? 'came online' : 'went offline'}
+                            ${data.data.zone_name ? ` in zone "${data.data.zone_name}"` : ''}
+                        </div>
+                        <pre>${JSON.stringify(data.data, null, 2)}</pre>
+                    `;
+                    break;
+
+                case 'schedule_executed':
+                    scheduleEvents.innerHTML = `
+                        <div class="success">
+                            ⏰ Schedule "${data.data.schedule_name}" executed at ${new Date(data.data.executed_at).toLocaleTimeString()}
+                        </div>
+                        <pre>${JSON.stringify(data.data, null, 2)}</pre>
+                    `;
+                    break;
+
+                case 'system_notification':
+                    systemEvents.innerHTML = `
+                        <div class="${data.data.type === 'error' ? 'error' : data.data.type === 'warning' ? 'warning' : 'success'}">
+                            🔔 ${data.data.title}: ${data.data.message}
+                        </div>
+                        <pre>${JSON.stringify(data.data, null, 2)}</pre>
+                    `;
+                    break;
+
+                case 'playback_update':
+                    playbackEvents.innerHTML = `
+                        <div class="info">
+                            🎵 Playback update received
+                        </div>
+                        <pre>${JSON.stringify(data.data, null, 2)}</pre>
+                    `;
+                    break;
+
+                case 'pong':
+                    testResults.innerHTML = '<div class="success">✅ Pong received from server</div>';
+                    break;
+
+                default:
+                    console.log('Unknown message type:', data.type, data);
+            }
+        }
+
+        // Test functions
+        async function testDeviceHeartbeat() {
+            // This would normally be called by a device, but we can test the API
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/zones/devices/', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+                const devices = await response.json();
+
+                if (devices.length > 0) {
+                    const deviceId = devices[0].id;
+                    const heartbeatResponse = await fetch(`http://localhost:8000/api/v1/zones/devices/${deviceId}/heartbeat/`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (heartbeatResponse.ok) {
+                        testResults.innerHTML = '<div class="success">✅ Device heartbeat sent successfully</div>';
+                    } else {
+                        testResults.innerHTML = '<div class="error">❌ Failed to send device heartbeat</div>';
+                    }
+                } else {
+                    testResults.innerHTML = '<div class="warning">⚠️ No devices found to test heartbeat</div>';
+                }
+            } catch (error) {
+                testResults.innerHTML = `<div class="error">❌ Error testing device heartbeat: ${error.message}</div>`;
+            }
+        }
+
+        async function testScheduleExecution() {
+            // This would normally be triggered by Celery, but we can test the notification
+            testResults.innerHTML = '<div class="info">ℹ️ Schedule execution is handled by backend Celery tasks. Check Celery logs to see if schedules are running.</div>';
+        }
+
+        function testSystemNotification() {
+            // Send a test system notification via WebSocket (if connected)
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'test_notification',
+                    data: {
+                        type: 'info',
+                        title: 'Test Notification',
+                        message: 'This is a test system notification sent from the client',
+                        timestamp: new Date().toISOString()
+                    }
+                }));
+                testResults.innerHTML = '<div class="success">✅ Test notification sent</div>';
+            } else {
+                testResults.innerHTML = '<div class="error">❌ WebSocket not connected</div>';
+            }
+        }
+
+        // Auto-connect on page load
+        window.addEventListener('load', function() {
+            setTimeout(connectWebSocket, 1000);
+        });
+    </script>
+</body>
+</html>

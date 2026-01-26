@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Upload Dialog</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; background: #f0f8ff; }
+        .success { color: green; background: #e8f5e9; padding: 15px; border-radius: 5px; margin: 10px 0; border: 2px solid #4caf50; }
+        .error { color: red; background: #ffebee; padding: 15px; border-radius: 5px; margin: 10px 0; border: 2px solid #f44336; }
+        .info { color: blue; background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 10px 0; border: 2px solid #2196f3; }
+        button { padding: 12px 24px; font-size: 16px; cursor: pointer; background: #2196f3; color: white; border: none; border-radius: 5px; margin: 10px 5px; }
+        button:hover { background: #1976d2; }
+        .step { margin: 20px 0; padding: 20px; border-radius: 8px; border: 2px solid #ddd; }
+        .step h3 { margin-top: 0; color: #333; }
+        pre { background: #f8f8f8; padding: 10px; border-radius: 3px; overflow-x: auto; white-space: pre-wrap; }
+        .code { background: #2d3748; color: #e2e8f0; padding: 15px; border-radius: 5px; font-family: monospace; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Test Upload Dialog Functionality</h1>
+    <p>Testing if the upload dialog opens correctly in the Music Library.</p>
+
+    <div class="step">
+        <h3>Step 1: Open Music Library</h3>
+        <button onclick="openMusicLibrary()">Open Music Library</button>
+        <div id="app-result"></div>
+    </div>
+
+    <div class="step">
+        <h3>Step 2: Test Upload Button</h3>
+        <p>Once the app opens:</p>
+        <ol>
+            <li>Go to the Music Library tab</li>
+            <li>Look for the "Upload Music" button (top right)</li>
+            <li>Click it and see if the dialog opens</li>
+        </ol>
+        <div id="test-result"></div>
+    </div>
+
+    <div class="step">
+        <h3>Step 3: Check Console Errors</h3>
+        <button onclick="checkConsole()">Check for Errors</button>
+        <p>Open browser console (F12) and look for any red error messages when clicking the upload button.</p>
+        <div id="console-result"></div>
+    </div>
+
+    <div class="step">
+        <h3>Step 4: Test Dialog State</h3>
+        <p>If the dialog doesn't open, it might be a state management issue.</p>
+        <p>Check if the `isUploadOpen` state is being set correctly.</p>
+        <div id="state-result"></div>
+    </div>
+
+    <script>
+        function openMusicLibrary() {
+            window.open('http://localhost:5173', '_blank');
+            document.getElementById('app-result').innerHTML = `
+                <div class="success">
+                    <h3>✅ App Opened</h3>
+                    <p>Navigate to Music Library and test the upload button</p>
+                </div>
+            `;
+        }
+
+        function checkConsole() {
+            document.getElementById('console-result').innerHTML = `
+                <div class="info">
+                    <h3>🔍 Console Check Instructions</h3>
+                    <ol>
+                        <li>Open the app in a new tab</li>
+                        <li>Press F12 to open Developer Tools</li>
+                        <li>Go to Console tab</li>
+                        <li>Navigate to Music Library</li>
+                        <li>Click the "Upload Music" button</li>
+                        <li>Look for any red error messages</li>
+                        <li>Look for "Navigation clicked: music" logs</li>
+                        <li>Look for any React errors</li>
+                    </ol>
+                    <p><strong>Common Issues:</strong></p>
+                    <ul>
+                        <li><code>TypeError: setIsUploadOpen is not a function</code> - State not declared</li>
+                        <li><code>ReferenceError: isUploadOpen is not defined</code> - State not declared</li>
+                        <li><code>Cannot read properties of undefined</code> - Component not rendering</li>
+                        <li>React hydration errors</li>
+                    </ul>
+                </div>
+            `;
+        }
+
+        // Auto-run
+        window.onload = function() {
+            document.getElementById('state-result').innerHTML = `
+                <div class="info">
+                    <h3>🔍 Dialog State Check</h3>
+                    <p>The MusicLibrary component should have:</p>
+                    <pre>const [isUploadOpen, setIsUploadOpen] = useState(false);</pre>
+                    <p>The button should call:</p>
+                    <pre>onClick={() => setIsUploadOpen(true)}</pre>
+                    <p>The UploadDialog should have:</p>
+                    <pre>open={isUploadOpen} onOpenChange={setIsUploadOpen}</pre>
+                </div>
+            `;
+        };
+    </script>
+</body>
+</html>

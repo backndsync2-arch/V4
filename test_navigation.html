@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Navigation Test - sync2gear</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .test-section {
+            background: #f5f5f5;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #2196f3;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover { background: #1976d2; }
+        #results { margin-top: 20px; }
+        .result-item {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 3px;
+        }
+        .pass { background: #e8f5e9; }
+        .fail { background: #ffebee; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Navigation Test Suite - sync2gear</h1>
+    
+    <div class="test-section">
+        <h2>1. Server Status Check</h2>
+        <button onclick="checkServers()">Check Servers</button>
+        <div id="server-status"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. Authentication Check</h2>
+        <button onclick="checkAuth()">Check Login Status</button>
+        <div id="auth-status"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. API Endpoints Test</h2>
+        <button onclick="testEndpoints()">Test All Endpoints</button>
+        <div id="api-status"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>4. Navigation Test</h2>
+        <p>Open the app and test navigation manually:</p>
+        <ol>
+            <li>Open <a href="http://localhost:5174" target="_blank">http://localhost:5174</a></li>
+            <li>Open browser console (F12)</li>
+            <li>Click each menu item and check console for logs</li>
+            <li>Look for "Navigation clicked: [page]" messages</li>
+            <li>Look for "Current page changed to: [page]" messages</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h2>5. Component Render Test</h2>
+        <button onclick="testComponents()">Test Component Imports</button>
+        <div id="component-status"></div>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        async function checkServers() {
+            const status = document.getElementById('server-status');
+            status.innerHTML = '<p class="info">Checking servers...</p>';
+            
+            const results = [];
+            
+            // Check Frontend
+            try {
+                const frontend = await fetch('http://localhost:5174');
+                results.push({ name: 'Frontend (5174)', status: frontend.ok ? '✅ Running' : '❌ Not responding' });
+            } catch (e) {
+                results.push({ name: 'Frontend (5174)', status: '❌ Not running' });
+            }
+            
+            // Check Backend
+            try {
+                const backend = await fetch('http://localhost:8000/api/v1/');
+                results.push({ name: 'Backend (8000)', status: backend.ok ? '✅ Running' : '❌ Not responding' });
+            } catch (e) {
+                results.push({ name: 'Backend (8000)', status: '❌ Not running' });
+            }
+            
+            status.innerHTML = results.map(r => `<p>${r.name}: ${r.status}</p>`).join('');
+        }
+
+        function checkAuth() {
+            const status = document.getElementById('auth-status');
+            const token = localStorage.getItem('access_token');
+            const user = localStorage.getItem('sync2gear_user');
+            
+            if (token && user) {
+                status.innerHTML = '<p class="success">✅ User is logged in</p><pre>' + 
+                    JSON.stringify(JSON.parse(user), null, 2) + '</pre>';
+            } else {
+                status.innerHTML = '<p class="error">❌ User is not logged in</p>' +
+                    '<p>Token: ' + (token ? 'Present' : 'Missing') + '</p>' +
+                    '<p>User: ' + (user ? 'Present' : 'Missing') + '</p>';
+            }
+        }
+
+        async function testEndpoints() {
+            const status = document.getElementById('api-status');
+            status.innerHTML = '<p class="info">Testing endpoints...</p>';
+            
+            const endpoints = [
+                '/api/v1/auth/me/',
+                '/api/v1/music/folders/',
+                '/api/v1/announcements/',
+                '/api/v1/schedules/',
+                '/api/v1/zones/',
+            ];
+            
+            const token = localStorage.getItem('access_token');
+            const results = [];
+            
+            for (const endpoint of endpoints) {
+                try {
+                    const response = await fetch('http://localhost:8000' + endpoint, {
+                        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                    });
+                    results.push({
+                        endpoint,
+                        status: response.status,
+                        ok: response.ok ? '✅' : '❌'
+                    });
+                } catch (e) {
+                    results.push({
+                        endpoint,
+                        status: 'Error',
+                        ok: '❌'
+                    });
+                }
+            }
+            
+            status.innerHTML = results.map(r => 
+                `<p>${r.ok} ${r.endpoint}: ${r.status}</p>`
+            ).join('');
+        }
+
+        function testComponents() {
+            const status = document.getElementById('component-status');
+            status.innerHTML = '<p class="info">Component test requires app to be loaded. Check browser console for component errors.</p>';
+        }
+
+        // Auto-run server check on load
+        window.onload = () => {
+            checkServers();
+            checkAuth();
+        };
+    </script>
+</body>
+</html>

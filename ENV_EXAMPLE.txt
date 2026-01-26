@@ -1,0 +1,15 @@
+# Copy this file to .env and update with your values
+
+# API Configuration
+VITE_API_BASE_URL=http://localhost:8000/api
+VITE_WS_BASE_URL=ws://localhost:8000/ws
+
+# Production
+# VITE_API_BASE_URL=https://api.sync2gear.com/api
+# VITE_WS_BASE_URL=wss://api.sync2gear.com/ws
+
+# Feature Flags
+VITE_ENABLE_SECURITY=false
+
+# For production, set to true and configure allowed domains in src/lib/security.ts
+# VITE_ENABLE_SECURITY=true

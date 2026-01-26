@@ -1,0 +1,2029 @@
+import React, { useState } from 'react';
+import { useAuth } from '@/lib/auth';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
+import { Button } from '@/app/components/ui/button';
+import { Input } from '@/app/components/ui/input';
+import { Textarea } from '@/app/components/ui/textarea';
+import { Label } from '@/app/components/ui/label';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
+import { mockAnnouncementScripts, mockAnnouncementAudio, mockFolders, mockDevices, mockAnnouncementTemplateFolders, type AnnouncementTemplate } from '@/lib/mockData';
+import { announcementsAPI, musicAPI } from '@/lib/api';
+import { Radio, Plus, Play, Pause, Volume2, Mic, Upload, FileText, Trash2, MoreVertical, FolderPlus, Folder, Clock, Search, Settings, List, Grid, Filter, CheckCircle2, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Badge } from '@/app/components/ui/badge';
+import { Switch } from '@/app/components/ui/switch';
+import { formatDuration } from '@/lib/utils';
+import { toast } from 'sonner';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/app/components/ui/dropdown-menu';
+import { ImageUpload } from '@/app/components/ImageUpload';
+import { AnnouncementTemplatesGallery } from '@/app/components/AnnouncementTemplatesGallery';
+
+interface FolderSettings {
+  intervalMinutes: number;
+  intervalSeconds: number;
+  enabled: boolean;
+  playlistMode: 'sequential' | 'random' | 'single';
+  selectedAnnouncements: string[];
+  preventOverlap: boolean;
+}
+
+export function AnnouncementsFinal() {
+  const { user } = useAuth();
+  const uploadInputId = React.useId();
+  const [scripts, setScripts] = useState<any[]>([]);
+  const [audioFiles, setAudioFiles] = useState<any[]>([]); // Load from backend instead of mock
+  const [folders, setFolders] = useState<Folder[]>([]); // Load from backend instead of mock
+  const [devices, setDevices] = useState(mockDevices);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [filterEnabled, setFilterEnabled] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const [playingAudio, setPlayingAudio] = useState<string | null>(null);
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isInstantOpen, setIsInstantOpen] = useState(false);
+  const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
+  const [isFolderSettingsOpen, setIsFolderSettingsOpen] = useState(false);
+  const [selectedFolderForSettings, setSelectedFolderForSettings] = useState<string | null>(null);
+  const [announcementIcons, setAnnouncementIcons] = useState<Record<string, string | null>>({});
+  const [isCreating, setIsCreating] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+
+  // Folder-level settings
+  const [folderSettings, setFolderSettings] = useState<Record<string, FolderSettings>>({});
+
+  // Form state
+  const [newTitle, setNewTitle] = useState('');
+  const [newText, setNewText] = useState('');
+  const [newCategory, setNewCategory] = useState('');
+  const [selectedDevices, setSelectedDevices] = useState<string[]>([]);
+  const [selectedAnnouncementForInstant, setSelectedAnnouncementForInstant] = useState('');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [selectedVoice, setSelectedVoice] = useState('alloy');
+  const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
+  const [previewAudio, setPreviewAudio] = useState<HTMLAudioElement | null>(null);
+  const [ttsVoices, setTtsVoices] = useState<Array<{id: string; name: string; gender: string; accent: string}>>([]);
+  const [isVoiceDialogOpen, setIsVoiceDialogOpen] = useState(false);
+  const [selectedAnnouncementForVoice, setSelectedAnnouncementForVoice] = useState<string | null>(null);
+  const [voiceDialogVoice, setVoiceDialogVoice] = useState('alloy');
+  const [isRegeneratingVoice, setIsRegeneratingVoice] = useState(false);
+  
+  // AI Generator state
+  const [aiTopic, setAiTopic] = useState('');
+  const [aiTone, setAiTone] = useState('professional');
+  const [aiKeyPoints, setAiKeyPoints] = useState('');
+  const [aiQuantity, setAiQuantity] = useState('1');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedScripts, setGeneratedScripts] = useState<Array<{title: string, text: string, selected: boolean}>>([]);
+
+  // Load folders, announcements, and TTS voices on mount
+  React.useEffect(() => {
+    const loadData = async () => {
+      try {
+        // Load folders from backend
+        const announcementFolders = await musicAPI.getFolders('announcements');
+        setFolders(announcementFolders);
+        
+        // Load real announcements from backend
+        const announcements = await announcementsAPI.getAnnouncements();
+        setAudioFiles(announcements);
+        
+        // IMMEDIATELY recalculate duration for announcements with 0 duration that have audio files
+        const announcementsNeedingDuration = announcements.filter(a => 
+          a.duration === 0 && a.url && a.url !== '' && a.url !== '#'
+        );
+        if (announcementsNeedingDuration.length > 0) {
+          console.log(`Found ${announcementsNeedingDuration.length} announcements with 0:00 duration, recalculating immediately...`);
+          // Recalculate immediately (don't block UI, but do it right away)
+          const recalculationPromises = announcementsNeedingDuration.map(a => 
+            announcementsAPI.recalculateDuration(a.id).catch(err => {
+              console.warn(`Failed to recalculate duration for ${a.id}:`, err);
+              return null;
+            })
+          );
+          
+          // Wait for all recalculations to complete, then reload
+          Promise.all(recalculationPromises).then(() => {
+            // Small delay to ensure backend has saved
+            return new Promise(resolve => setTimeout(resolve, 500));
+          }).then(() => {
+            // Reload announcements after recalculation
+            return announcementsAPI.getAnnouncements();
+          }).then(updated => {
+            setAudioFiles(updated);
+            console.log('Duration recalculation complete, announcements updated');
+            toast.success(`Updated duration for ${announcementsNeedingDuration.length} announcement${announcementsNeedingDuration.length > 1 ? 's' : ''}`);
+          }).catch(err => {
+            console.error('Failed to reload announcements after duration recalculation:', err);
+          });
+        }
+        
+        // Extract scripts from TTS announcements
+        const ttsScripts = announcements
+          .filter(a => a.type === 'tts')
+          .map(a => ({
+            id: a.id,
+            title: a.title,
+            text: '', // We don't store text in the audio file, but we can get it from backend if needed
+            clientId: a.clientId,
+            enabled: a.enabled,
+            category: a.category,
+            createdAt: a.createdAt,
+            createdBy: a.createdBy,
+          }));
+        setScripts(ttsScripts);
+        
+        // Load TTS voices
+        const voices = await announcementsAPI.getTTSVoices();
+        setTtsVoices(voices);
+        if (voices.length > 0 && !selectedVoice) {
+          setSelectedVoice(voices[0].id);
+        }
+      } catch (error) {
+        console.error('Failed to load data:', error);
+        // Fallback voices if API fails
+        setTtsVoices([
+          { id: 'alloy', name: 'Alloy (Neutral)', gender: 'neutral', accent: 'US' },
+          { id: 'echo', name: 'Echo (Male)', gender: 'male', accent: 'US' },
+          { id: 'nova', name: 'Nova (Female)', gender: 'female', accent: 'US' },
+          { id: 'shimmer', name: 'Shimmer (Female)', gender: 'female', accent: 'US' },
+        ]);
+      }
+    };
+    loadData();
+    
+    // Periodic check for announcements with 0:00 duration (every 10 seconds for faster updates)
+    const durationCheckInterval = setInterval(async () => {
+      try {
+        const announcements = await announcementsAPI.getAnnouncements();
+        const needsRecalculation = announcements.filter(a => 
+          a.duration === 0 && a.url && a.url !== '' && a.url !== '#'
+        );
+        
+        if (needsRecalculation.length > 0) {
+          console.log(`Periodic check: Found ${needsRecalculation.length} announcements with 0:00, recalculating...`);
+          // Recalculate in background
+          Promise.all(
+            needsRecalculation.map(a => 
+              announcementsAPI.recalculateDuration(a.id).catch(err => {
+                console.warn(`Failed to recalculate duration for ${a.id}:`, err);
+                return null;
+              })
+            )
+          ).then(() => {
+            // Small delay to ensure backend has saved
+            return new Promise(resolve => setTimeout(resolve, 500));
+          }).then(() => {
+            // Reload announcements after recalculation
+            return announcementsAPI.getAnnouncements();
+          }).then(updated => {
+            setAudioFiles(updated);
+            console.log('Periodic duration recalculation complete');
+          }).catch(err => {
+            console.error('Failed to reload announcements:', err);
+          });
+        }
+      } catch (error) {
+        console.error('Error in periodic duration check:', error);
+      }
+    }, 10000); // Check every 10 seconds for faster updates
+    
+    return () => clearInterval(durationCheckInterval);
+  }, []);
+
+  const clientId = user?.role === 'admin' ? null : user?.clientId;
+  const filteredScripts = clientId ? scripts.filter(s => s.clientId === clientId) : scripts;
+  const filteredFolders = clientId ? folders.filter(f => f.clientId === clientId) : folders;
+  
+  // Filter audio by folder and search
+  let displayedAudio = selectedFolder
+    ? audioFiles.filter(a => a.category === selectedFolder || a.folderId === selectedFolder)
+    : clientId
+    ? audioFiles.filter(a => a.clientId === clientId)
+    : audioFiles;
+
+  // Apply enabled filter
+  if (filterEnabled === 'enabled') {
+    displayedAudio = displayedAudio.filter(a => a.enabled);
+  } else if (filterEnabled === 'disabled') {
+    displayedAudio = displayedAudio.filter(a => !a.enabled);
+  }
+
+  const searchedAudio = searchQuery
+    ? displayedAudio.filter(a => a.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    : displayedAudio;
+
+  const availableDevices = clientId ? devices.filter(d => d.clientId === clientId) : devices;
+
+  // Get folder statistics
+  const getFolderStats = (folderId: string) => {
+    const folderAnnouncements = audioFiles.filter(a => a.category === folderId || a.folderId === folderId);
+    const enabled = folderAnnouncements.filter(a => a.enabled).length;
+    const total = folderAnnouncements.length;
+    const totalDuration = folderAnnouncements.reduce((sum, a) => sum + (a.duration || 0), 0);
+    return { enabled, total, totalDuration };
+  };
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) {
+      toast.error('Please enter a folder name');
+      return;
+    }
+    
+    setIsCreatingFolder(true);
+    try {
+      const newFolder = await musicAPI.createFolder({
+        name: newFolderName,
+        type: 'announcements',
+      });
+      
+      // Use the folder from the API response directly (already normalized)
+      setFolders([...folders, newFolder]);
+      
+      // Initialize default folder settings
+      setFolderSettings({
+        ...folderSettings,
+        [newFolder.id]: {
+          intervalMinutes: 30,
+          intervalSeconds: 0,
+          enabled: false,
+          playlistMode: 'sequential',
+          selectedAnnouncements: [],
+          preventOverlap: true,
+        }
+      });
+      
+      setNewFolderName('');
+      setIsCreateFolderOpen(false);
+      toast.success(`Folder "${newFolderName}" created`);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create folder');
+      console.error('Create folder error:', error);
+    } finally {
+      setIsCreatingFolder(false);
+    }
+  };
+
+  const handleUploadAnnouncement = async () => {
+    if (!uploadFile) {
+      toast.error('Please select an audio file to upload');
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const title =
+        (newTitle && newTitle.trim()) ||
+        uploadFile.name.replace(/\.[^/.]+$/, '');
+
+      const uploaded = await announcementsAPI.uploadAnnouncement(
+        uploadFile,
+        { title, folder_id: newCategory || undefined },
+        () => {
+          // We don't currently surface progress here (XMLHttpRequest supports it but UI doesn't show a bar).
+        }
+      );
+
+      // Add to local UI list
+      setAudioFiles(prev => [
+        ...prev,
+        {
+          id: uploaded.id,
+          title: uploaded.title,
+          scriptId: undefined,
+          clientId: user?.clientId || 'client1',
+          url: uploaded.url,
+          duration: uploaded.duration || 0,
+          type: uploaded.type || 'uploaded',
+          enabled: uploaded.enabled ?? true,
+          category: newCategory || undefined,
+          folderId: newCategory || undefined,
+          createdAt: new Date(),
+          createdBy: user?.id || 'user1',
+        },
+      ]);
+
+      toast.success(`Uploaded: ${title}`);
+      setUploadFile(null);
+      setNewTitle('');
+      setNewCategory('');
+      setIsCreateOpen(false);
+    } catch (error: any) {
+      toast.error(error.message || 'Upload failed');
+      console.error('Announcement upload error:', error);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleGenerateAIScript = async () => {
+    if (!aiTopic.trim()) {
+      toast.error('Please enter a topic');
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const quantity = parseInt(aiQuantity);
+      const result = await announcementsAPI.generateAIText({
+        topic: aiTopic,
+        tone: aiTone as 'professional' | 'friendly' | 'urgent' | 'casual',
+        key_points: aiKeyPoints.trim() || undefined,
+        quantity: quantity,
+      });
+
+      const variations = result.scripts.map((script, index) => ({
+        title: script.title || (quantity > 1 ? `${aiTopic} - Variation ${index + 1}` : aiTopic),
+        text: script.text,
+        selected: true,
+      }));
+
+      setGeneratedScripts(variations);
+      toast.success(`Generated ${variations.length} AI script${variations.length > 1 ? 's' : ''}! Review and create announcements.`);
+    } catch (error: any) {
+      const errorMsg = error?.data?.error || error?.message || 'Failed to generate AI scripts';
+      toast.error(errorMsg);
+      console.error('AI generation error:', error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleCreateBulkAnnouncements = async () => {
+    const selectedScripts = generatedScripts.filter(s => s.selected);
+    
+    if (selectedScripts.length === 0) {
+      toast.error('Please select at least one script to create');
+      return;
+    }
+
+    if (!newCategory) {
+      toast.error('Please select a folder');
+      return;
+    }
+
+    setIsCreating(true);
+    try {
+      // Use batch API for multiple announcements (much faster - single API call with parallel processing)
+      const announcements = await announcementsAPI.createBatchTTSAnnouncements({
+        announcements: selectedScripts.map(s => ({
+          title: s.title,
+          text: s.text,
+        })),
+        voice: selectedVoice,
+        folder_id: newCategory || undefined,
+      });
+
+      // Reload all announcements from backend to get fresh data
+      const allAnnouncements = await announcementsAPI.getAnnouncements();
+      setAudioFiles(allAnnouncements);
+      
+      // Extract scripts from TTS announcements
+      const ttsScripts = allAnnouncements
+        .filter(a => a.type === 'tts')
+        .map(a => ({
+          id: a.id,
+          title: a.title,
+          text: '', // We don't store text in the audio file
+          clientId: a.clientId,
+          enabled: a.enabled,
+          category: a.category,
+          createdAt: a.createdAt,
+          createdBy: a.createdBy,
+        }));
+      setScripts(ttsScripts);
+      
+      // Clear form
+      setGeneratedScripts([]);
+      setAiTopic('');
+      setAiTone('professional');
+      setAiKeyPoints('');
+      setAiQuantity('1');
+      setNewCategory('');
+      setIsCreateOpen(false);
+      
+      toast.success(`Created ${announcements.length} announcement${announcements.length > 1 ? 's' : ''}!`);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create announcements');
+      console.error('Create bulk announcements error:', error);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const toggleScriptSelection = (index: number) => {
+    setGeneratedScripts(prev => prev.map((script, i) => 
+      i === index ? { ...script, selected: !script.selected } : script
+    ));
+  };
+
+  const handleCreateScript = async () => {
+    if (!newTitle.trim() || !newText.trim()) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    setIsCreating(true);
+    try {
+      const announcement = await announcementsAPI.createTTSAnnouncement({
+        title: newTitle,
+        text: newText,
+        voice: selectedVoice,
+        folder_id: newCategory || undefined,
+      });
+
+      const script = {
+        id: announcement.id,
+        title: newTitle,
+        text: newText,
+        clientId: user?.clientId || 'client1',
+        enabled: true,
+        category: newCategory || undefined,
+        createdAt: new Date(),
+        createdBy: user?.id || 'user1',
+      };
+
+      setScripts([...scripts, script]);
+      
+      const audio = {
+        id: announcement.id,
+        title: newTitle,
+        scriptId: script.id,
+        clientId: user?.clientId || 'client1',
+        url: announcement.url,
+        duration: announcement.duration,
+        type: 'tts' as const,
+        enabled: true,
+        category: newCategory || undefined,
+        folderId: newCategory || undefined,
+        createdAt: new Date(),
+        createdBy: user?.id || 'user1',
+      };
+
+      setAudioFiles([...audioFiles, audio]);
+      
+      setNewTitle('');
+      setNewText('');
+      setNewCategory('');
+      setIsCreateOpen(false);
+      toast.success(`Created announcement: ${newTitle}`);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create announcement');
+      console.error('Create announcement error:', error);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleToggleEnabled = async (audioId: string) => {
+    const audio = audioFiles.find(a => a.id === audioId);
+    const newEnabled = !audio?.enabled;
+    
+    try {
+      await announcementsAPI.updateAnnouncement(audioId, { enabled: newEnabled });
+      setAudioFiles(audioFiles.map(a => 
+        a.id === audioId ? { ...a, enabled: newEnabled } : a
+      ));
+      toast.success(`${audio?.enabled ? 'Disabled' : 'Enabled'} ${audio?.title}`);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update announcement');
+      console.error('Toggle enabled error:', error);
+    }
+  };
+
+  const handleRegenerateVoice = async (audioId: string) => {
+    const audio = audioFiles.find(a => a.id === audioId);
+    if (!audio) return;
+    
+    setSelectedAnnouncementForVoice(audioId);
+    setVoiceDialogVoice(selectedVoice);
+    setIsVoiceDialogOpen(true);
+  };
+
+  const handleConfirmVoiceRegeneration = async () => {
+    if (!selectedAnnouncementForVoice) return;
+    
+    setIsRegeneratingVoice(true);
+    try {
+      const updated = await announcementsAPI.regenerateTTS(selectedAnnouncementForVoice, {
+        voice: voiceDialogVoice,
+        provider: 'openai',
+      });
+      
+      // Reload announcements to get updated data
+      const allAnnouncements = await announcementsAPI.getAnnouncements();
+      setAudioFiles(allAnnouncements);
+      
+      toast.success(`Voice updated successfully! Duration: ${formatDuration(updated.duration)}`);
+      setIsVoiceDialogOpen(false);
+      setSelectedAnnouncementForVoice(null);
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to regenerate voice');
+      console.error('Voice regeneration error:', error);
+    } finally {
+      setIsRegeneratingVoice(false);
+    }
+  };
+
+  const handleRecalculateDuration = async (audioId: string) => {
+    try {
+      toast.info('Recalculating duration...');
+      const updated = await announcementsAPI.recalculateDuration(audioId);
+      
+      // Reload announcements to get updated data
+      const allAnnouncements = await announcementsAPI.getAnnouncements();
+      setAudioFiles(allAnnouncements);
+      
+      toast.success(`Duration updated: ${formatDuration(updated.duration)}`);
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to recalculate duration');
+      console.error('Duration recalculation error:', error);
+    }
+  };
+
+  const handleDelete = async (audioId: string) => {
+    const audio = audioFiles.find(a => a.id === audioId);
+    
+    try {
+      await announcementsAPI.deleteAnnouncement(audioId);
+      setAudioFiles(audioFiles.filter(a => a.id !== audioId));
+      if (audio?.scriptId) {
+        setScripts(scripts.filter(s => s.id !== audio.scriptId));
+      }
+      toast.success(`Deleted ${audio?.title}`);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete announcement');
+      console.error('Delete error:', error);
+    }
+  };
+
+  const handlePlay = async (audioId: string) => {
+    const audio = audioFiles.find(a => a.id === audioId);
+    if (!audio) {
+      toast.error('Announcement not found');
+      return;
+    }
+
+    // If no URL, try to reload the announcement from backend
+    if (!audio.url || audio.url === '#' || audio.url === '') {
+      try {
+        toast.info('Loading audio file...');
+        const announcements = await announcementsAPI.getAnnouncements();
+        const updatedAudio = announcements.find(a => a.id === audioId);
+        
+        if (updatedAudio && (updatedAudio.file_url || updatedAudio.url || updatedAudio.file)) {
+          // Update the audio file in the list
+          setAudioFiles(prev => prev.map(a => 
+            a.id === audioId 
+              ? { ...a, url: updatedAudio.file_url || updatedAudio.url || updatedAudio.file }
+              : a
+          ));
+          
+          // Retry playing with updated URL
+          const audioUrl = updatedAudio.file_url || updatedAudio.url || updatedAudio.file;
+          if (!audioUrl || audioUrl === '#' || audioUrl === '') {
+            toast.error('Audio file is not ready yet. Please wait a moment and try again.');
+            return;
+          }
+          
+          // Ensure URL is absolute
+          const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${window.location.origin}${audioUrl}`;
+          
+          const audioElement = new Audio(fullUrl);
+          audioRef.current = audioElement;
+          setPlayingAudio(audioId);
+          
+          try {
+            await audioElement.play();
+            toast.success(`Playing ${audio.title}`);
+            
+            audioElement.addEventListener('ended', () => {
+              setPlayingAudio(null);
+              audioRef.current = null;
+            });
+            
+            audioElement.addEventListener('error', (e) => {
+              console.error('Audio playback error:', e, 'URL:', fullUrl);
+              toast.error('Failed to play audio. The file may be missing or corrupted.');
+              setPlayingAudio(null);
+              audioRef.current = null;
+            });
+          } catch (playError) {
+            console.error('Playback error:', playError, 'URL:', fullUrl);
+            toast.error('Failed to play audio. Please try again.');
+            setPlayingAudio(null);
+            audioRef.current = null;
+          }
+        } else {
+          toast.error('This announcement has no audio file yet. TTS generation may still be in progress. Please wait a moment and try again.');
+        }
+      } catch (error) {
+        console.error('Error loading announcement:', error);
+        toast.error('Failed to load announcement. Please try again.');
+      }
+      return;
+    }
+
+    // Stop any currently playing audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    
+    if (playingAudio === audioId) {
+      // Stop playback
+      setPlayingAudio(null);
+      toast.info('Playback stopped');
+    } else {
+      // Ensure URL is absolute
+      const audioUrl = audio.url.startsWith('http') ? audio.url : `${window.location.origin}${audio.url}`;
+      
+      // Create new audio element
+      const audioElement = new Audio(audioUrl);
+      audioRef.current = audioElement;
+      
+      // Play new audio
+      setPlayingAudio(audioId);
+      try {
+        await audioElement.play();
+        toast.success(`Playing ${audio.title}`);
+        
+        // Handle end of playback
+        audioElement.addEventListener('ended', () => {
+          setPlayingAudio(null);
+          audioRef.current = null;
+        });
+        
+        // Handle errors
+        audioElement.addEventListener('error', (e) => {
+          console.error('Audio playback error:', e, 'URL:', audioUrl);
+          toast.error('Failed to play audio. The file may be missing or corrupted.');
+          setPlayingAudio(null);
+          audioRef.current = null;
+        });
+      } catch (error: any) {
+        console.error('Playback error:', error, 'URL:', audioUrl);
+        toast.error('Failed to play audio. Please try again.');
+        setPlayingAudio(null);
+        audioRef.current = null;
+      }
+    }
+  };
+
+  const handleInstantAnnouncement = async () => {
+    if (selectedDevices.length === 0) {
+      toast.error('Please select at least one device');
+      return;
+    }
+
+    if (!selectedAnnouncementForInstant) {
+      toast.error('Please select an announcement');
+      return;
+    }
+
+    setIsSending(true);
+    try {
+      await announcementsAPI.playInstantAnnouncement(selectedAnnouncementForInstant, selectedDevices);
+
+      const deviceNames = selectedDevices.map(id => 
+        devices.find(d => d.id === id)?.name
+      ).join(', ');
+
+      const announcement = audioFiles.find(a => a.id === selectedAnnouncementForInstant);
+      toast.success(`Playing "${announcement?.title}" on: ${deviceNames}`);
+      setIsInstantOpen(false);
+      setSelectedDevices([]);
+      setSelectedAnnouncementForInstant('');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to send announcement');
+      console.error('Instant announcement error:', error);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleOpenFolderSettings = (folderId: string) => {
+    setSelectedFolderForSettings(folderId);
+    
+    // Load existing settings or create defaults
+    if (!folderSettings[folderId]) {
+      const folderAnnouncements = audioFiles.filter(a => a.category === folderId || a.folderId === folderId);
+      setFolderSettings({
+        ...folderSettings,
+        [folderId]: {
+          intervalMinutes: 30,
+          intervalSeconds: 0,
+          enabled: false,
+          playlistMode: 'sequential',
+          selectedAnnouncements: folderAnnouncements.map(a => a.id),
+          preventOverlap: true,
+        }
+      });
+    }
+    
+    setIsFolderSettingsOpen(true);
+  };
+
+  const handleSaveFolderSettings = async () => {
+    if (!selectedFolderForSettings) return;
+
+    const settings = folderSettings[selectedFolderForSettings];
+    const folder = folders.find(f => f.id === selectedFolderForSettings);
+    
+    try {
+      // TODO: Save to backend
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      toast.success(`Saved settings for "${folder?.name}"`);
+      setIsFolderSettingsOpen(false);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to save folder settings');
+    }
+  };
+
+  const toggleAnnouncementInPlaylist = (folderId: string, announcementId: string) => {
+    const settings = folderSettings[folderId] || {
+      intervalMinutes: 30,
+      intervalSeconds: 0,
+      enabled: false,
+      playlistMode: 'sequential',
+      selectedAnnouncements: [],
+      preventOverlap: true,
+    };
+
+    const isSelected = settings.selectedAnnouncements.includes(announcementId);
+    const newSelected = isSelected
+      ? settings.selectedAnnouncements.filter(id => id !== announcementId)
+      : [...settings.selectedAnnouncements, announcementId];
+
+    setFolderSettings({
+      ...folderSettings,
+      [folderId]: {
+        ...settings,
+        selectedAnnouncements: newSelected,
+      }
+    });
+  };
+
+  const currentFolderSettings = selectedFolderForSettings 
+    ? folderSettings[selectedFolderForSettings] 
+    : null;
+
+  const folderAnnouncementsForSettings = selectedFolderForSettings
+    ? audioFiles.filter(a => a.category === selectedFolderForSettings || a.folderId === selectedFolderForSettings)
+    : [];
+
+  return (
+    <div className="space-y-6 pb-24 md:pb-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold">Announcements Studio</h2>
+          <p className="text-slate-600">Manage announcement folders, playlists, and scheduling intervals</p>
+        </div>
+        <div className="flex gap-3 flex-wrap">
+          <Dialog open={isInstantOpen} onOpenChange={setIsInstantOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Volume2 className="h-4 w-4 mr-2" />
+                <span className="hidden sm:inline">Instant Play</span>
+                <span className="sm:hidden">Play</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Play Instant Announcement</DialogTitle>
+                <DialogDescription>
+                  Trigger an announcement to play immediately on selected devices (ducks music automatically)
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Select Announcement</Label>
+                  <Select value={selectedAnnouncementForInstant} onValueChange={setSelectedAnnouncementForInstant}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose announcement" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {audioFiles.filter(a => a.enabled).map(audio => (
+                        <SelectItem key={audio.id} value={audio.id}>
+                          {audio.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Select Devices</Label>
+                  <div className="space-y-2 max-h-40 overflow-y-auto border rounded-lg p-3">
+                    {availableDevices.map(device => (
+                      <label key={device.id} className="flex items-center gap-2 cursor-pointer min-h-[44px]">
+                        <input
+                          type="checkbox"
+                          checked={selectedDevices.includes(device.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedDevices([...selectedDevices, device.id]);
+                            } else {
+                              setSelectedDevices(selectedDevices.filter(id => id !== device.id));
+                            }
+                          }}
+                          className="rounded"
+                        />
+                        <span>{device.name}</span>
+                        <Badge variant={device.status === 'online' ? 'default' : 'secondary'} className="ml-auto">
+                          {device.status}
+                        </Badge>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <Button onClick={handleInstantAnnouncement} className="w-full" disabled={isSending}>
+                  <Volume2 className="h-4 w-4 mr-2" />
+                  {isSending ? 'Sending...' : 'Send Now'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Create
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Create Announcement</DialogTitle>
+                <DialogDescription>Create announcements with text-to-speech, upload, or record</DialogDescription>
+              </DialogHeader>
+              <Tabs defaultValue="script" className="w-full">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="script">
+                    <FileText className="h-4 w-4 mr-0 sm:mr-2" />
+                    <span className="hidden sm:inline">Script</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="ai">
+                    <Sparkles className="h-4 w-4 mr-0 sm:mr-2" />
+                    <span className="hidden sm:inline">AI</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="upload">
+                    <Upload className="h-4 w-4 mr-0 sm:mr-2" />
+                    <span className="hidden sm:inline">Upload</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="record">
+                    <Mic className="h-4 w-4 mr-0 sm:mr-2" />
+                    <span className="hidden sm:inline">Record</span>
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="script" className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Title</Label>
+                    <Input
+                      placeholder="Announcement title"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Script Text</Label>
+                    <Textarea
+                      placeholder="Enter the announcement text here..."
+                      value={newText}
+                      onChange={(e) => setNewText(e.target.value)}
+                      rows={6}
+                    />
+                    <p className="text-sm text-slate-500">
+                      Approx. {Math.ceil(newText.length / 10)} seconds when spoken
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Voice</Label>
+                    <Select value={selectedVoice} onValueChange={setSelectedVoice}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ttsVoices.map(voice => (
+                          <SelectItem key={voice.id} value={voice.id}>
+                            {voice.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          if (previewingVoice === selectedVoice && previewAudio) {
+                            previewAudio.pause();
+                            setPreviewingVoice(null);
+                            setPreviewAudio(null);
+                            return;
+                          }
+                          
+                          setPreviewingVoice(selectedVoice);
+                          try {
+                            const preview = await announcementsAPI.previewVoice({
+                              text: newText.trim() || 'Hello, this is a voice preview. How does this sound?',
+                              voice: selectedVoice,
+                            });
+                            
+                            const audio = new Audio(preview.preview_url);
+                            setPreviewAudio(audio);
+                            await audio.play();
+                            
+                            audio.addEventListener('ended', () => {
+                              setPreviewingVoice(null);
+                              setPreviewAudio(null);
+                            });
+                            
+                            audio.addEventListener('error', () => {
+                              toast.error('Failed to play voice preview');
+                              setPreviewingVoice(null);
+                              setPreviewAudio(null);
+                            });
+                          } catch (error: any) {
+                            toast.error(error.message || 'Failed to preview voice');
+                            setPreviewingVoice(null);
+                          }
+                        }}
+                        disabled={previewingVoice === selectedVoice}
+                      >
+                        {previewingVoice === selectedVoice ? (
+                          <>
+                            <Pause className="h-3 w-3 mr-1" />
+                            Stop Preview
+                          </>
+                        ) : (
+                          <>
+                            <Play className="h-3 w-3 mr-1" />
+                            Preview Voice
+                          </>
+                        )}
+                      </Button>
+                      <p className="text-xs text-slate-500">Test the voice before creating</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Folder</Label>
+                    <Select value={newCategory} onValueChange={setNewCategory}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select folder..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {filteredFolders.map(folder => (
+                          <SelectItem key={folder.id} value={folder.id}>
+                            {folder.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button onClick={handleCreateScript} className="w-full" disabled={isCreating}>
+                    {isCreating ? 'Creating...' : 'Create Announcement'}
+                  </Button>
+                </TabsContent>
+
+                <TabsContent value="ai" className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Topic / Prompt</Label>
+                    <Input
+                      placeholder="e.g., Store closing early today at 5pm"
+                      value={aiTopic}
+                      onChange={(e) => setAiTopic(e.target.value)}
+                    />
+                    <p className="text-xs text-slate-500">What should the announcement be about?</p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Tone</Label>
+                    <Select value={aiTone} onValueChange={setAiTone}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="professional">Professional</SelectItem>
+                        <SelectItem value="friendly">Friendly</SelectItem>
+                        <SelectItem value="urgent">Urgent</SelectItem>
+                        <SelectItem value="casual">Casual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Quantity</Label>
+                    <Select value={aiQuantity} onValueChange={setAiQuantity}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1 script</SelectItem>
+                        <SelectItem value="5">5 scripts</SelectItem>
+                        <SelectItem value="10">10 scripts</SelectItem>
+                        <SelectItem value="20">20 scripts</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Key Points (Optional)</Label>
+                    <Textarea
+                      placeholder="Enter key points, one per line..."
+                      value={aiKeyPoints}
+                      onChange={(e) => setAiKeyPoints(e.target.value)}
+                      rows={4}
+                    />
+                    <p className="text-xs text-slate-500">Add specific details to include in the announcement</p>
+                  </div>
+
+                  <Button 
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleGenerateAIScript();
+                    }} 
+                    className="w-full" 
+                    disabled={isGenerating}
+                  >
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    {isGenerating ? 'Generating...' : `Generate ${aiQuantity} AI Script${parseInt(aiQuantity) > 1 ? 's' : ''}`}
+                  </Button>
+                  <p className="text-xs text-slate-500 text-center">
+                    AI generation uses OpenAI API key configured on the server
+                  </p>
+
+                  {generatedScripts.length > 0 && (
+                    <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
+                      <div className="flex items-start justify-between">
+                        <Label className="text-blue-900">Generated Scripts ({generatedScripts.filter(s => s.selected).length} selected)</Label>
+                        <Badge variant="default" className="bg-blue-600">
+                          <Sparkles className="h-3 w-3 mr-1" />
+                          AI Generated
+                        </Badge>
+                      </div>
+                      
+                      <div className="max-h-96 overflow-y-auto space-y-2">
+                        {generatedScripts.map((script, index) => (
+                          <div 
+                            key={index} 
+                            className={`p-3 rounded-lg border-2 transition-all ${
+                              script.selected 
+                                ? 'bg-white border-blue-400' 
+                                : 'bg-slate-50 border-slate-200'
+                            }`}
+                          >
+                            <label className="flex items-start gap-3 cursor-pointer min-h-[44px]">
+                              <input
+                                type="checkbox"
+                                checked={script.selected}
+                                onChange={() => toggleScriptSelection(index)}
+                                className="mt-1 rounded"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm mb-1">{script.title}</p>
+                                <p className="text-sm text-slate-600 line-clamp-2">{script.text}</p>
+                              </div>
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Voice</Label>
+                        <Select value={selectedVoice} onValueChange={setSelectedVoice}>
+                          <SelectTrigger className="bg-white">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ttsVoices.map(voice => (
+                              <SelectItem key={voice.id} value={voice.id}>
+                                {voice.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              if (previewingVoice === selectedVoice && previewAudio) {
+                                previewAudio.pause();
+                                setPreviewingVoice(null);
+                                setPreviewAudio(null);
+                                return;
+                              }
+                              
+                              setPreviewingVoice(selectedVoice);
+                              try {
+                                const previewText = generatedScripts.length > 0 
+                                  ? generatedScripts[0].text.substring(0, 100) 
+                                  : 'Hello, this is a voice preview. How does this sound?';
+                                
+                                const preview = await announcementsAPI.previewVoice({
+                                  text: previewText,
+                                  voice: selectedVoice,
+                                });
+                                
+                                const audio = new Audio(preview.preview_url);
+                                setPreviewAudio(audio);
+                                await audio.play();
+                                
+                                audio.addEventListener('ended', () => {
+                                  setPreviewingVoice(null);
+                                  setPreviewAudio(null);
+                                });
+                                
+                                audio.addEventListener('error', () => {
+                                  toast.error('Failed to play voice preview');
+                                  setPreviewingVoice(null);
+                                  setPreviewAudio(null);
+                                });
+                              } catch (error: any) {
+                                toast.error(error.message || 'Failed to preview voice');
+                                setPreviewingVoice(null);
+                              }
+                            }}
+                            disabled={previewingVoice === selectedVoice}
+                          >
+                            {previewingVoice === selectedVoice ? (
+                              <>
+                                <Pause className="h-3 w-3 mr-1" />
+                                Stop Preview
+                              </>
+                            ) : (
+                              <>
+                                <Play className="h-3 w-3 mr-1" />
+                                Preview Voice
+                              </>
+                            )}
+                          </Button>
+                          <p className="text-xs text-slate-500">Test before creating</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Folder</Label>
+                        <Select value={newCategory} onValueChange={setNewCategory}>
+                          <SelectTrigger className="bg-white">
+                            <SelectValue placeholder="Select folder..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {filteredFolders.map(folder => (
+                              <SelectItem key={folder.id} value={folder.id}>
+                                {folder.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <Button onClick={handleCreateBulkAnnouncements} className="w-full" disabled={isCreating}>
+                        {isCreating ? 'Creating...' : `Create ${generatedScripts.filter(s => s.selected).length} Announcement${generatedScripts.filter(s => s.selected).length > 1 ? 's' : ''}`}
+                      </Button>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="upload" className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Title</Label>
+                    <Input
+                      placeholder="Announcement title"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Upload Audio File</Label>
+                    <input
+                      id={uploadInputId}
+                      type="file"
+                      accept="audio/mp3,audio/wav,audio/m4a,audio/mpeg"
+                      className="sr-only"
+                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                    />
+                    <div className="flex items-center gap-3">
+                      <Button type="button" variant="outline" asChild>
+                        <label htmlFor={uploadInputId} className="cursor-pointer">
+                          Choose file
+                        </label>
+                      </Button>
+                      <span className="text-sm text-slate-600 truncate">
+                        {uploadFile ? uploadFile.name : 'No file selected'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">Supported formats: MP3, WAV, M4A (max 10MB)</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Folder</Label>
+                    <Select value={newCategory} onValueChange={setNewCategory}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select folder..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {filteredFolders.map(folder => (
+                          <SelectItem key={folder.id} value={folder.id}>
+                            {folder.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button className="w-full" disabled={isUploading || !uploadFile} onClick={handleUploadAnnouncement}>
+                    {isUploading ? 'Uploading...' : 'Upload'}
+                  </Button>
+                </TabsContent>
+
+                <TabsContent value="record" className="space-y-4">
+                  <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-lg">
+                    <Mic className="h-12 w-12 mx-auto text-slate-400 mb-4" />
+                    <p className="text-slate-500 mb-4">Click to start recording</p>
+                    <Button variant="outline" size="lg" className="rounded-full">
+                      <Mic className="h-5 w-5 mr-2" />
+                      Start Recording
+                    </Button>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      {/* Ready-Made Templates Gallery */}
+      <AnnouncementTemplatesGallery
+        onAnnouncementsCreated={async () => {
+          // Reload announcements after templates are created
+          try {
+            const announcements = await announcementsAPI.getAnnouncements();
+            setAudioFiles(announcements.map(a => ({
+              id: a.id,
+              title: a.title,
+              scriptId: a.id,
+              clientId: user?.clientId || 'client1',
+              url: a.url || '',
+              duration: a.duration || 0,
+              type: a.type || 'tts',
+              enabled: a.enabled ?? true,
+              category: a.folderId || undefined,
+              folderId: a.folderId || undefined,
+              createdAt: a.createdAt || new Date(),
+              createdBy: user?.id || 'user1',
+            })));
+          } catch (error) {
+            console.error('Failed to reload announcements:', error);
+          }
+        }}
+        onUseTemplate={async (template) => {
+          // Automatically create TTS announcement from template with appropriate voice
+          try {
+            setIsCreating(true);
+            toast.info(`Creating announcement: ${template.title}...`);
+            
+            // Map template voice type to actual TTS voice IDs
+            const voices = await announcementsAPI.getTTSVoices();
+            let selectedVoice = 'alloy'; // Default
+            
+            // Map voice types to OpenAI voices
+            const voiceTypeMap: Record<string, string[]> = {
+              'friendly': ['nova', 'shimmer', 'alloy'],
+              'energetic': ['echo', 'alloy'],
+              'professional': ['alloy', 'echo'],
+              'calm': ['shimmer', 'nova'],
+              'casual': ['nova', 'alloy'],
+              'urgent': ['echo', 'alloy'],
+            };
+            
+            const preferredVoices = voiceTypeMap[template.voiceType] || ['alloy'];
+            for (const preferred of preferredVoices) {
+              const found = voices.find(v => v.id.toLowerCase() === preferred.toLowerCase());
+              if (found) {
+                selectedVoice = found.id;
+                break;
+              }
+            }
+            
+            // Create TTS announcement - backend will generate audio synchronously
+            const announcement = await announcementsAPI.createTTSAnnouncement({
+              title: template.title,
+              text: template.script,
+              voice: selectedVoice,
+              folder_id: newCategory || undefined,
+            });
+            
+            // Poll for audio file to be ready (backend generates synchronously, but give it a moment)
+            let attempts = 0;
+            let audioReady = false;
+            while (attempts < 10 && !audioReady) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+              const updated = await announcementsAPI.getAnnouncements();
+              const createdAnnouncement = updated.find(a => a.id === announcement.id);
+              
+              if (createdAnnouncement && (createdAnnouncement.file_url || createdAnnouncement.url)) {
+                audioReady = true;
+                // Reload all announcements
+                const allAnnouncements = await announcementsAPI.getAnnouncements();
+                const updatedAudioFiles = allAnnouncements.map(a => ({
+                  id: a.id,
+                  title: a.title,
+                  scriptId: a.id,
+                  clientId: user?.clientId || 'client1',
+                  url: a.file_url || a.url || a.file || '',
+                  duration: a.duration || 0,
+                  type: a.type || 'tts',
+                  enabled: a.enabled ?? true,
+                  category: a.folder_id || undefined,
+                  folderId: a.folder_id || undefined,
+                  createdAt: new Date(a.created_at || Date.now()),
+                  createdBy: user?.id || 'user1',
+                }));
+                
+                setAudioFiles(updatedAudioFiles);
+                toast.success(`Announcement "${template.title}" created with audio! You can play it now.`);
+                break;
+              }
+              attempts++;
+            }
+            
+            if (!audioReady) {
+              // Still reload even if audio isn't ready yet
+              const allAnnouncements = await announcementsAPI.getAnnouncements();
+              const updatedAudioFiles = allAnnouncements.map(a => ({
+                id: a.id,
+                title: a.title,
+                scriptId: a.id,
+                clientId: user?.clientId || 'client1',
+                url: a.file_url || a.url || a.file || '',
+                duration: a.duration || 0,
+                type: a.type || 'tts',
+                enabled: a.enabled ?? true,
+                category: a.folder_id || undefined,
+                folderId: a.folder_id || undefined,
+                createdAt: new Date(a.created_at || Date.now()),
+                createdBy: user?.id || 'user1',
+              }));
+              
+              setAudioFiles(updatedAudioFiles);
+              toast.warning(`Announcement "${template.title}" created. Audio may still be generating...`);
+            }
+          } catch (error: any) {
+            console.error('Failed to create announcement from template:', error);
+            toast.error(error?.message || 'Failed to create announcement. Please try again.');
+            // Fallback: open dialog with template filled in
+            setNewTitle(template.title);
+            setNewText(template.script);
+            setIsCreateOpen(true);
+          } finally {
+            setIsCreating(false);
+          }
+        }}
+      />
+
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+        {/* Folders Sidebar */}
+        <Card className="xl:col-span-1">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Folders</CardTitle>
+              <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    <FolderPlus className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create Folder</DialogTitle>
+                    <DialogDescription>Organize your announcements with folder-level playlist settings</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <Input
+                      placeholder="Folder name"
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                    />
+                    <Button onClick={handleCreateFolder} className="w-full" disabled={isCreatingFolder}>
+                      {isCreatingFolder ? 'Creating...' : 'Create Folder'}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </CardHeader>
+          <CardContent className="overflow-x-auto md:overflow-x-visible">
+            <div className="flex md:flex-col gap-2 md:space-y-2 md:gap-0 min-w-max md:min-w-0">
+              <button
+                onClick={() => setSelectedFolder(null)}
+                className={`flex-shrink-0 md:w-full flex items-center gap-3 p-3 rounded-lg transition-colors min-h-[44px] ${
+                  selectedFolder === null ? 'bg-blue-100 text-blue-600' : 'hover:bg-slate-100'
+                }`}
+              >
+                <Folder className="h-5 w-5 shrink-0" />
+                <div className="flex-1 text-left min-w-0">
+                  <div className="text-sm font-medium">All</div>
+                  <div className="text-sm font-medium">Announcements</div>
+                </div>
+                <Badge variant="secondary" className="shrink-0">{audioFiles.length}</Badge>
+              </button>
+              {filteredFolders.map((folder) => {
+                const stats = getFolderStats(folder.id);
+                const settings = folderSettings[folder.id];
+                return (
+                  <div key={folder.id} className="flex-shrink-0 md:w-full">
+                    <div
+                      className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors min-h-[44px] cursor-pointer ${
+                        selectedFolder === folder.id ? 'bg-blue-100 text-blue-600' : 'hover:bg-slate-100'
+                      }`}
+                    >
+                      <div 
+                        onClick={() => setSelectedFolder(folder.id)}
+                        className="flex items-center gap-3 flex-1 min-w-0"
+                      >
+                        <Folder className="h-5 w-5 shrink-0" />
+                        <div className="flex-1 text-left min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="whitespace-nowrap">{folder.name}</span>
+                            {settings?.enabled && (
+                              <Badge variant="default" className="shrink-0">
+                                <Clock className="h-3 w-3 mr-1" />
+                                Active
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 truncate">
+                            {stats.enabled}/{stats.total} enabled
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenFolderSettings(folder.id);
+                        }}
+                        className="shrink-0"
+                      >
+                        <Settings className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Announcements List */}
+        <div className="xl:col-span-3 space-y-4">
+          {/* Toolbar */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search announcements..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Select value={filterEnabled} onValueChange={(v: any) => setFilterEnabled(v)}>
+                    <SelectTrigger className="w-[130px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="enabled">Enabled</SelectItem>
+                      <SelectItem value="disabled">Disabled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="flex border rounded-lg overflow-hidden">
+                    <Button
+                      variant={viewMode === 'list' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className="rounded-none"
+                    >
+                      <List className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className="rounded-none"
+                    >
+                      <Grid className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Announcements */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>
+                    {selectedFolder ? folders.find(f => f.id === selectedFolder)?.name : 'All Announcements'}
+                  </CardTitle>
+                  <CardDescription>
+                    {searchedAudio.length} announcement{searchedAudio.length !== 1 ? 's' : ''} 
+                    {filterEnabled !== 'all' && ` (${filterEnabled})`}
+                  </CardDescription>
+                </div>
+                {selectedFolder && (
+                  <Button variant="outline" size="sm" onClick={() => handleOpenFolderSettings(selectedFolder)}>
+                    <Settings className="h-4 w-4 mr-2" />
+                    Folder Settings
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {viewMode === 'list' ? (
+                <div className="space-y-3">
+                  {searchedAudio.map((audio) => {
+                    const script = scripts.find(s => s.id === audio.scriptId);
+                    return (
+                      <div
+                        key={audio.id}
+                        className="flex flex-col md:flex-row items-start md:items-center gap-4 p-4 bg-slate-50 rounded-lg"
+                      >
+                        <ImageUpload
+                          currentImage={announcementIcons[audio.id] || undefined}
+                          onImageChange={(url) => setAnnouncementIcons({ ...announcementIcons, [audio.id]: url })}
+                          variant="icon"
+                        />
+
+                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between flex-1 gap-4 w-full">
+                          <div className="flex items-start md:items-center gap-4 flex-1 min-w-0 w-full md:w-auto">
+                            <Button
+                              size="sm"
+                              variant={playingAudio === audio.id ? 'default' : 'outline'}
+                              onClick={() => handlePlay(audio.id)}
+                              className="shrink-0"
+                            >
+                              {playingAudio === audio.id ? (
+                                <Pause className="h-4 w-4" />
+                              ) : (
+                                <Play className="h-4 w-4" />
+                              )}
+                            </Button>
+                            <Radio className="h-5 w-5 text-slate-400 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-medium">{audio.title}</p>
+                                {audio.category && (
+                                  <Badge variant="outline" className="shrink-0">
+                                    {folders.find(f => f.id === audio.category)?.name || audio.category}
+                                  </Badge>
+                                )}
+                                <Badge variant={audio.type === 'tts' ? 'secondary' : 'default'} className="shrink-0">
+                                  {audio.type.toUpperCase()}
+                                </Badge>
+                              </div>
+                              {script && (
+                                <p className="text-sm text-slate-500 mt-1 line-clamp-1">{script.text}</p>
+                              )}
+                              <p className="text-sm text-slate-500 mt-1">
+                                Duration: {formatDuration(audio.duration)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <Label htmlFor={`enabled-${audio.id}`} className="text-sm">
+                                Enabled
+                              </Label>
+                              <Switch
+                                id={`enabled-${audio.id}`}
+                                checked={audio.enabled}
+                                onCheckedChange={() => handleToggleEnabled(audio.id)}
+                              />
+                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {audio.type === 'tts' && (!audio.url || audio.url === '' || audio.duration === 0) && (
+                                  <>
+                                    <DropdownMenuItem onClick={() => handleRegenerateVoice(audio.id)}>
+                                      <Volume2 className="h-4 w-4 mr-2" />
+                                      {!audio.url || audio.url === '' ? 'Add Voice' : 'Change Voice'}
+                                    </DropdownMenuItem>
+                                    {audio.url && audio.url !== '' && audio.duration === 0 && (
+                                      <DropdownMenuItem onClick={() => handleRecalculateDuration(audio.id)}>
+                                        <Clock className="h-4 w-4 mr-2" />
+                                        Recalculate Duration
+                                      </DropdownMenuItem>
+                                    )}
+                                  </>
+                                )}
+                                {audio.type === 'uploaded' && audio.duration === 0 && (
+                                  <DropdownMenuItem onClick={() => handleRecalculateDuration(audio.id)}>
+                                    <Clock className="h-4 w-4 mr-2" />
+                                    Recalculate Duration
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem onClick={() => handleDelete(audio.id)} className="text-red-600">
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {searchedAudio.length === 0 && (
+                    <div className="text-center py-12 text-slate-500">
+                      {searchQuery ? 'No announcements found matching your search' : 'No announcements in this folder'}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {searchedAudio.map((audio) => {
+                    const script = scripts.find(s => s.id === audio.scriptId);
+                    return (
+                      <Card key={audio.id} className="overflow-hidden">
+                        <div className="aspect-square bg-gradient-to-br from-blue-100 to-purple-100 relative">
+                          <ImageUpload
+                            currentImage={announcementIcons[audio.id] || undefined}
+                            onImageChange={(url) => setAnnouncementIcons({ ...announcementIcons, [audio.id]: url })}
+                            variant="icon"
+                          />
+                          <Button
+                            size="sm"
+                            variant={playingAudio === audio.id ? 'default' : 'outline'}
+                            onClick={() => handlePlay(audio.id)}
+                            className="absolute bottom-2 right-2"
+                          >
+                            {playingAudio === audio.id ? (
+                              <Pause className="h-4 w-4" />
+                            ) : (
+                              <Play className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                        <CardContent className="p-4">
+                          <div className="space-y-2">
+                            <p className="font-medium truncate">{audio.title}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge variant={audio.type === 'tts' ? 'secondary' : 'default'} className="shrink-0">
+                                {audio.type.toUpperCase()}
+                              </Badge>
+                              <Badge variant="outline" className="shrink-0">
+                                {formatDuration(audio.duration)}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center justify-between pt-2">
+                              <Switch
+                                checked={audio.enabled}
+                                onCheckedChange={() => handleToggleEnabled(audio.id)}
+                              />
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="sm">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  {audio.type === 'tts' && (!audio.url || audio.url === '' || audio.duration === 0) && (
+                                    <>
+                                      <DropdownMenuItem onClick={() => handleRegenerateVoice(audio.id)}>
+                                        <Volume2 className="h-4 w-4 mr-2" />
+                                        {!audio.url || audio.url === '' ? 'Add Voice' : 'Change Voice'}
+                                      </DropdownMenuItem>
+                                      {audio.url && audio.url !== '' && audio.duration === 0 && (
+                                        <DropdownMenuItem onClick={() => handleRecalculateDuration(audio.id)}>
+                                          <Clock className="h-4 w-4 mr-2" />
+                                          Recalculate Duration
+                                        </DropdownMenuItem>
+                                      )}
+                                    </>
+                                  )}
+                                  {audio.type === 'uploaded' && audio.duration === 0 && (
+                                    <DropdownMenuItem onClick={() => handleRecalculateDuration(audio.id)}>
+                                      <Clock className="h-4 w-4 mr-2" />
+                                      Recalculate Duration
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem onClick={() => handleDelete(audio.id)} className="text-red-600">
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                  {searchedAudio.length === 0 && (
+                    <div className="col-span-full text-center py-12 text-slate-500">
+                      {searchQuery ? 'No announcements found matching your search' : 'No announcements in this folder'}
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Folder Settings Dialog */}
+      <Dialog open={isFolderSettingsOpen} onOpenChange={setIsFolderSettingsOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Folder Settings: {selectedFolderForSettings && folders.find(f => f.id === selectedFolderForSettings)?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Configure playlist intervals and playback order. Announcements will automatically duck music.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {currentFolderSettings && (
+            <div className="space-y-6">
+              {/* Enable/Disable */}
+              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
+                <div>
+                  <Label className="text-base">Enable Automatic Playlist</Label>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Play announcements from this folder on a schedule
+                  </p>
+                </div>
+                <Switch
+                  checked={currentFolderSettings.enabled}
+                  onCheckedChange={(checked) => {
+                    if (selectedFolderForSettings) {
+                      setFolderSettings({
+                        ...folderSettings,
+                        [selectedFolderForSettings]: {
+                          ...currentFolderSettings,
+                          enabled: checked,
+                        }
+                      });
+                    }
+                  }}
+                />
+              </div>
+
+              {currentFolderSettings.enabled && (
+                <>
+                  {/* Interval */}
+                  <div className="space-y-3">
+                    <Label className="text-base">Playback Interval</Label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 space-y-1">
+                        <Label className="text-xs">Minutes</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="1440"
+                          value={currentFolderSettings.intervalMinutes}
+                          onChange={(e) => {
+                            if (selectedFolderForSettings) {
+                              setFolderSettings({
+                                ...folderSettings,
+                                [selectedFolderForSettings]: {
+                                  ...currentFolderSettings,
+                                  intervalMinutes: Math.max(0, parseInt(e.target.value) || 0),
+                                }
+                              });
+                            }
+                          }}
+                          className="w-full"
+                        />
+                      </div>
+                      <span className="text-2xl font-bold pt-4">:</span>
+                      <div className="flex-1 space-y-1">
+                        <Label className="text-xs">Seconds</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="59"
+                          value={currentFolderSettings.intervalSeconds}
+                          onChange={(e) => {
+                            if (selectedFolderForSettings) {
+                              setFolderSettings({
+                                ...folderSettings,
+                                [selectedFolderForSettings]: {
+                                  ...currentFolderSettings,
+                                  intervalSeconds: Math.max(0, Math.min(59, parseInt(e.target.value) || 0)),
+                                }
+                              });
+                            }
+                          }}
+                          className="w-full"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Total interval: {currentFolderSettings.intervalMinutes * 60 + currentFolderSettings.intervalSeconds} seconds between announcements
+                    </p>
+                  </div>
+
+                  {/* Playlist Mode */}
+                  <div className="space-y-3">
+                    <Label className="text-base">Playlist Mode</Label>
+                    <Select
+                      value={currentFolderSettings.playlistMode}
+                      onValueChange={(value: any) => {
+                        if (selectedFolderForSettings) {
+                          setFolderSettings({
+                            ...folderSettings,
+                            [selectedFolderForSettings]: {
+                              ...currentFolderSettings,
+                              playlistMode: value,
+                            }
+                          });
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="sequential">Sequential (Play in order)</SelectItem>
+                        <SelectItem value="random">Random (Shuffle)</SelectItem>
+                        <SelectItem value="single">Single (Rotate one at a time)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Prevent Overlap */}
+                  <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div>
+                      <Label className="text-base">Prevent Overlap</Label>
+                      <p className="text-sm text-blue-700 mt-1">
+                        Never play announcements over each other (recommended)
+                      </p>
+                    </div>
+                    <Switch
+                      checked={currentFolderSettings.preventOverlap}
+                      onCheckedChange={(checked) => {
+                        if (selectedFolderForSettings) {
+                          setFolderSettings({
+                            ...folderSettings,
+                            [selectedFolderForSettings]: {
+                              ...currentFolderSettings,
+                              preventOverlap: checked,
+                            }
+                          });
+                        }
+                      }}
+                    />
+                  </div>
+
+                  {/* Announcement Selection */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-base">Select Announcements for Playlist</Label>
+                      <Badge variant="secondary">
+                        {currentFolderSettings.selectedAnnouncements.length} selected
+                      </Badge>
+                    </div>
+                    <div className="border rounded-lg p-3 space-y-2 max-h-60 overflow-y-auto">
+                      {folderAnnouncementsForSettings.map((audio) => (
+                        <label
+                          key={audio.id}
+                          className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 cursor-pointer min-h-[44px]"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={currentFolderSettings.selectedAnnouncements.includes(audio.id)}
+                            onChange={() => selectedFolderForSettings && toggleAnnouncementInPlaylist(selectedFolderForSettings, audio.id)}
+                            className="rounded"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{audio.title}</p>
+                            <p className="text-xs text-slate-500">{formatDuration(audio.duration)}</p>
+                          </div>
+                          {audio.enabled ? (
+                            <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                          ) : (
+                            <Badge variant="secondary" className="shrink-0">Disabled</Badge>
+                          )}
+                        </label>
+                      ))}
+                      {folderAnnouncementsForSettings.length === 0 && (
+                        <p className="text-sm text-slate-500 text-center py-4">
+                          No announcements in this folder
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Summary */}
+                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-sm text-green-900">
+                      <strong>Summary:</strong> Will play {currentFolderSettings.selectedAnnouncements.length} announcements 
+                      in <strong>{currentFolderSettings.playlistMode}</strong> order, every{' '}
+                      <strong>{currentFolderSettings.intervalMinutes}m {currentFolderSettings.intervalSeconds}s</strong>.
+                      Music will automatically duck during playback.
+                      {currentFolderSettings.preventOverlap && ' Overlap prevention is active.'}
+                    </p>
+                  </div>
+                </>
+              )}
+
+              <Button onClick={handleSaveFolderSettings} className="w-full">
+                Save Folder Settings
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Voice Selection Dialog for Regenerating TTS */}
+      <Dialog open={isVoiceDialogOpen} onOpenChange={setIsVoiceDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Select Voice</DialogTitle>
+            <DialogDescription>
+              {selectedAnnouncementForVoice && audioFiles.find(a => a.id === selectedAnnouncementForVoice)?.url === '' 
+                ? 'Add a voice to this announcement' 
+                : 'Change the voice for this announcement'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Voice</Label>
+              <Select value={voiceDialogVoice} onValueChange={setVoiceDialogVoice}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ttsVoices.map((voice) => (
+                    <SelectItem key={voice.id} value={voice.id}>
+                      {voice.name || voice.id} {voice.accent ? `(${voice.accent})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={async () => {
+                  try {
+                    const result = await announcementsAPI.previewVoice({
+                      text: 'Hello, this is a preview of the selected voice.',
+                      voice: voiceDialogVoice,
+                    });
+                    if (result.preview_url) {
+                      const audio = new Audio(result.preview_url);
+                      await audio.play();
+                      toast.success('Playing voice preview...');
+                    }
+                  } catch (error) {
+                    console.error('Preview error:', error);
+                    toast.error('Failed to preview voice');
+                  }
+                }}
+              >
+                <Play className="h-4 w-4 mr-2" />
+                Preview
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleConfirmVoiceRegeneration}
+                disabled={!voiceDialogVoice || isRegeneratingVoice}
+              >
+                {isRegeneratingVoice ? 'Generating...' : 'Confirm'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

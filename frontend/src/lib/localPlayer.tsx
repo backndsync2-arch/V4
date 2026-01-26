@@ -63,6 +63,8 @@ export function LocalPlayerProvider({ children }: { children: React.ReactNode })
     const onEnded = () => {
       setIsPlaying(false);
       setCurrentTime(0);
+      // Emit custom event for track ended so components can handle queue advancement
+      window.dispatchEvent(new CustomEvent('track-ended', { detail: { trackId: track?.id } }));
     };
     const onError = () => {
       setIsPlaying(false);

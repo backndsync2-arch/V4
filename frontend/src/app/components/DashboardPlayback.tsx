@@ -95,7 +95,8 @@ export function DashboardPlayback() {
     ? filteredMusic.find(m => m.id === selectedMusicIds[currentMusicIndex])
     : null;
 
-  const nextAnnouncement = selectedAnnouncementIds[currentAnnouncementIndex]
+  // Get current announcement based on index (cycles through selected announcements)
+  const nextAnnouncement = selectedAnnouncementIds.length > 0 && currentAnnouncementIndex < selectedAnnouncementIds.length
     ? filteredAnnouncements.find(a => a.id === selectedAnnouncementIds[currentAnnouncementIndex])
     : null;
 
@@ -279,7 +280,9 @@ export function DashboardPlayback() {
         }
 
         setIsPlayingAnnouncement(false);
+        // Cycle to next announcement in the queue (continuous loop)
         setCurrentAnnouncementIndex((prev) => (prev + 1) % selectedAnnouncementIds.length);
+        // Reset timer for next announcement
         setTimeUntilNextAnnouncement(announcementInterval * 60);
       };
 
@@ -390,6 +393,42 @@ export function DashboardPlayback() {
     setLocalVolume(isPlayingAnnouncement ? backgroundVolume : 100);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMusicIndex]);
+
+  // Handle track ended - auto-advance to next song in queue
+  useEffect(() => {
+    const handleTrackEnded = (event: CustomEvent) => {
+      // Only auto-advance if we're playing and not playing an announcement
+      if (!isPlaying || isPlayingAnnouncement) return;
+      
+      // Check if this is the current track
+      if (event.detail?.trackId === currentMusic?.id) {
+        // Advance to next track in queue
+        if (selectedMusicIds.length > 0) {
+          setCurrentMusicIndex((prev) => {
+            const nextIndex = (prev + 1) % selectedMusicIds.length;
+            return nextIndex;
+          });
+          
+          // Also advance backend playback
+          if (selectedZoneId || selectedZone === 'All Zones') {
+            const zoneId = selectedZone === 'All Zones' 
+              ? (filteredZones.length > 0 ? filteredZones[0].id : null)
+              : selectedZoneId;
+            if (zoneId) {
+              playbackAPI.next(zoneId).catch((e) => {
+                console.error('Failed to advance backend track:', e);
+              });
+            }
+          }
+        }
+      }
+    };
+
+    window.addEventListener('track-ended', handleTrackEnded as EventListener);
+    return () => {
+      window.removeEventListener('track-ended', handleTrackEnded as EventListener);
+    };
+  }, [isPlaying, isPlayingAnnouncement, currentMusic?.id, selectedMusicIds.length, selectedZoneId, selectedZone, filteredZones]);
 
   // Format time
   const formatTime = (seconds: number) => {

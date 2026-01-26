@@ -181,14 +181,23 @@ class LoginSerializer(TokenObtainPairSerializer):
             attrs['email'] = email
         
         # Use parent class validation which checks password properly
-            data = super().validate(attrs)
-
+        # This will raise AuthenticationFailed if credentials are invalid
+        data = super().validate(attrs)
+        
+        # After parent validation succeeds, we know credentials are valid
+        # Get the user by email (parent validates but doesn't expose user object)
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            from rest_framework_simplejwt.exceptions import AuthenticationFailed
+            raise AuthenticationFailed('Invalid credentials.')
+        
         # Add user data to response
-        user_serializer = UserSerializer(self.user)
+        user_serializer = UserSerializer(user)
         data['user'] = user_serializer.data
 
         # Update last_seen
-        self.user.update_last_seen()
+        user.update_last_seen()
 
         return data
 

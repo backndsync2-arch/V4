@@ -656,16 +656,16 @@ export function DashboardPlayback() {
                     </>
                   )}
                 </Button>
-                <Button 
-                  onClick={handleStop}
-                  disabled={isLoading}
+              <Button 
+                onClick={handleStop}
+                disabled={isLoading}
                   className="flex-1 h-16 text-lg bg-red-600 hover:bg-red-700"
-                  size="lg"
-                  variant="destructive"
-                >
-                  <Square className="h-6 w-6 mr-2" />
+                size="lg"
+                variant="destructive"
+              >
+                <Square className="h-6 w-6 mr-2" />
                   {isLoading ? 'Stopping...' : 'Stop'}
-                </Button>
+              </Button>
               </div>
             )}
           </div>

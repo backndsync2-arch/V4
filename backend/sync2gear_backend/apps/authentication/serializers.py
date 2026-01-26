@@ -181,7 +181,7 @@ class LoginSerializer(TokenObtainPairSerializer):
             attrs['email'] = email
         
         # Use parent class validation which checks password properly
-        data = super().validate(attrs)
+            data = super().validate(attrs)
 
         # Add user data to response
         user_serializer = UserSerializer(self.user)

@@ -72,7 +72,7 @@ export class WebSocketClient {
       this.ws.onerror = (error) => {
         // Only log once per connection attempt to reduce console noise
         if (!this.hasLoggedConnectionFailure) {
-          console.warn('WebSocket connection failed - backend may be offline');
+        console.warn('WebSocket connection failed - backend may be offline');
           this.hasLoggedConnectionFailure = true;
         }
         this.isConnecting = false;

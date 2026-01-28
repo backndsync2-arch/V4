@@ -52,7 +52,8 @@ export function Admin() {
           params.role = selectedRole;
         }
         const logs = await adminAPI.getAuditLogs(params);
-        setAuditLogs(logs);
+        // Ensure logs is always an array
+        setAuditLogs(Array.isArray(logs) ? logs : []);
       } catch (error: any) {
         console.error('Failed to load audit logs:', error);
         toast.error(error?.message || 'Failed to load audit logs');
@@ -76,15 +77,22 @@ export function Admin() {
     }
   }, [user?.role]);
 
-  const filteredLogs = auditLogs;
+  // Ensure auditLogs is always an array
+  const filteredLogs = Array.isArray(auditLogs) ? auditLogs : [];
 
   const searchedLogs = searchQuery
-    ? filteredLogs.filter(log =>
-        log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.resource.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.details.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.userName.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+    ? filteredLogs.filter(log => {
+        if (!log) return false;
+        const query = searchQuery.toLowerCase();
+        const action = (log.action || '').toString().toLowerCase();
+        const resource = (log.resource_type || log.resource || '').toString().toLowerCase();
+        const details = (log.details || '').toString().toLowerCase();
+        const userName = (log.user?.name || log.userName || '').toString().toLowerCase();
+        return action.includes(query) ||
+               resource.includes(query) ||
+               details.includes(query) ||
+               userName.includes(query);
+      })
     : filteredLogs;
 
   const handleAddClient = () => {
@@ -573,7 +581,7 @@ export function Admin() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {searchedLogs.length === 0 ? (
+                    {!Array.isArray(searchedLogs) || searchedLogs.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center text-gray-400 py-8">
                           No audit logs found

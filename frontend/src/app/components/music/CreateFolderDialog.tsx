@@ -6,6 +6,7 @@ import { Label } from '@/app/components/ui/label';
 import { toast } from 'sonner';
 import { musicAPI } from '@/lib/api';
 import type { Folder } from '@/lib/types';
+import { usePlayback } from '@/lib/playback';
 
 export function CreateFolderDialog({
   open,
@@ -16,6 +17,7 @@ export function CreateFolderDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: (folder: Folder) => void;
 }) {
+  const { activeTarget } = usePlayback();
   const thumbInputId = React.useId();
   const [name, setName] = useState('');
   const [thumbFile, setThumbFile] = useState<File | null>(null);
@@ -35,11 +37,16 @@ export function CreateFolderDialog({
 
   const handleCreate = async () => {
     if (!name.trim()) return;
+    if (!activeTarget) {
+      toast.error('Please select a zone first');
+      return;
+    }
     setIsCreating(true);
     try {
       const created = await musicAPI.createFolder({
         name: name.trim(),
         type: 'music',
+        zone_id: activeTarget,
         cover_image: thumbFile || undefined,
       });
       onCreated(created);

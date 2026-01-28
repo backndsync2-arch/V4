@@ -80,5 +80,29 @@ export const adminAPI = {
   }> => {
     return apiFetch('/admin/stats/');
   },
+
+  // Get audit logs
+  getAuditLogs: async (params?: {
+    client?: string;
+    floor?: string;
+    role?: string;
+    user?: string;
+    resource_type?: string;
+    date_from?: string;
+    date_to?: string;
+  }): Promise<any[]> => {
+    const queryParams = new URLSearchParams();
+    if (params?.client) queryParams.append('client', params.client);
+    if (params?.floor) queryParams.append('floor', params.floor);
+    if (params?.role) queryParams.append('role', params.role);
+    if (params?.user) queryParams.append('user', params.user);
+    if (params?.resource_type) queryParams.append('resource_type', params.resource_type);
+    if (params?.date_from) queryParams.append('date_from', params.date_from);
+    if (params?.date_to) queryParams.append('date_to', params.date_to);
+    
+    const query = queryParams.toString();
+    const url = `/admin/audit-logs/${query ? `?${query}` : ''}`;
+    return apiFetch(url);
+  },
 };
 

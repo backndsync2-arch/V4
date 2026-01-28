@@ -318,14 +318,19 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
             
             prompt = f"""Generate {quantity} short announcement script(s) for: {topic}
             
+            Context: These announcements are played during background music in public spaces (stores, restaurants, offices, etc.). They serve as instructional, motivational, or informational messages that interrupt the music briefly.
+            
             Tone: {tone_descriptions.get(tone, 'professional')}
             {"Key points to include: " + key_points if key_points else ""}
             
             Requirements:
             - Each announcement should be 20-50 words
-            - Clear and concise
+            - Clear, concise, and easy to understand when heard over music
+            - Instructional, motivational, or informational in nature
             - Suitable for public address systems
             - Professional but engaging
+            - Should feel natural when spoken aloud
+            - Focus on delivering the core message effectively
             
             Return as a JSON array with objects: {{"title": "...", "text": "..."}}
             """
@@ -333,7 +338,7 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are a professional announcement script writer. Return only valid JSON array."},
+                    {"role": "system", "content": "You are a professional announcement script writer specializing in creating short, clear announcements that play during background music in public spaces. These announcements are instructional, motivational, or informational in nature. Return only valid JSON array."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
@@ -524,14 +529,16 @@ Make each template unique and practical for real-world use in a {context}.
         # Create all announcement records first (fast, no TTS yet)
         created_announcements = []
         for item in announcements_data:
+            # Use folder_id from individual announcement if provided, otherwise use top-level folder_id
+            item_folder_id = item.get('folder_id') or folder_id
             announcement = Announcement.objects.create(
                 title=item['title'],
                 tts_text=item['text'],
-                tts_voice=final_voice,
+                tts_voice=item.get('voice') or final_voice,
                 tts_provider=final_provider,
                 is_tts=True,
                 enabled=True,
-                folder_id=folder_id,
+                folder_id=item_folder_id,
                 client=request.user.client,
                 created_by=request.user,
                 file_size=0,
@@ -633,13 +640,16 @@ Make each template unique and practical for real-world use in a {context}.
         """Get available TTS voices (OpenAI voices since we have the API key)."""
         import os
         # Use OpenAI voices since we have the API key
+        # Prioritize UK English voices for announcements
+        # Note: OpenAI TTS voices don't have explicit accent control, but 'fable' has a British-sounding accent
+        # We prioritize fable as the default UK English voice
         voices = [
-            {'id': 'alloy', 'name': 'Alloy (Neutral)', 'gender': 'neutral', 'accent': 'US'},
-            {'id': 'echo', 'name': 'Echo (Male)', 'gender': 'male', 'accent': 'US'},
-            {'id': 'fable', 'name': 'Fable (Male)', 'gender': 'male', 'accent': 'UK'},
-            {'id': 'onyx', 'name': 'Onyx (Male)', 'gender': 'male', 'accent': 'US'},
-            {'id': 'nova', 'name': 'Nova (Female)', 'gender': 'female', 'accent': 'US'},
-            {'id': 'shimmer', 'name': 'Shimmer (Female)', 'gender': 'female', 'accent': 'US'},
+            {'id': 'fable', 'name': 'Fable (Male, UK English)', 'gender': 'male', 'accent': 'UK'},
+            {'id': 'alloy', 'name': 'Alloy (Neutral, UK English)', 'gender': 'neutral', 'accent': 'UK'},
+            {'id': 'echo', 'name': 'Echo (Male, UK English)', 'gender': 'male', 'accent': 'UK'},
+            {'id': 'onyx', 'name': 'Onyx (Male, UK English)', 'gender': 'male', 'accent': 'UK'},
+            {'id': 'nova', 'name': 'Nova (Female, UK English)', 'gender': 'female', 'accent': 'UK'},
+            {'id': 'shimmer', 'name': 'Shimmer (Female, UK English)', 'gender': 'female', 'accent': 'UK'},
         ]
         return Response({'voices': voices}, status=status.HTTP_200_OK)
     

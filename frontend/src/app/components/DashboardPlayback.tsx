@@ -51,15 +51,29 @@ export function DashboardPlayback() {
     filteredMusic = musicFiles.filter((m: any) => m.zoneId === activeTarget || m.zone === activeTarget);
   }
   
-  // Get announcements from selected folder, or all enabled if no folder selected
-  // Also filter by active zone if one is selected
-  let filteredAnnouncements = selectedAnnouncementFolderId
-    ? announcements.filter((a: any) => a.enabled && a.category === selectedAnnouncementFolderId)
-    : announcements.filter((a: any) => a.enabled);
+  // Filter announcements by folder's zone (since folders are zone-specific)
+  // First, filter announcements by active zone based on their folder
+  let zoneFilteredAnnouncements = activeTarget
+    ? announcements.filter((a: any) => {
+        // Find the folder for this announcement
+        const announcementFolder = announcementFolders.find(f => 
+          String(f.id) === String(a.folderId) || String(f.id) === String(a.category)
+        );
+        // If announcement has a folder, check if folder belongs to active zone
+        if (announcementFolder) {
+          const folderZoneId = String(announcementFolder.zoneId || '');
+          const activeZoneId = String(activeTarget || '');
+          return folderZoneId === activeZoneId || announcementFolder.zone === activeTarget;
+        }
+        // If no folder, check if announcement itself has zone info (backward compatibility)
+        return String(a.zoneId || '') === String(activeTarget || '') || a.zone === activeTarget;
+      })
+    : announcements;
   
-  if (activeTarget) {
-    filteredAnnouncements = filteredAnnouncements.filter((a: any) => a.zoneId === activeTarget || a.zone === activeTarget);
-  }
+  // Get announcements from selected folder, or all enabled if no folder selected
+  let filteredAnnouncements = selectedAnnouncementFolderId
+    ? zoneFilteredAnnouncements.filter((a: any) => a.enabled && (a.category === selectedAnnouncementFolderId || a.folderId === selectedAnnouncementFolderId))
+    : zoneFilteredAnnouncements.filter((a: any) => a.enabled);
 
   const isAudioUrl = (url?: string) => {
     if (!url) return false;
@@ -350,20 +364,28 @@ export function DashboardPlayback() {
         const [m, a, folders, z] = await Promise.all([
           musicAPI.getMusicFiles(),
           announcementsAPI.getAnnouncements(),
-          musicAPI.getFolders('announcements'),
+          musicAPI.getFolders('announcements', activeTarget || undefined),
           zonesAPI.getZones(),
         ]);
         setMusicFiles((m || []).filter((x: any) => isAudioUrl(x?.url)));
         setAnnouncements((a || []).filter((x: any) => isAudioUrl(x?.url)));
         setAnnouncementFolders(folders || []);
         setZones(z || []);
+        
+        // Clear selected folder if it's not in the current zone's folders
+        if (activeTarget && selectedAnnouncementFolderId) {
+          const folderExists = folders.some(f => String(f.id) === String(selectedAnnouncementFolderId));
+          if (!folderExists) {
+            setSelectedAnnouncementFolderId(null);
+          }
+        }
       } catch (e: any) {
         console.error('Failed to load playback data:', e);
         toast.error(e?.message || 'Failed to load playback data');
       }
     };
     load();
-  }, []);
+  }, [activeTarget, selectedAnnouncementFolderId]);
 
   // Sync local state with shared playback state
   useEffect(() => {
@@ -497,8 +519,8 @@ export function DashboardPlayback() {
               )}
             </div>
             {filteredMusic.length === 0 ? (
-              <div className="p-8 sm:p-12 bg-white/5/5 backdrop-blur-sm rounded-lg border border-white/10 text-center">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-md bg-white/5/5 mb-4">
+              <div className="p-8 sm:p-12 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 text-center">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-md bg-white/5 mb-4">
                   <Music className="h-8 w-8 text-gray-400" />
                 </div>
                 <p className="text-gray-400 font-medium mb-1">No music tracks available</p>
@@ -506,7 +528,7 @@ export function DashboardPlayback() {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-1 gap-3 max-h-72 sm:max-h-96 overflow-y-auto p-3 sm:p-4 bg-white/5/5 backdrop-blur-sm rounded-lg border border-white/10">
+                <div className="grid grid-cols-1 gap-3 max-h-72 sm:max-h-96 overflow-y-auto p-3 sm:p-4 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10">
                   {filteredMusic.map((music) => {
                     const isSelected = selectedMusicIds.includes(music.id);
                     return (
@@ -551,7 +573,7 @@ export function DashboardPlayback() {
                           "p-2.5 sm:p-3 rounded-lg shrink-0 transition-all duration-200",
                           isSelected 
                             ? "bg-gradient-to-br from-[#1db954] to-[#1ed760] shadow-lg scale-110" 
-                            : "bg-white/5/5"
+                            : "bg-white/5"
                         )}>
                           <Music className={cn(
                             "h-5 w-5 sm:h-6 sm:w-6 transition-colors",
@@ -622,8 +644,8 @@ export function DashboardPlayback() {
               <Label className="text-base sm:text-lg font-bold text-white">Select Announcement Folder</Label>
             </div>
             {announcementFolders.length === 0 ? (
-              <div className="p-8 sm:p-12 bg-white/5/5 backdrop-blur-sm rounded-lg border border-white/10 text-center">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-md bg-white/5/5 mb-4">
+              <div className="p-8 sm:p-12 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 text-center">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-md bg-white/5 mb-4">
                   <Radio className="h-8 w-8 text-gray-400" />
                 </div>
                 <p className="text-gray-400 font-medium mb-1">No announcement folders available</p>
@@ -636,12 +658,27 @@ export function DashboardPlayback() {
                   onValueChange={(value) => {
                     if (value === 'none') {
                       setSelectedAnnouncementFolderId(null);
-                      // Select all enabled announcements
-                      setSelectedAnnouncementIds(announcements.filter((a: any) => a.enabled).map(a => a.id));
+                      // Select all enabled announcements from the active zone
+                      const zoneFiltered = activeTarget
+                        ? announcements.filter((a: any) => {
+                            const announcementFolder = announcementFolders.find(f => 
+                              String(f.id) === String(a.folderId) || String(f.id) === String(a.category)
+                            );
+                            if (announcementFolder) {
+                              const folderZoneId = String(announcementFolder.zoneId || '');
+                              const activeZoneId = String(activeTarget || '');
+                              return folderZoneId === activeZoneId || announcementFolder.zone === activeTarget;
+                            }
+                            return String(a.zoneId || '') === String(activeTarget || '') || a.zone === activeTarget;
+                          })
+                        : announcements;
+                      setSelectedAnnouncementIds(zoneFiltered.filter((a: any) => a.enabled).map(a => a.id));
                     } else {
                       setSelectedAnnouncementFolderId(value);
-                      // Auto-select all announcements in the selected folder
-                      const folderAnnouncements = announcements.filter((a: any) => a.enabled && a.category === value);
+                      // Auto-select all announcements in the selected folder (already filtered by zone)
+                      const folderAnnouncements = filteredAnnouncements.filter((a: any) => 
+                        (a.category === value || a.folderId === value) && a.enabled
+                      );
                       setSelectedAnnouncementIds(folderAnnouncements.map(a => a.id));
                     }
                   }}
@@ -652,7 +689,24 @@ export function DashboardPlayback() {
                   <SelectContent className="bg-[#2a2a2a] border-white/10">
                     <SelectItem value="none" className="text-base text-white hover:bg-white/10">No Folder (All Enabled)</SelectItem>
                     {announcementFolders.map((folder) => {
-                      const folderAnnouncements = announcements.filter((a: any) => a.enabled && a.category === folder.id);
+                      // Count announcements in this folder that belong to the active zone
+                      const folderAnnouncements = activeTarget
+                        ? announcements.filter((a: any) => {
+                            const aFolder = announcementFolders.find(f => 
+                              String(f.id) === String(a.folderId) || String(f.id) === String(a.category)
+                            );
+                            const matchesFolder = String(a.category || '') === String(folder.id) || String(a.folderId || '') === String(folder.id);
+                            if (!matchesFolder) return false;
+                            if (aFolder) {
+                              const folderZoneId = String(aFolder.zoneId || '');
+                              const activeZoneId = String(activeTarget || '');
+                              return folderZoneId === activeZoneId || aFolder.zone === activeTarget;
+                            }
+                            return String(a.zoneId || '') === String(activeTarget || '') || a.zone === activeTarget;
+                          }).filter((a: any) => a.enabled)
+                        : announcements.filter((a: any) => 
+                            (a.category === folder.id || a.folderId === folder.id) && a.enabled
+                          );
                       return (
                         <SelectItem key={folder.id} value={folder.id} className="text-base text-white hover:bg-white/10">
                           <div className="flex items-center justify-between w-full gap-4">
@@ -667,7 +721,7 @@ export function DashboardPlayback() {
                   </SelectContent>
                 </Select>
                 {selectedAnnouncementFolderId && (
-                  <div className="p-4 bg-white/5/5 backdrop-blur-sm rounded-lg border border-white/10">
+                  <div className="p-4 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10">
                     <p className="text-sm text-gray-300 mb-2">
                       <span className="font-bold text-[#1db954]">{filteredAnnouncements.length}</span> announcement{filteredAnnouncements.length !== 1 ? 's' : ''} in this folder will play turnwise
                     </p>
@@ -681,7 +735,7 @@ export function DashboardPlayback() {
           </div>
 
           {/* Announcement Interval */}
-          <div className="space-y-4 p-5 sm:p-6 bg-white/5/5 backdrop-blur-sm rounded-lg border border-white/10 shadow-lg">
+          <div className="space-y-4 p-5 sm:p-6 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 shadow-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-lg shadow-md">
@@ -723,7 +777,7 @@ export function DashboardPlayback() {
 
           {/* Fade Controls */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-            <div className="space-y-4 p-5 sm:p-6 bg-white/5/5 backdrop-blur-sm rounded-lg border border-white/10 shadow-lg">
+            <div className="space-y-4 p-5 sm:p-6 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 shadow-lg">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-lg shadow-md">
                   <Volume2 className="h-4 w-4 text-white" />
@@ -753,7 +807,7 @@ export function DashboardPlayback() {
               </div>
             </div>
 
-            <div className="space-y-4 p-5 sm:p-6 bg-white/5/5 backdrop-blur-sm rounded-lg border border-white/10 shadow-lg">
+            <div className="space-y-4 p-5 sm:p-6 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 shadow-lg">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-lg shadow-md">
                   <Volume2 className="h-4 w-4 text-white" />
@@ -789,7 +843,7 @@ export function DashboardPlayback() {
 
           {/* Volume Controls */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-            <div className="space-y-4 p-5 sm:p-6 bg-white/5/5 backdrop-blur-sm rounded-lg border border-white/10 shadow-lg">
+            <div className="space-y-4 p-5 sm:p-6 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 shadow-lg">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-lg shadow-md">
                   <Volume2 className="h-4 w-4 text-white" />
@@ -889,7 +943,7 @@ export function DashboardPlayback() {
               <Button 
                 onClick={handleStop}
                 disabled={isLoading}
-                className="flex-1 h-14 sm:h-16 text-base sm:text-lg font-semibold bg-slate-600 hover:bg-slate-700 shadow-lg shadow-slate-500/30 transition-all duration-200"
+                className="flex-1 h-14 sm:h-16 text-base sm:text-lg font-semibold bg-gradient-to-r from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 text-white shadow-lg shadow-gray-900/30 transition-all duration-200 border border-white/10"
                 size="lg"
               >
                 <Square className="h-5 w-5 sm:h-6 sm:w-6 mr-2 shrink-0" />
@@ -905,10 +959,10 @@ export function DashboardPlayback() {
       {isPlaying && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
           {/* Now Playing */}
-          <Card className="border-white/10 shadow-lg bg-white/5/5 backdrop-blur-sm">
+          <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-lg font-bold text-white">
-                <div className="p-1.5 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-lg">
+                <div className="p-1.5 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-lg shadow-md">
                   <Music className="h-4 w-4 text-white" />
                 </div>
                 Now Playing
@@ -917,17 +971,17 @@ export function DashboardPlayback() {
             <CardContent>
               {currentMusic ? (
                 <div className="space-y-3">
-                  <div className="p-4 bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 rounded-lg border border-blue-200/50 shadow-sm">
+                  <div className="p-4 bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 rounded-lg border border-[#1db954]/30 shadow-sm">
                     <p className="font-bold text-lg text-white truncate">{currentMusic.name}</p>
                     <p className="text-sm text-gray-400 mt-1.5 font-medium">
                       Track {currentMusicIndex + 1} of {selectedMusicIds.length}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-400 p-2.5 bg-slate-50 rounded-lg">
+                  <div className="flex items-center gap-2 text-sm text-gray-300 p-2.5 bg-white/5 rounded-lg border border-white/10">
                     <Clock className="h-4 w-4 text-[#1db954]" />
                     <span className="font-medium">Playing for {formatTime(elapsedTime)}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-400 p-2.5 bg-slate-50 rounded-lg">
+                  <div className="flex items-center gap-2 text-sm text-gray-300 p-2.5 bg-white/5 rounded-lg border border-white/10">
                     <Volume2 className="h-4 w-4 text-[#1db954]" />
                     <span className="font-medium">
                       Music Volume: {isPlayingAnnouncement ? `${backgroundVolume}%` : '100%'}
@@ -935,17 +989,17 @@ export function DashboardPlayback() {
                   </div>
                   {isPlayingAnnouncement && (
                     <>
-                      <div className="flex items-center gap-2 text-sm text-[#1db954] p-2.5 bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 rounded-lg border border-blue-200">
-                        <Volume2 className="h-4 w-4" />
+                      <div className="flex items-center gap-2 text-sm text-white p-2.5 bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 rounded-lg border border-[#1db954]/30">
+                        <Volume2 className="h-4 w-4 text-[#1db954]" />
                         <span className="font-medium">
                           Announcement Volume: {announcementVolume}%
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 rounded-lg border-2 border-blue-300 shadow-sm">
-                        <Badge className="bg-gradient-to-br from-[#1db954] to-[#1ed760] animate-pulse shadow-md">
+                      <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 rounded-lg border-2 border-[#1db954]/40 shadow-sm">
+                        <Badge className="bg-gradient-to-br from-[#1db954] to-[#1ed760] animate-pulse shadow-md text-white border-0">
                           🔊 Announcement Playing
                         </Badge>
-                        <p className="text-sm text-[#1db954] font-semibold flex-1 truncate">
+                        <p className="text-sm text-white font-semibold flex-1 truncate">
                           {nextAnnouncement?.title || 'Announcement'}
                         </p>
                       </div>
@@ -960,13 +1014,13 @@ export function DashboardPlayback() {
 
           {/* Next Announcement */}
           <Card className={cn(
-            "border-white/10 shadow-lg bg-white/5/5 backdrop-blur-sm transition-all duration-200",
+            "border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm transition-all duration-200",
             isPlayingAnnouncement && "ring-2 ring-[#1db954] shadow-xl shadow-[#1db954]/20"
           )}>
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-lg font-bold text-white">
                 <div className={cn(
-                  "p-1.5 rounded-lg",
+                  "p-1.5 rounded-lg shadow-md",
                   isPlayingAnnouncement ? "bg-gradient-to-br from-[#1db954] to-[#1ed760] animate-pulse" : "bg-gradient-to-br from-[#1db954] to-[#1ed760]"
                 )}>
                   <Radio className="h-4 w-4 text-white" />
@@ -980,12 +1034,12 @@ export function DashboardPlayback() {
                     <div className={cn(
                       "p-4 rounded-lg border-2 shadow-sm transition-all duration-200",
                       isPlayingAnnouncement 
-                        ? "bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 border-blue-300" 
-                        : "bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 border-blue-200"
+                        ? "bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 border-[#1db954]/40" 
+                        : "bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 border-[#1db954]/30"
                     )}>
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <p className="font-medium text-lg">{nextAnnouncement.title}</p>
+                        <p className="font-medium text-lg text-white">{nextAnnouncement.title}</p>
                         <p className="text-sm text-gray-400 mt-1">
                           {nextAnnouncement.type === 'tts' ? 'Text-to-Speech' : 'Uploaded Audio'} • {nextAnnouncement.duration ? formatDuration(nextAnnouncement.duration) : '0:00'}
                         </p>
@@ -997,8 +1051,8 @@ export function DashboardPlayback() {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-400">
-                    <Clock className="h-4 w-4" />
+                  <div className="flex items-center gap-2 text-sm text-gray-300 p-2.5 bg-white/5 rounded-lg border border-white/10">
+                    <Clock className="h-4 w-4 text-[#1db954]" />
                     <span className="font-medium">
                       {isPlayingAnnouncement 
                         ? '🔊 Playing now...' 
@@ -1007,14 +1061,19 @@ export function DashboardPlayback() {
                     </span>
                   </div>
                   {selectedAnnouncementIds.length > 1 && (
-                    <div className="text-xs text-gray-400 bg-slate-50 p-2 rounded">
+                    <div className="text-xs text-gray-300 bg-white/5 p-2 rounded border border-white/10">
                       {selectedAnnouncementIds.length - currentAnnouncementIndex - 1} more announcement{selectedAnnouncementIds.length - currentAnnouncementIndex - 1 !== 1 ? 's' : ''} in queue
                     </div>
                   )}
                   <Button
                     onClick={handleNextAnnouncement}
                     disabled={isPlayingAnnouncement}
-                    className="w-full"
+                    className={cn(
+                      "w-full",
+                      isPlayingAnnouncement 
+                        ? "bg-gradient-to-r from-[#1db954] to-[#1ed760] text-white hover:from-[#1ed760] hover:to-[#1db954]" 
+                        : "bg-white/10 text-white border-white/20 hover:bg-white/20"
+                    )}
                     variant={isPlayingAnnouncement ? "default" : "outline"}
                   >
                     <SkipForward className="h-4 w-4 mr-2" />
@@ -1023,7 +1082,7 @@ export function DashboardPlayback() {
                 </div>
               ) : (
                 <div className="text-center py-4">
-                  <Radio className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                  <Radio className="h-8 w-8 text-gray-400 mx-auto mb-2" />
                   <p className="text-gray-400">No announcements selected</p>
                   <p className="text-xs text-gray-400 mt-1">Select announcements above to play them</p>
                 </div>

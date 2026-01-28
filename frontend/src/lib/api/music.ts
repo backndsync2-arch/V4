@@ -8,10 +8,13 @@ import type { MusicFile, Folder } from '../types';
 import { apiFetch, uploadFile, uploadMultipleFiles, unwrapList, normalizeFolder, normalizeMusicFile, API_BASE_URL, getAccessToken, APIError } from './core';
 
 export const musicAPI = {
-  // Get all folders
-  getFolders: async (type?: 'music' | 'announcements'): Promise<Folder[]> => {
-    const query = type ? `?type=${encodeURIComponent(type)}` : '';
-    const res = await apiFetch(`/music/folders/${query}`);
+  // Get all folders (optionally filtered by zone and type)
+  getFolders: async (type?: 'music' | 'announcements', zoneId?: string): Promise<Folder[]> => {
+    const params = new URLSearchParams();
+    if (type) params.append('type', type);
+    if (zoneId) params.append('zone', zoneId);
+    const query = params.toString();
+    const res = await apiFetch(`/music/folders/${query ? `?${query}` : ''}`);
     return unwrapList(res).map(normalizeFolder);
   },
 
@@ -21,6 +24,7 @@ export const musicAPI = {
     description?: string;
     type?: 'music' | 'announcements';
     cover_image?: File;
+    zone_id?: string;
   }): Promise<Folder> => {
     // Backend requires multipart/form-data (MultiPartParser), so always use FormData
     const formData = new FormData();
@@ -30,6 +34,9 @@ export const musicAPI = {
     }
     if (data.type) {
       formData.append('type', data.type);
+    }
+    if (data.zone_id) {
+      formData.append('zone_id', data.zone_id);
     }
     if (data.cover_image) {
       formData.append('cover_image', data.cover_image);
@@ -119,10 +126,13 @@ export const musicAPI = {
     return apiFetch(`/music/folders/${id}/`, { method: 'DELETE' });
   },
 
-  // Get music files
-  getMusicFiles: async (folderId?: string): Promise<MusicFile[]> => {
-    const query = folderId ? `?folder=${folderId}` : '';
-    const res = await apiFetch(`/music/files/${query}`);
+  // Get music files (optionally filtered by folder and zone)
+  getMusicFiles: async (folderId?: string, zoneId?: string): Promise<MusicFile[]> => {
+    const params = new URLSearchParams();
+    if (folderId) params.append('folder', folderId);
+    if (zoneId) params.append('zone', zoneId);
+    const query = params.toString();
+    const res = await apiFetch(`/music/files/${query ? `?${query}` : ''}`);
     return unwrapList(res).map(normalizeMusicFile);
   },
 

@@ -50,10 +50,8 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
       // Redirect to dashboard after successful login
       if (onBackToLanding) {
         onBackToLanding();
-      } else {
-        // If no callback, redirect via hash
-        window.location.hash = 'dashboard';
       }
+      // Navigation will be handled by App.tsx routing
     } catch (error: any) {
       const errorMessage = error?.message || error?.data?.message || 'Invalid credentials';
       toast.error(errorMessage);

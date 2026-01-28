@@ -7,7 +7,7 @@ import { Textarea } from '@/app/components/ui/textarea';
 import { Label } from '@/app/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 import { Badge } from '@/app/components/ui/badge';
-import { FileText, Sparkles, Upload, Mic, Play, Pause } from 'lucide-react';
+import { FileText, Sparkles, Upload, Mic, Play, Pause, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { announcementsAPI } from '@/lib/api';
 import { Folder, TTSVoice, GeneratedScript } from './announcements.types';
@@ -47,6 +47,11 @@ interface CreateAnnouncementDialogProps {
   onGenerateAI: () => void;
   onCreateBulk: () => void;
   onUpload: () => void;
+  newFolderName?: string;
+  onNewFolderNameChange?: (name: string) => void;
+  onCreateFolder?: () => Promise<Folder | null>;
+  isCreatingFolder?: boolean;
+  activeTarget?: string | null;
 }
 
 export function CreateAnnouncementDialog({
@@ -84,7 +89,47 @@ export function CreateAnnouncementDialog({
   onGenerateAI,
   onCreateBulk,
   onUpload,
+  newFolderName = '',
+  onNewFolderNameChange,
+  onCreateFolder,
+  isCreatingFolder = false,
+  activeTarget,
 }: CreateAnnouncementDialogProps) {
+  const [showCreateFolderInput, setShowCreateFolderInput] = React.useState(false);
+  const [newFolderNameLocal, setNewFolderNameLocal] = React.useState('');
+
+  const handleFolderSelectChange = (value: string) => {
+    if (value === '__create_new__') {
+      setShowCreateFolderInput(true);
+      setNewFolderNameLocal('');
+    } else {
+      setShowCreateFolderInput(false);
+      onCategoryChange(value);
+    }
+  };
+
+  const handleCreateFolderInline = async () => {
+    if (!newFolderNameLocal.trim()) {
+      toast.error('Please enter a folder name');
+      return;
+    }
+    if (!activeTarget) {
+      toast.error('Please select a zone first');
+      return;
+    }
+    if (onNewFolderNameChange) {
+      onNewFolderNameChange(newFolderNameLocal.trim());
+    }
+    if (onCreateFolder) {
+      const newFolder = await onCreateFolder();
+      // After creating, select the new folder
+      if (newFolder && newFolder.id) {
+        onCategoryChange(newFolder.id);
+      }
+      setShowCreateFolderInput(false);
+      setNewFolderNameLocal('');
+    }
+  };
   const handlePreviewVoice = async () => {
     if (previewingVoice === selectedVoice && previewAudio) {
       onStopPreview();
@@ -172,18 +217,46 @@ export function CreateAnnouncementDialog({
           </div>
           <div className="space-y-2">
             <Label>Voice</Label>
-            <Select value={selectedVoice} onValueChange={onVoiceChange}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ttsVoices.map(voice => (
-                  <SelectItem key={voice.id} value={voice.id}>
-                    {voice.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="grid grid-cols-3 gap-2">
+              {ttsVoices.map(voice => {
+                const getAvatarUrl = (voiceId: string) => {
+                  const avatars: Record<string, string> = {
+                    'fable': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Fable&backgroundColor=b6e3f4',
+                    'alloy': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alloy&backgroundColor=c7d2fe',
+                    'echo': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Echo&backgroundColor=ffd5db',
+                    'onyx': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Onyx&backgroundColor=ffdfbf',
+                    'nova': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Nova&backgroundColor=d1fae5',
+                    'shimmer': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Shimmer&backgroundColor=fce7f3',
+                  };
+                  return avatars[voiceId] || avatars['alloy'];
+                };
+                return (
+                  <button
+                    key={voice.id}
+                    type="button"
+                    onClick={() => onVoiceChange(voice.id)}
+                    className={`group relative flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all ${
+                      selectedVoice === voice.id
+                        ? 'border-[#1db954] bg-[#1db954]/10'
+                        : 'border-white/10 hover:border-white/30 bg-white/5'
+                    }`}
+                  >
+                    <div className="relative w-16 h-16 rounded-full overflow-hidden bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a]">
+                      <img 
+                        src={getAvatarUrl(voice.id)}
+                        alt={voice.name}
+                        className="w-full h-full object-cover"
+                      />
+                      {selectedVoice === voice.id && (
+                        <div className="absolute inset-0 bg-[#1db954]/20" />
+                      )}
+                    </div>
+                    <span className="text-xs font-medium text-white text-center">{voice.name.split('(')[0].trim()}</span>
+                    <span className="text-xs text-gray-400">{voice.accent || 'UK'}</span>
+                  </button>
+                );
+              })}
+            </div>
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -235,7 +308,7 @@ export function CreateAnnouncementDialog({
               value={aiTopic}
               onChange={(e) => onAiTopicChange(e.target.value)}
             />
-            <p className="text-xs text-gray-400">What should the announcement be about?</p>
+            <p className="text-xs text-gray-400">Enter a brief topic or instruction. The AI will generate an announcement that plays during music.</p>
           </div>
           
           <div className="space-y-2">
@@ -330,34 +403,107 @@ export function CreateAnnouncementDialog({
 
               <div className="space-y-2">
                 <Label>Voice</Label>
-                <Select value={selectedVoice} onValueChange={onVoiceChange}>
-                  <SelectTrigger className="bg-white/5">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ttsVoices.map(voice => (
-                      <SelectItem key={voice.id} value={voice.id}>
-                        {voice.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="grid grid-cols-3 gap-2">
+                  {ttsVoices.map(voice => {
+                    const getAvatarUrl = (voiceId: string) => {
+                      const avatars: Record<string, string> = {
+                        'fable': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Fable&backgroundColor=b6e3f4',
+                        'alloy': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alloy&backgroundColor=c7d2fe',
+                        'echo': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Echo&backgroundColor=ffd5db',
+                        'onyx': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Onyx&backgroundColor=ffdfbf',
+                        'nova': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Nova&backgroundColor=d1fae5',
+                        'shimmer': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Shimmer&backgroundColor=fce7f3',
+                      };
+                      return avatars[voiceId] || avatars['alloy'];
+                    };
+                    return (
+                      <button
+                        key={voice.id}
+                        type="button"
+                        onClick={() => onVoiceChange(voice.id)}
+                        className={`group relative flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all ${
+                          selectedVoice === voice.id
+                            ? 'border-[#1db954] bg-[#1db954]/10'
+                            : 'border-white/10 hover:border-white/30 bg-white/5'
+                        }`}
+                      >
+                        <div className="relative w-16 h-16 rounded-full overflow-hidden bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a]">
+                          <img 
+                            src={getAvatarUrl(voice.id)}
+                            alt={voice.name}
+                            className="w-full h-full object-cover"
+                          />
+                          {selectedVoice === voice.id && (
+                            <div className="absolute inset-0 bg-[#1db954]/20" />
+                          )}
+                        </div>
+                        <span className="text-xs font-medium text-white text-center">{voice.name.split('(')[0].trim()}</span>
+                        <span className="text-xs text-gray-400">{voice.accent || 'UK'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="space-y-2">
                 <Label>Folder</Label>
-                <Select value={newCategory} onValueChange={onCategoryChange}>
-                  <SelectTrigger className="bg-white/5">
-                    <SelectValue placeholder="Select folder..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {folders.map(folder => (
-                      <SelectItem key={folder.id} value={folder.id}>
-                        {folder.name}
+                {!showCreateFolderInput ? (
+                  <Select value={newCategory} onValueChange={handleFolderSelectChange}>
+                    <SelectTrigger className="bg-white/5">
+                      <SelectValue placeholder="Select folder..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {folders.map(folder => (
+                        <SelectItem key={folder.id} value={folder.id}>
+                          {folder.name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__create_new__" className="text-[#1db954]">
+                        <Plus className="h-4 w-4 inline mr-2" />
+                        Create New Folder
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Folder name"
+                        value={newFolderNameLocal}
+                        onChange={(e) => setNewFolderNameLocal(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleCreateFolderInline();
+                          } else if (e.key === 'Escape') {
+                            setShowCreateFolderInput(false);
+                            setNewFolderNameLocal('');
+                          }
+                        }}
+                        autoFocus
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setShowCreateFolderInput(false);
+                          setNewFolderNameLocal('');
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleCreateFolderInline}
+                      disabled={!newFolderNameLocal.trim() || isCreatingFolder}
+                      className="w-full"
+                    >
+                      {isCreatingFolder ? 'Creating...' : 'Create Folder'}
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <Button onClick={onCreateBulk} className="w-full" disabled={isCreating}>
@@ -399,18 +545,63 @@ export function CreateAnnouncementDialog({
           </div>
           <div className="space-y-2">
             <Label>Folder</Label>
-            <Select value={newCategory} onValueChange={onCategoryChange}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select folder..." />
-              </SelectTrigger>
-              <SelectContent>
-                {folders.map(folder => (
-                  <SelectItem key={folder.id} value={folder.id}>
-                    {folder.name}
+            {!showCreateFolderInput ? (
+              <Select value={newCategory} onValueChange={handleFolderSelectChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select folder..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {folders.map(folder => (
+                    <SelectItem key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="__create_new__" className="text-[#1db954]">
+                    <Plus className="h-4 w-4 inline mr-2" />
+                    Create New Folder
                   </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Folder name"
+                    value={newFolderNameLocal}
+                    onChange={(e) => setNewFolderNameLocal(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleCreateFolderInline();
+                      } else if (e.key === 'Escape') {
+                        setShowCreateFolderInput(false);
+                        setNewFolderNameLocal('');
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowCreateFolderInput(false);
+                      setNewFolderNameLocal('');
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleCreateFolderInline}
+                  disabled={!newFolderNameLocal.trim() || isCreatingFolder}
+                  className="w-full"
+                >
+                  {isCreatingFolder ? 'Creating...' : 'Create Folder'}
+                </Button>
+              </div>
+            )}
           </div>
           <Button className="w-full" disabled={isUploading || !uploadFile} onClick={onUpload}>
             {isUploading ? 'Uploading...' : 'Upload'}

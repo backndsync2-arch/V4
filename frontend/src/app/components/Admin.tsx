@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
@@ -16,24 +17,66 @@ import { toast } from 'sonner';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/app/components/ui/dropdown-menu';
 import { CreateClientDialog } from '@/app/components/CreateClientDialog';
 import { SuperAdminAI } from '@/app/components/SuperAdminAI';
+import { adminAPI, zonesAPI } from '@/lib/api';
 
 export function Admin() {
-  const { impersonateClient } = useAuth();
+  const navigate = useNavigate();
+  const { user, impersonateClient } = useAuth();
   const [clients, setClients] = useState(mockClients);
   const [users, setUsers] = useState(mockUsers);
-  const [auditLogs, setAuditLogs] = useState(mockAuditLogs);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [floors, setFloors] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddClientOpen, setIsAddClientOpen] = useState(false);
   const [newClientName, setNewClientName] = useState('');
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
+  const [selectedFloor, setSelectedFloor] = useState<string | null>(null);
+  const [selectedRole, setSelectedRole] = useState<string | null>(null);
   const [isResetPasswordDialogOpen, setIsResetPasswordDialogOpen] = useState(false);
   const [userToResetPassword, setUserToResetPassword] = useState<any>(null);
   const [resetPasswordAutoGenerate, setResetPasswordAutoGenerate] = useState(true);
   const [resetPasswordValue, setResetPasswordValue] = useState('');
 
-  const filteredLogs = selectedClient
-    ? auditLogs.filter(log => log.clientId === selectedClient)
-    : auditLogs;
+  // Load audit logs from API
+  useEffect(() => {
+    const loadAuditLogs = async () => {
+      try {
+        const params: any = {};
+        if (user?.role === 'admin' && selectedClient) {
+          params.client = selectedClient;
+        }
+        if (user?.role === 'client' && selectedFloor) {
+          params.floor = selectedFloor;
+        }
+        if (user?.role === 'client' && selectedRole) {
+          params.role = selectedRole;
+        }
+        const logs = await adminAPI.getAuditLogs(params);
+        setAuditLogs(logs);
+      } catch (error: any) {
+        console.error('Failed to load audit logs:', error);
+        toast.error(error?.message || 'Failed to load audit logs');
+      }
+    };
+    loadAuditLogs();
+  }, [user?.role, selectedClient, selectedFloor, selectedRole]);
+
+  // Load floors for client users
+  useEffect(() => {
+    if (user?.role === 'client') {
+      const loadFloors = async () => {
+        try {
+          const floorsData = await zonesAPI.getFloors();
+          setFloors(floorsData);
+        } catch (error: any) {
+          console.error('Failed to load floors:', error);
+        }
+      };
+      loadFloors();
+    }
+  }, [user?.role]);
+
+  const filteredLogs = auditLogs;
 
   const searchedLogs = searchQuery
     ? filteredLogs.filter(log =>
@@ -241,7 +284,7 @@ export function Admin() {
             variant="outline"
             onClick={() => {
               // Navigate to admin-settings
-              window.dispatchEvent(new CustomEvent('navigate', { detail: 'admin-settings' }));
+              navigate('/admin-settings');
             }}
           >
             <Settings className="h-4 w-4 mr-2" />
@@ -457,61 +500,106 @@ export function Admin() {
 
         {/* Audit Logs Tab */}
         <TabsContent value="audit">
-          <Card>
+          <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
             <CardHeader>
-              <CardTitle>Audit Logs</CardTitle>
-              <CardDescription>System-wide activity log</CardDescription>
+              <CardTitle className="text-white">Audit Logs</CardTitle>
+              <CardDescription className="text-gray-400">
+                {user?.role === 'admin' ? 'System-wide activity log' : 'Your activity log'}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div className="flex gap-4">
-                  <div className="flex-1">
+                <div className="flex gap-4 flex-wrap">
+                  <div className="flex-1 min-w-[200px]">
                     <Input
                       placeholder="Search logs..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="max-w-sm"
+                      className="max-w-sm bg-white/5 border-white/10 text-white"
                     />
                   </div>
-                  <Select value={selectedClient || 'all'} onValueChange={(v) => setSelectedClient(v === 'all' ? null : v)}>
-                    <SelectTrigger className="w-[200px]">
-                      <SelectValue placeholder="All Clients" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Clients</SelectItem>
-                      {clients.map((client) => (
-                        <SelectItem key={client.id} value={client.id}>
-                          {client.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {user?.role === 'admin' && (
+                    <Select value={selectedClient || 'all'} onValueChange={(v) => setSelectedClient(v === 'all' ? null : v)}>
+                      <SelectTrigger className="w-[200px] bg-white/5 border-white/10 text-white">
+                        <SelectValue placeholder="All Clients" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Clients</SelectItem>
+                        {clients.map((client) => (
+                          <SelectItem key={client.id} value={client.id}>
+                            {client.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {user?.role === 'client' && floors.length > 0 && (
+                    <Select value={selectedFloor || 'all'} onValueChange={(v) => setSelectedFloor(v === 'all' ? null : v)}>
+                      <SelectTrigger className="w-[200px] bg-white/5 border-white/10 text-white">
+                        <SelectValue placeholder="All Floors" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Floors</SelectItem>
+                        {floors.map((floor) => (
+                          <SelectItem key={floor.id} value={floor.id}>
+                            {floor.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {user?.role === 'client' && (
+                    <Select value={selectedRole || 'all'} onValueChange={(v) => setSelectedRole(v === 'all' ? null : v)}>
+                      <SelectTrigger className="w-[200px] bg-white/5 border-white/10 text-white">
+                        <SelectValue placeholder="All Roles" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Roles</SelectItem>
+                        <SelectItem value="client">Client Users</SelectItem>
+                        <SelectItem value="floor_user">Floor Users</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
 
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Timestamp</TableHead>
-                      <TableHead>User</TableHead>
-                      <TableHead>Action</TableHead>
-                      <TableHead>Resource</TableHead>
-                      <TableHead>Details</TableHead>
+                      <TableHead className="text-white">Timestamp</TableHead>
+                      <TableHead className="text-white">User</TableHead>
+                      <TableHead className="text-white">Action</TableHead>
+                      <TableHead className="text-white">Resource</TableHead>
+                      <TableHead className="text-white">Details</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {searchedLogs.map((log) => (
-                      <TableRow key={log.id}>
-                        <TableCell>{formatDateTime(log.timestamp)}</TableCell>
-                        <TableCell>{log.userName}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="capitalize">
-                            {log.action}
-                          </Badge>
+                    {searchedLogs.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-gray-400 py-8">
+                          No audit logs found
                         </TableCell>
-                        <TableCell className="capitalize">{log.resource}</TableCell>
-                        <TableCell className="text-sm text-slate-600">{log.details}</TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      searchedLogs.map((log: any) => (
+                        <TableRow key={log.id}>
+                          <TableCell className="text-gray-300">
+                            {formatDateTime(log.created_at || log.timestamp)}
+                          </TableCell>
+                          <TableCell className="text-gray-300">
+                            {log.user?.name || log.userName || 'Unknown'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="capitalize bg-white/10 text-white border-white/20">
+                              {log.action}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="capitalize text-gray-300">{log.resource_type || log.resource}</TableCell>
+                          <TableCell className="text-sm text-gray-400">
+                            {typeof log.details === 'object' ? JSON.stringify(log.details) : (log.details || '—')}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </div>

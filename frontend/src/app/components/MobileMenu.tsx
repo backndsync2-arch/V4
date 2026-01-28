@@ -22,7 +22,6 @@ export function MobileMenu({ currentPage, onNavigate }: MobileMenuProps) {
 
   const handleNavigate = (page: string) => {
     onNavigate(page);
-    window.location.hash = page;
     setIsOpen(false);
   };
 

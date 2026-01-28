@@ -82,11 +82,11 @@ export function AnnouncementsGridView({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-[#2a2a2a] border-white/10">
-                      {audio.type === 'tts' && (!audio.url || audio.url === '' || audio.duration === 0) && (
+                      {audio.type === 'tts' && (
                         <>
                           <DropdownMenuItem onClick={() => onRegenerateVoice(audio.id)} className="text-white hover:bg-white/10">
                             <Volume2 className="h-4 w-4 mr-2" />
-                            {!audio.url || audio.url === '' ? 'Add Voice' : 'Change Voice'}
+                            Change Voice
                           </DropdownMenuItem>
                           {audio.url && audio.url !== '' && audio.duration === 0 && (
                             <DropdownMenuItem onClick={() => onRecalculateDuration(audio.id)} className="text-white hover:bg-white/10">

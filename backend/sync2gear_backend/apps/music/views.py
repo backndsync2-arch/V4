@@ -34,12 +34,17 @@ class FolderViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser]
     
     def get_queryset(self):
-        """Filter folders by client."""
+        """Filter folders by client and zone."""
         user = self.request.user
         if not user or not user.is_authenticated or not hasattr(user, 'client'):
             return Folder.objects.none()
         
         queryset = Folder.objects.filter(client=user.client)
+        
+        # Filter by zone if provided (folders are zone-specific)
+        zone_id = self.request.query_params.get('zone')
+        if zone_id:
+            queryset = queryset.filter(zone_id=zone_id)
         
         # Filter by type if provided
         folder_type = self.request.query_params.get('type')
@@ -49,9 +54,19 @@ class FolderViewSet(viewsets.ModelViewSet):
         return queryset
     
     def perform_create(self, serializer):
-        """Create folder with client and creator."""
+        """Create folder with client, zone, and creator."""
+        zone_id = self.request.data.get('zone_id') or self.request.data.get('zone')
+        zone = None
+        if zone_id:
+            from apps.zones.models import Zone
+            try:
+                zone = Zone.objects.get(id=zone_id, client=self.request.user.client)
+            except Zone.DoesNotExist:
+                pass  # zone_id will be None if zone not found
+        
         serializer.save(
             client=self.request.user.client,
+            zone=zone,
             created_by=self.request.user
         )
 
@@ -83,7 +98,12 @@ class MusicFileViewSet(viewsets.ModelViewSet):
         if folder_id:
             queryset = queryset.filter(folder_id=folder_id)
         
-        return queryset.select_related('folder', 'uploaded_by')
+        # Filter by zone if provided
+        zone_id = self.request.query_params.get('zone')
+        if zone_id:
+            queryset = queryset.filter(zone_id=zone_id)
+        
+        return queryset.select_related('folder', 'zone', 'uploaded_by')
     
     def get_serializer_class(self):
         """Use create serializer for POST."""

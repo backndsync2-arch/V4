@@ -8,38 +8,91 @@ import { DashboardPlayback } from '@/app/components/DashboardPlayback';
 import { announcementsAPI, musicAPI, schedulerAPI, wsClient, zonesAPI } from '@/lib/api';
 import { toast } from 'sonner';
 import { cn } from '@/app/components/ui/utils';
+import { usePlayback } from '@/lib/playback';
 
 export function Dashboard() {
   const { user } = useAuth();
+  const { activeTarget } = usePlayback();
   const [devices, setDevices] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
   const [recentEvents, setRecentEvents] = useState<any[]>([]);
   const [musicFiles, setMusicFiles] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [announcementFolders, setAnnouncementFolders] = useState<any[]>([]);
 
   // Filter by client if not admin
   const clientId = user?.role === 'admin' ? null : user?.clientId;
   
-  const filteredDevices = clientId ? devices.filter(d => d.clientId === clientId) : devices;
-  const filteredSchedules = clientId ? schedules.filter(s => s.clientId === clientId) : schedules;
-  const filteredMusic = clientId ? musicFiles.filter(m => m.clientId === clientId) : musicFiles;
-  const filteredAnnouncements = clientId ? announcements.filter(a => a.clientId === clientId) : announcements;
+  // First filter by client
+  let clientFilteredDevices = clientId ? devices.filter(d => d.clientId === clientId) : devices;
+  let clientFilteredSchedules = clientId ? schedules.filter(s => s.clientId === clientId) : schedules;
+  let clientFilteredMusic = clientId ? musicFiles.filter(m => m.clientId === clientId) : musicFiles;
+  let clientFilteredAnnouncements = clientId ? announcements.filter(a => a.clientId === clientId) : announcements;
+  
+  // Then filter by active zone if one is selected
+  const filteredDevices = activeTarget 
+    ? clientFilteredDevices.filter((d: any) => {
+        // Check if device belongs to the active zone
+        return d.zoneId === activeTarget || 
+               d.zone === activeTarget || 
+               (d.zone && typeof d.zone === 'object' && d.zone.id === activeTarget) ||
+               (d.zone && typeof d.zone === 'object' && d.zone.name === activeTarget);
+      })
+    : clientFilteredDevices;
+  
+  const filteredSchedules = activeTarget
+    ? clientFilteredSchedules.filter((s: any) => {
+        // Check if schedule targets the active zone
+        if (s.zones && Array.isArray(s.zones)) {
+          return s.zones.some((z: any) => z === activeTarget || (typeof z === 'object' && z.id === activeTarget));
+        }
+        if (s.zoneIds && Array.isArray(s.zoneIds)) {
+          return s.zoneIds.includes(activeTarget);
+        }
+        // If no zone info, include it (backward compatibility)
+        return true;
+      })
+    : clientFilteredSchedules;
+  
+  const filteredMusic = activeTarget
+    ? clientFilteredMusic.filter((m: any) => m.zoneId === activeTarget || m.zone === activeTarget)
+    : clientFilteredMusic;
+  
+  // Filter announcements by folder's zone (since folders are zone-specific)
+  const filteredAnnouncements = activeTarget
+    ? clientFilteredAnnouncements.filter((a: any) => {
+        // Find the folder for this announcement
+        const announcementFolder = announcementFolders.find(f => 
+          String(f.id) === String(a.folderId) || String(f.id) === String(a.category)
+        );
+        // If announcement has a folder, check if folder belongs to active zone
+        if (announcementFolder) {
+          const folderZoneId = String(announcementFolder.zoneId || '');
+          const activeZoneId = String(activeTarget || '');
+          return folderZoneId === activeZoneId || announcementFolder.zone === activeTarget;
+        }
+        // If no folder, check if announcement itself has zone info (backward compatibility)
+        return String(a.zoneId || '') === String(activeTarget || '') || a.zone === activeTarget;
+      })
+    : clientFilteredAnnouncements;
 
   useEffect(() => {
     let mounted = true;
     const load = async (silent = false) => {
       try {
-        const [music, anns, devs, sch] = await Promise.all([
+        const [music, anns, devs, sch, folders] = await Promise.all([
           musicAPI.getMusicFiles(),
           announcementsAPI.getAnnouncements(),
           zonesAPI.getDevices(),
           schedulerAPI.getSchedules(),
+          musicAPI.getFolders('announcements', activeTarget || undefined),
         ]);
         if (!mounted) return;
         setMusicFiles(music);
         setAnnouncements(anns);
         setDevices(devs);
         setSchedules(sch);
+        setAnnouncementFolders(folders);
       } catch (e: any) {
         console.error('Dashboard load failed:', e);
         if (!silent) toast.error(e?.message || 'Failed to load dashboard data');
@@ -53,7 +106,7 @@ export function Dashboard() {
       mounted = false;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [activeTarget]);
 
   useEffect(() => {
     // Real-time events (device status changes, etc.)

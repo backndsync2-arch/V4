@@ -38,7 +38,7 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
   }>>([]);
   const [selectedGeneratedTemplateIds, setSelectedGeneratedTemplateIds] = useState<number[]>([]);
   const [isVoiceSelectionOpen, setIsVoiceSelectionOpen] = useState(false);
-  const [selectedVoice, setSelectedVoice] = useState<string>('alloy');
+  const [selectedVoice, setSelectedVoice] = useState<string>('fable'); // Default to UK English
   const [availableVoices, setAvailableVoices] = useState<Array<{ id: string; name: string; language: string }>>([]);
   const [isLoadingVoices, setIsLoadingVoices] = useState(false);
   const [isCreatingAnnouncements, setIsCreatingAnnouncements] = useState(false);

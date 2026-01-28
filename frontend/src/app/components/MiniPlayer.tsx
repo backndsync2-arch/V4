@@ -194,11 +194,11 @@ export function MiniPlayer() {
         </SheetTrigger>
 
         {/* Expanded Now Playing Sheet */}
-        <SheetContent side="bottom" className="h-[90vh] bg-gradient-to-b from-[#121212] to-[#1a1a1a] border-white/10 p-0">
-          <div className="flex flex-col h-full">
+        <SheetContent side="bottom" className="h-screen max-h-screen bg-gradient-to-b from-[#121212] to-[#1a1a1a] border-white/10 p-0 overflow-hidden">
+          <div className="flex flex-col h-full max-h-screen">
             {/* Header */}
-            <div className="px-6 pt-4 pb-2 flex items-center justify-between border-b border-white/10">
-              <SheetTitle className="text-white text-lg font-semibold">Now Playing</SheetTitle>
+            <div className="px-4 sm:px-6 pt-3 sm:pt-4 pb-2 flex items-center justify-between border-b border-white/10 shrink-0">
+              <SheetTitle className="text-white text-base sm:text-lg font-semibold">Now Playing</SheetTitle>
               <Button
                 variant="ghost"
                 size="sm"
@@ -209,205 +209,209 @@ export function MiniPlayer() {
               </Button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-6 py-6">
-              {/* Album Art */}
-              <div className="aspect-square w-full max-w-md mx-auto mb-8 bg-gradient-to-br from-[#1db954] via-[#1ed760] to-[#1db954] rounded-2xl shadow-2xl flex items-center justify-center relative overflow-hidden group">
-                <div className="absolute inset-0 bg-black/10" />
-                <div className="text-white text-9xl font-bold z-10 drop-shadow-2xl">
-                  {track.title?.charAt(0)?.toUpperCase() || '♪'}
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-3 sm:py-4">
+              <div className="flex flex-col h-full max-h-full">
+                {/* Album Art */}
+                <div className="w-full max-w-[280px] sm:max-w-md mx-auto mb-4 sm:mb-6 shrink-0">
+                  <div className="aspect-square w-full bg-gradient-to-br from-[#1db954] via-[#1ed760] to-[#1db954] rounded-xl sm:rounded-2xl shadow-2xl flex items-center justify-center relative overflow-hidden group">
+                    <div className="absolute inset-0 bg-black/10" />
+                    <div className="text-white text-6xl sm:text-8xl md:text-9xl font-bold z-10 drop-shadow-2xl">
+                      {track.title?.charAt(0)?.toUpperCase() || '♪'}
+                    </div>
+                    {/* Shine effect */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
                 </div>
-                {/* Shine effect */}
-                <div className="absolute inset-0 bg-gradient-to-br from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
 
-              {/* Track Info */}
-              <div className="text-center mb-8">
-                <h3 className="text-2xl md:text-3xl font-bold text-white mb-2">{track.title}</h3>
-                <p className="text-gray-400 text-sm mb-4">Local Playback</p>
-                
-                {/* Like Button */}
-                <div className="flex items-center justify-center gap-4">
+                {/* Track Info */}
+                <div className="text-center mb-4 sm:mb-6 shrink-0">
+                  <h3 className="text-lg sm:text-2xl md:text-3xl font-bold text-white mb-1 sm:mb-2 px-2 truncate">{track.title}</h3>
+                  <p className="text-gray-400 text-xs sm:text-sm mb-2 sm:mb-4">Local Playback</p>
+                  
+                  {/* Like Button */}
+                  <div className="flex items-center justify-center gap-3 sm:gap-4">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsLiked(!isLiked)}
+                      className={cn(
+                        "h-9 w-9 sm:h-10 sm:w-10 rounded-full p-0 transition-all",
+                        isLiked 
+                          ? "text-[#1db954] hover:text-[#1ed760] hover:bg-[#1db954]/20" 
+                          : "text-gray-400 hover:text-white hover:bg-white/10"
+                      )}
+                    >
+                      <Heart className={cn("h-4 w-4 sm:h-5 sm:w-5", isLiked && "fill-current")} />
+                    </Button>
+                    
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 w-9 sm:h-10 sm:w-10 rounded-full p-0 text-gray-400 hover:text-white hover:bg-white/10"
+                    >
+                      <MoreHorizontal className="h-4 w-4 sm:h-5 sm:w-5" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mb-4 sm:mb-6 shrink-0">
+                  <Slider
+                    value={[progress]}
+                    onValueChange={handleProgressChange}
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-400 mt-1 sm:mt-2">
+                    <span>{formatDuration(currentTime)}</span>
+                    <span>{formatDuration(duration)}</span>
+                  </div>
+                </div>
+
+                {/* Main Controls */}
+                <div className="flex items-center justify-center gap-2 sm:gap-4 mb-4 sm:mb-6 shrink-0">
+                  {/* Shuffle */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setIsLiked(!isLiked)}
+                    onClick={() => setIsShuffled(!isShuffled)}
                     className={cn(
-                      "h-10 w-10 rounded-full p-0 transition-all",
-                      isLiked 
-                        ? "text-[#1db954] hover:text-[#1ed760] hover:bg-[#1db954]/20" 
+                      "h-9 w-9 sm:h-10 sm:w-10 rounded-full p-0 transition-all",
+                      isShuffled
+                        ? "text-[#1db954] hover:text-[#1ed760] hover:bg-[#1db954]/20"
                         : "text-gray-400 hover:text-white hover:bg-white/10"
                     )}
                   >
-                    <Heart className={cn("h-5 w-5", isLiked && "fill-current")} />
+                    <Shuffle className={cn("h-4 w-4 sm:h-5 sm:w-5", isShuffled && "fill-current")} />
                   </Button>
-                  
+
+                  {/* Previous */}
+                  <Button
+                    variant="ghost"
+                    size="lg"
+                    className="h-10 w-10 sm:h-12 sm:w-12 rounded-full p-0 text-white hover:bg-white/10"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // TODO: Implement previous track
+                    }}
+                  >
+                    <SkipBack className="h-5 w-5 sm:h-6 sm:w-6 fill-current" />
+                  </Button>
+
+                  {/* Play/Pause */}
+                  <Button
+                    size="lg"
+                    onClick={() => toggle()}
+                    className="h-14 w-14 sm:h-16 sm:w-16 rounded-full p-0 bg-white hover:bg-gray-200 shadow-xl hover:scale-105 transition-transform"
+                  >
+                    {isPlaying ? (
+                      <Pause className="h-7 w-7 sm:h-8 sm:w-8 fill-black ml-0.5" />
+                    ) : (
+                      <Play className="h-7 w-7 sm:h-8 sm:w-8 fill-black ml-1" />
+                    )}
+                  </Button>
+
+                  {/* Next */}
+                  <Button
+                    variant="ghost"
+                    size="lg"
+                    className="h-10 w-10 sm:h-12 sm:w-12 rounded-full p-0 text-white hover:bg-white/10"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // TODO: Implement next track
+                    }}
+                  >
+                    <SkipForward className="h-5 w-5 sm:h-6 sm:w-6 fill-current" />
+                  </Button>
+
+                  {/* Repeat */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-10 w-10 rounded-full p-0 text-gray-400 hover:text-white hover:bg-white/10"
+                    onClick={toggleRepeat}
+                    className={cn(
+                      "h-9 w-9 sm:h-10 sm:w-10 rounded-full p-0 transition-all",
+                      repeatMode !== 'off'
+                        ? "text-[#1db954] hover:text-[#1ed760] hover:bg-[#1db954]/20"
+                        : "text-gray-400 hover:text-white hover:bg-white/10"
+                    )}
                   >
-                    <MoreHorizontal className="h-5 w-5" />
+                    <RepeatIcon className={cn("h-4 w-4 sm:h-5 sm:w-5", repeatMode !== 'off' && "fill-current")} />
                   </Button>
                 </div>
-              </div>
 
-              {/* Progress Bar */}
-              <div className="mb-6">
-                <Slider
-                  value={[progress]}
-                  onValueChange={handleProgressChange}
-                  min={0}
-                  max={100}
-                  step={0.1}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-gray-400 mt-2">
-                  <span>{formatDuration(currentTime)}</span>
-                  <span>{formatDuration(duration)}</span>
+                {/* Volume Control */}
+                <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (volume > 0) {
+                        setVolume(0);
+                      } else {
+                        setVolume(100);
+                      }
+                    }}
+                    className="h-9 w-9 sm:h-10 sm:w-10 rounded-full p-0 text-gray-400 hover:text-white hover:bg-white/10 shrink-0"
+                  >
+                    {volume === 0 ? (
+                      <VolumeX className="h-4 w-4 sm:h-5 sm:w-5" />
+                    ) : (
+                      <Volume2 className="h-4 w-4 sm:h-5 sm:w-5" />
+                    )}
+                  </Button>
+                  
+                  <div className="flex-1">
+                    <Slider
+                      value={[volume]}
+                      onValueChange={handleVolumeChange}
+                      min={0}
+                      max={100}
+                      step={1}
+                      className="w-full"
+                    />
+                  </div>
+                  
+                  <span className="text-xs text-gray-400 w-10 text-right shrink-0">{Math.round(volume)}%</span>
                 </div>
-              </div>
 
-              {/* Main Controls */}
-              <div className="flex items-center justify-center gap-4 mb-6">
-                {/* Shuffle */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsShuffled(!isShuffled)}
-                  className={cn(
-                    "h-10 w-10 rounded-full p-0 transition-all",
-                    isShuffled
-                      ? "text-[#1db954] hover:text-[#1ed760] hover:bg-[#1db954]/20"
-                      : "text-gray-400 hover:text-white hover:bg-white/10"
-                  )}
-                >
-                  <Shuffle className={cn("h-5 w-5", isShuffled && "fill-current")} />
-                </Button>
-
-                {/* Previous */}
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  className="h-12 w-12 rounded-full p-0 text-white hover:bg-white/10"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // TODO: Implement previous track
-                  }}
-                >
-                  <SkipBack className="h-6 w-6 fill-current" />
-                </Button>
-
-                {/* Play/Pause */}
-                <Button
-                  size="lg"
-                  onClick={() => toggle()}
-                  className="h-16 w-16 rounded-full p-0 bg-white hover:bg-gray-200 shadow-xl hover:scale-105 transition-transform"
-                >
-                  {isPlaying ? (
-                    <Pause className="h-8 w-8 fill-black ml-0.5" />
-                  ) : (
-                    <Play className="h-8 w-8 fill-black ml-1" />
-                  )}
-                </Button>
-
-                {/* Next */}
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  className="h-12 w-12 rounded-full p-0 text-white hover:bg-white/10"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // TODO: Implement next track
-                  }}
-                >
-                  <SkipForward className="h-6 w-6 fill-current" />
-                </Button>
-
-                {/* Repeat */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={toggleRepeat}
-                  className={cn(
-                    "h-10 w-10 rounded-full p-0 transition-all",
-                    repeatMode !== 'off'
-                      ? "text-[#1db954] hover:text-[#1ed760] hover:bg-[#1db954]/20"
-                      : "text-gray-400 hover:text-white hover:bg-white/10"
-                  )}
-                >
-                  <RepeatIcon className={cn("h-5 w-5", repeatMode !== 'off' && "fill-current")} />
-                </Button>
-              </div>
-
-              {/* Volume Control */}
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    if (volume > 0) {
-                      setVolume(0);
-                    } else {
-                      setVolume(100);
-                    }
-                  }}
-                  className="h-10 w-10 rounded-full p-0 text-gray-400 hover:text-white hover:bg-white/10 shrink-0"
-                >
-                  {volume === 0 ? (
-                    <VolumeX className="h-5 w-5" />
-                  ) : (
-                    <Volume2 className="h-5 w-5" />
-                  )}
-                </Button>
-                
-                <div className="flex-1">
-                  <Slider
-                    value={[volume]}
-                    onValueChange={handleVolumeChange}
-                    min={0}
-                    max={100}
-                    step={1}
-                    className="w-full"
-                  />
+                {/* Additional Actions */}
+                <div className="mt-auto pt-4 sm:pt-6 border-t border-white/10 flex items-center justify-center gap-3 sm:gap-4 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      stop();
+                      setIsExpanded(false);
+                    }}
+                    className="text-gray-400 hover:text-white hover:bg-white/10 text-xs sm:text-sm"
+                  >
+                    Stop
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const element = document.documentElement;
+                      if (!document.fullscreenElement) {
+                        element.requestFullscreen().catch((err) => {
+                          console.error('Error attempting to enable fullscreen:', err);
+                          toast.error('Failed to enter fullscreen mode');
+                        });
+                      } else {
+                        document.exitFullscreen().catch((err) => {
+                          console.error('Error attempting to exit fullscreen:', err);
+                        });
+                      }
+                    }}
+                    className="text-gray-400 hover:text-white hover:bg-white/10 text-xs sm:text-sm"
+                  >
+                    <Maximize2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    Full Screen
+                  </Button>
                 </div>
-                
-                <span className="text-xs text-gray-400 w-10 text-right shrink-0">{Math.round(volume)}%</span>
-              </div>
-
-              {/* Additional Actions */}
-              <div className="mt-8 pt-6 border-t border-white/10 flex items-center justify-center gap-4">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    stop();
-                    setIsExpanded(false);
-                  }}
-                  className="text-gray-400 hover:text-white hover:bg-white/10"
-                >
-                  Stop
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    const element = document.documentElement;
-                    if (!document.fullscreenElement) {
-                      element.requestFullscreen().catch((err) => {
-                        console.error('Error attempting to enable fullscreen:', err);
-                        toast.error('Failed to enter fullscreen mode');
-                      });
-                    } else {
-                      document.exitFullscreen().catch((err) => {
-                        console.error('Error attempting to exit fullscreen:', err);
-                      });
-                    }
-                  }}
-                  className="text-gray-400 hover:text-white hover:bg-white/10"
-                >
-                  <Maximize2 className="h-4 w-4 mr-2" />
-                  Full Screen
-                </Button>
               </div>
             </div>
           </div>

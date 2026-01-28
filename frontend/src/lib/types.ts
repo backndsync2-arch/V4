@@ -64,6 +64,8 @@ export interface Folder {
   clientId: string;
   parentId?: string;
   type: 'music' | 'announcements';
+  zoneId?: string;
+  zone?: string;
   coverImageUrl?: string;
   musicFilesCount?: number;
   createdAt: Date;
@@ -75,6 +77,8 @@ export interface MusicFile {
   name: string;
   folderId: string;
   clientId: string;
+  zoneId?: string;
+  zone?: string;
   url: string;
   size: number;
   duration: number;

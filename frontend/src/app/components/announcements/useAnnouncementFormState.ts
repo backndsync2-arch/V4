@@ -6,9 +6,9 @@ export function useAnnouncementFormState() {
   const [newText, setNewText] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [selectedVoice, setSelectedVoice] = useState('alloy');
-  const [voiceDialogVoice, setVoiceDialogVoice] = useState('alloy');
-  const [playVoiceDialogVoice, setPlayVoiceDialogVoice] = useState('alloy');
+  const [selectedVoice, setSelectedVoice] = useState('fable'); // Default to UK English voice
+  const [voiceDialogVoice, setVoiceDialogVoice] = useState('fable');
+  const [playVoiceDialogVoice, setPlayVoiceDialogVoice] = useState('fable');
   
   // AI Generator state
   const [aiTopic, setAiTopic] = useState('');

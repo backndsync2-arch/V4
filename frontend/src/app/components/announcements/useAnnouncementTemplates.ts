@@ -235,18 +235,24 @@ export function useAnnouncementTemplates({
       }
       
       const voices = await announcementsAPI.getTTSVoices();
-      let selectedVoice = 'alloy';
+      // Default to fable (UK English) if available
+      let selectedVoice = 'fable';
+      const fableVoice = voices.find((v: any) => v.id === 'fable');
+      if (!fableVoice) {
+        selectedVoice = voices[0]?.id || 'fable';
+      }
       
+      // Prioritize fable (UK English) in voice type mappings
       const voiceTypeMap: Record<string, string[]> = {
-        'friendly': ['nova', 'shimmer', 'alloy'],
-        'energetic': ['echo', 'alloy'],
-        'professional': ['alloy', 'echo'],
-        'calm': ['shimmer', 'nova'],
-        'casual': ['nova', 'alloy'],
-        'urgent': ['echo', 'alloy'],
+        'friendly': ['fable', 'nova', 'shimmer'],
+        'energetic': ['fable', 'echo'],
+        'professional': ['fable', 'alloy', 'echo'],
+        'calm': ['fable', 'shimmer', 'nova'],
+        'casual': ['fable', 'nova'],
+        'urgent': ['fable', 'echo'],
       };
       
-      const preferredVoices = voiceTypeMap[template.voiceType] || ['alloy'];
+      const preferredVoices = voiceTypeMap[template.voiceType] || ['fable'];
       for (const preferred of preferredVoices) {
         const found = voices.find(v => v.id.toLowerCase() === preferred.toLowerCase());
         if (found) {

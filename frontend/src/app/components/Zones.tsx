@@ -127,53 +127,6 @@ export function Zones() {
         <div className="flex gap-2">
           <Dialog>
             <DialogTrigger asChild>
-              <Button variant="outline">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Device
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add New Device</DialogTitle>
-                <DialogDescription>
-                  Register a new speaker or player device
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Device Name</Label>
-                  <Input placeholder="e.g., Ground Floor Speaker 1" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Device ID</Label>
-                  <Input placeholder="Enter device ID" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Assign to Zone</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select zone" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.keys(zones).map((zone) => (
-                        <SelectItem key={zone} value={zone}>
-                          {zone}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button className="w-full" onClick={() => {
-                  toast.success('Device added successfully');
-                }}>
-                  Add Device
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog>
-            <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
                 Create Zone

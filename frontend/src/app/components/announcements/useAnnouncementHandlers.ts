@@ -145,7 +145,11 @@ export function useAnnouncementHandlers({
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
       toast.error('Please enter a folder name');
-      return;
+      return null;
+    }
+    if (!activeTarget) {
+      toast.error('Please select a zone first');
+      return null;
     }
     
     setIsCreatingFolder(true);
@@ -153,6 +157,7 @@ export function useAnnouncementHandlers({
       const newFolder = await musicAPI.createFolder({
         name: newFolderName,
         type: 'announcements',
+        zone_id: activeTarget,
       });
       
       setFolders([...folders, newFolder]);
@@ -171,10 +176,12 @@ export function useAnnouncementHandlers({
       
       setNewFolderName('');
       setIsCreateFolderOpen(false);
-      toast.success(`Folder "${newFolderName}" created`);
+      toast.success(`Folder "${newFolder.name}" created`);
+      return newFolder;
     } catch (error: any) {
       toast.error(error.message || 'Failed to create folder');
       console.error('Create folder error:', error);
+      return null;
     } finally {
       setIsCreatingFolder(false);
     }
@@ -192,7 +199,7 @@ export function useAnnouncementHandlers({
         (newTitle && newTitle.trim()) ||
         uploadFile.name.replace(/\.[^/.]+$/, '');
 
-      const uploaded = await announcementsAPI.uploadAnnouncement(
+      await announcementsAPI.uploadAnnouncement(
         uploadFile,
         { 
           title, 
@@ -202,24 +209,19 @@ export function useAnnouncementHandlers({
         () => {}
       );
 
-      setAudioFiles(prev => [
-        ...prev,
-        {
-          id: uploaded.id,
-          title: uploaded.title,
-          scriptId: undefined,
-          clientId: user?.clientId || 'client1',
-          url: uploaded.url,
-          duration: uploaded.duration || 0,
-          type: uploaded.type || 'uploaded',
-          enabled: uploaded.enabled ?? true,
-          category: newCategory || undefined,
-          folderId: newCategory || undefined,
-          zoneId: activeTarget || undefined,
-          createdAt: new Date(),
-          createdBy: user?.id || 'user1',
-        },
-      ]);
+      // Reload all announcements from backend to get fresh data with proper folder_id
+      const allAnnouncements = await announcementsAPI.getAnnouncements();
+      setAudioFiles(allAnnouncements);
+      
+      // Also reload folders to ensure we have latest zone information
+      if (activeTarget) {
+        try {
+          const updatedFolders = await musicAPI.getFolders('announcements', activeTarget);
+          setFolders(updatedFolders);
+        } catch (error) {
+          console.error('Failed to reload folders:', error);
+        }
+      }
 
       toast.success(`Uploaded: ${title}`);
       setUploadFile(null);
@@ -298,6 +300,16 @@ export function useAnnouncementHandlers({
       const allAnnouncements = await announcementsAPI.getAnnouncements();
       setAudioFiles(allAnnouncements);
       
+      // Also reload folders to ensure we have latest zone information
+      if (activeTarget) {
+        try {
+          const updatedFolders = await musicAPI.getFolders('announcements', activeTarget);
+          setFolders(updatedFolders);
+        } catch (error) {
+          console.error('Failed to reload folders:', error);
+        }
+      }
+      
       const ttsScripts = allAnnouncements
         .filter(a => a.type === 'tts')
         .map(a => ({
@@ -355,25 +367,34 @@ export function useAnnouncementHandlers({
         createdBy: user?.id || 'user1',
       };
 
-      setScripts([...scripts, script]);
+      // Reload all announcements from backend to get fresh data with proper folder_id
+      const allAnnouncements = await announcementsAPI.getAnnouncements();
+      setAudioFiles(allAnnouncements);
       
-      const audio = {
-        id: announcement.id,
-        title: newTitle,
-        scriptId: script.id,
-        clientId: user?.clientId || 'client1',
-        url: announcement.url,
-        duration: announcement.duration,
-        type: 'tts' as const,
-        enabled: true,
-        category: newCategory || undefined,
-        folderId: newCategory || undefined,
-        zoneId: activeTarget || undefined,
-        createdAt: new Date(),
-        createdBy: user?.id || 'user1',
-      };
-
-      setAudioFiles([...audioFiles, audio]);
+      // Also reload folders to ensure we have latest zone information
+      if (activeTarget) {
+        try {
+          const updatedFolders = await musicAPI.getFolders('announcements', activeTarget);
+          setFolders(updatedFolders);
+        } catch (error) {
+          console.error('Failed to reload folders:', error);
+        }
+      }
+      
+      // Extract scripts from TTS announcements
+      const ttsScripts = allAnnouncements
+        .filter(a => a.type === 'tts')
+        .map(a => ({
+          id: a.id,
+          title: a.title,
+          text: '',
+          clientId: a.clientId,
+          enabled: a.enabled,
+          category: a.category,
+          createdAt: a.createdAt,
+          createdBy: a.createdBy,
+        }));
+      setScripts(ttsScripts);
       
       setNewTitle('');
       setNewText('');

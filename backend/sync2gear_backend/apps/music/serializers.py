@@ -17,12 +17,13 @@ class FolderSerializer(serializers.ModelSerializer):
     
     music_files_count = serializers.SerializerMethodField()
     cover_image_url = serializers.SerializerMethodField()
+    zone_name = serializers.CharField(source='zone.name', read_only=True)
     created_by_name = serializers.CharField(source='created_by.name', read_only=True)
     
     class Meta:
         model = Folder
         fields = [
-            'id', 'name', 'description', 'type', 'client_id',
+            'id', 'name', 'description', 'type', 'client_id', 'zone_id', 'zone_name',
             'parent_id', 'cover_image', 'cover_image_url',
             'is_system', 'music_files_count', 'created_by_name',
             'created_at', 'updated_at'
@@ -51,6 +52,7 @@ class MusicFileSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()
     cover_art_url = serializers.SerializerMethodField()
     folder_name = serializers.CharField(source='folder.name', read_only=True)
+    zone_name = serializers.CharField(source='zone.name', read_only=True)
     uploaded_by_name = serializers.CharField(source='uploaded_by.name', read_only=True)
     
     class Meta:
@@ -59,7 +61,7 @@ class MusicFileSerializer(serializers.ModelSerializer):
             'id', 'file', 'file_url', 'filename', 'file_size',
             'title', 'artist', 'album', 'genre', 'year', 'duration',
             'cover_art', 'cover_art_url', 'folder_id', 'folder_name',
-            'client_id', 'order', 'uploaded_by_name',
+            'zone_id', 'zone_name', 'client_id', 'order', 'uploaded_by_name',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
@@ -92,11 +94,12 @@ class MusicFileCreateSerializer(serializers.ModelSerializer):
     # Explicit field required: ModelSerializer doesn't reliably treat `folder_id` (FK id accessor)
     # as a writable field unless declared.
     folder_id = serializers.UUIDField(required=False, allow_null=True)
+    zone_id = serializers.UUIDField(required=False, allow_null=True)
     
     class Meta:
         model = MusicFile
         fields = [
-            'file', 'folder_id', 'title', 'artist', 'album', 'genre', 'year', 'cover_art'
+            'file', 'folder_id', 'zone_id', 'title', 'artist', 'album', 'genre', 'year', 'cover_art'
         ]
         extra_kwargs = {
             # Allow uploads with just a file; we derive a default title from the filename in create().
@@ -111,15 +114,30 @@ class MusicFileCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         """Create music file and extract metadata."""
         folder_id = validated_data.pop('folder_id', None)
+        zone_id = validated_data.pop('zone_id', None)
+        
+        request = self.context.get('request')
+        client = getattr(getattr(request, 'user', None), 'client', None)
+        
         if folder_id:
             # Ensure folder belongs to the current user's client
-            request = self.context.get('request')
-            client = getattr(getattr(request, 'user', None), 'client', None)
             try:
                 folder = Folder.objects.get(id=folder_id, client=client)
+                validated_data['folder'] = folder
+                # If zone_id not provided but folder has a zone, use folder's zone
+                if not zone_id and folder.zone:
+                    zone_id = folder.zone.id
             except Folder.DoesNotExist:
                 raise serializers.ValidationError({'folder_id': 'Invalid folder.'})
-            validated_data['folder'] = folder
+        
+        if zone_id:
+            # Ensure zone belongs to the current user's client
+            from apps.zones.models import Zone
+            try:
+                zone = Zone.objects.get(id=zone_id, client=client)
+                validated_data['zone'] = zone
+            except Zone.DoesNotExist:
+                raise serializers.ValidationError({'zone_id': 'Invalid zone.'})
 
         # Set filename
         file = validated_data['file']

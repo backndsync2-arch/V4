@@ -59,32 +59,51 @@ export function AnnouncementsFinal() {
   // Folder-level settings
   const [folderSettings, setFolderSettings] = useState<Record<string, FolderSettings>>({});
   
-  // Set default voice when voices load
+  // Set default voice when voices load - prioritize UK English (fable)
   React.useEffect(() => {
     if (ttsVoices.length > 0 && !formState.selectedVoice) {
-      formState.setSelectedVoice(ttsVoices[0].id);
+      // Prefer fable (UK English) if available, otherwise use first voice
+      const ukVoice = ttsVoices.find(v => v.id === 'fable');
+      formState.setSelectedVoice(ukVoice?.id || ttsVoices[0].id);
     }
   }, [ttsVoices, formState.selectedVoice]);
 
   const clientId = user?.role === 'admin' ? null : user?.clientId;
   const filteredFolders = clientId ? folders.filter(f => f.clientId === clientId) : folders;
   
-  // Get zone-filtered audio files for counts and display
-  const zoneFilteredAudio = activeTarget
-    ? audioFiles.filter(a => a.zoneId === activeTarget || a.zone === activeTarget)
+  // Apply client filter first
+  const clientFilteredAudio = clientId
+    ? audioFiles.filter(a => a.clientId === clientId)
     : audioFiles;
   
-  // Apply client filter to zone-filtered audio
-  const clientFilteredAudio = clientId
-    ? zoneFilteredAudio.filter(a => a.clientId === clientId)
-    : zoneFilteredAudio;
+  // Filter by zone: Since folders are zone-specific, filter announcements by their folder's zone
+  // If activeTarget is set, only show announcements in folders that belong to that zone
+  const zoneFilteredAudio = activeTarget
+    ? clientFilteredAudio.filter(a => {
+        // Find the folder for this announcement
+        const announcementFolder = folders.find(f => String(f.id) === String(a.folderId) || String(f.id) === String(a.category));
+        // If announcement has a folder, check if folder belongs to active zone
+        if (announcementFolder) {
+          // Folders have zoneId - check if it matches activeTarget (convert to string for comparison)
+          const folderZoneId = String(announcementFolder.zoneId || '');
+          const activeZoneId = String(activeTarget || '');
+          return folderZoneId === activeZoneId || announcementFolder.zone === activeTarget;
+        }
+        // If no folder, include it (backward compatibility)
+        // But also check if announcement itself has zone info
+        return String(a.zoneId || '') === String(activeTarget || '') || a.zone === activeTarget;
+      })
+    : clientFilteredAudio;
   
   // Filter audio by folder and search for display
-  let displayedAudio = clientFilteredAudio;
+  let displayedAudio = zoneFilteredAudio;
   
-  // Filter by folder if selected
+  // Filter by folder if selected (convert to string for comparison)
   if (selectedFolder) {
-    displayedAudio = displayedAudio.filter(a => a.category === selectedFolder || a.folderId === selectedFolder);
+    const selectedFolderStr = String(selectedFolder);
+    displayedAudio = displayedAudio.filter(a => 
+      String(a.category || '') === selectedFolderStr || String(a.folderId || '') === selectedFolderStr
+    );
   }
 
   // Apply enabled filter
@@ -102,7 +121,11 @@ export function AnnouncementsFinal() {
 
   // Get folder statistics (respects zone and client filtering)
   const getFolderStats = (folderId: string) => {
-    let folderAnnouncements = clientFilteredAudio.filter(a => a.category === folderId || a.folderId === folderId);
+    const folderIdStr = String(folderId);
+    // Use zoneFilteredAudio to ensure we only count announcements from the active zone
+    let folderAnnouncements = zoneFilteredAudio.filter(a => 
+      String(a.category || '') === folderIdStr || String(a.folderId || '') === folderIdStr
+    );
     
     const enabled = folderAnnouncements.filter(a => a.enabled).length;
     const total = folderAnnouncements.length;
@@ -272,6 +295,11 @@ export function AnnouncementsFinal() {
             onGenerateAI={handlers.handleGenerateAIScript}
             onCreateBulk={handlers.handleCreateBulkAnnouncements}
             onUpload={handlers.handleUploadAnnouncement}
+            newFolderName={formState.newFolderName}
+            onNewFolderNameChange={formState.setNewFolderName}
+            onCreateFolder={handlers.handleCreateFolder}
+            isCreatingFolder={formState.isCreatingFolder}
+            activeTarget={activeTarget}
           />
         }
       />

@@ -42,6 +42,8 @@ export interface Folder {
   id: string;
   name: string;
   clientId?: string;
+  zoneId?: string;
+  zone?: string;
   thumbnail?: string;
   type?: string;
 }

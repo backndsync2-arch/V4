@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { announcementsAPI, musicAPI, zonesAPI } from '@/lib/api';
 import { Folder, AnnouncementAudio, TTSVoice } from './announcements.types';
 import { toast } from 'sonner';
+import { usePlayback } from '@/lib/playback';
 
 export function useAnnouncementsData() {
+  const { activeTarget } = usePlayback();
   const [scripts, setScripts] = useState<any[]>([]);
   const [audioFiles, setAudioFiles] = useState<AnnouncementAudio[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -14,8 +16,8 @@ export function useAnnouncementsData() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Load folders from backend
-        const announcementFolders = await musicAPI.getFolders('announcements');
+        // Load folders from backend (filtered by zone)
+        const announcementFolders = await musicAPI.getFolders('announcements', activeTarget || undefined);
         setFolders(announcementFolders);
         
         // Load real announcements from backend
@@ -89,6 +91,19 @@ export function useAnnouncementsData() {
     };
     loadData();
     
+    // Reload folders when zone changes
+    const reloadFolders = async () => {
+      try {
+        const announcementFolders = await musicAPI.getFolders('announcements', activeTarget || undefined);
+        setFolders(announcementFolders);
+      } catch (error) {
+        console.error('Failed to reload folders:', error);
+      }
+    };
+    if (activeTarget !== undefined) {
+      reloadFolders();
+    }
+    
     // Periodic check for announcements with 0:00 duration (every 10 seconds)
     const durationCheckInterval = setInterval(async () => {
       try {
@@ -120,7 +135,7 @@ export function useAnnouncementsData() {
     }, 10000);
     
     return () => clearInterval(durationCheckInterval);
-  }, []);
+  }, [activeTarget]);
 
   return {
     scripts,

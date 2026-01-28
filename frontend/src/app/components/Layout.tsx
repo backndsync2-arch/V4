@@ -62,7 +62,6 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
                 type="button"
                 onClick={() => {
                   onNavigate(item.id);
-                  window.location.hash = item.id;
                 }}
                 className={cn(
                   'w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative',
@@ -95,9 +94,7 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
             ) : (
               <button
                 onClick={() => {
-                  // Navigate to login page via hash
                   onNavigate('login');
-                  window.location.hash = 'login';
                 }}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-[#1db954] to-[#1ed760] text-white hover:from-[#1ed760] hover:to-[#1db954] transition-all duration-200 shadow-lg shadow-[#1db954]/30"
               >

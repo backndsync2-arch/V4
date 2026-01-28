@@ -129,35 +129,63 @@ class SystemStatsView(viewsets.ViewSet):
 
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    ViewSet for viewing audit logs (admin only).
+    ViewSet for viewing audit logs.
+    
+    - Admin: Can see all logs, filterable by client
+    - Client: Can see logs for their client, filterable by floor/role
+    - Floor User: Can see logs for their floor only
     """
     serializer_class = AuditLogSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = []  # Will be handled in get_queryset
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['action', 'resource_type', 'user__name', 'user__email']
     ordering_fields = ['created_at', 'action']
     ordering = ['-created_at']
     
     def get_queryset(self):
-        """Get all audit logs."""
-        queryset = AuditLog.objects.all()
+        """Get audit logs based on user role."""
+        user = self.request.user
         
-        # Filter by user
+        # Admin can see all logs
+        if user.role == 'admin':
+            queryset = AuditLog.objects.all()
+            
+            # Filter by client if specified
+            client_id = self.request.query_params.get('client')
+            if client_id:
+                queryset = queryset.filter(client_id=client_id)
+        # Client users see their client's logs
+        elif user.role == 'client' and user.client:
+            queryset = AuditLog.objects.filter(client=user.client)
+            
+            # Filter by floor if specified
+            floor_id = self.request.query_params.get('floor')
+            if floor_id:
+                queryset = queryset.filter(user__floor_id=floor_id)
+            
+            # Filter by role if specified
+            role = self.request.query_params.get('role')
+            if role:
+                queryset = queryset.filter(user__role=role)
+        # Floor users see only their floor's logs
+        elif user.role == 'floor_user' and user.floor:
+            queryset = AuditLog.objects.filter(
+                client=user.client,
+                user__floor=user.floor
+            )
+        else:
+            # No access
+            queryset = AuditLog.objects.none()
+        
+        # Additional filters (available to all)
         user_id = self.request.query_params.get('user')
         if user_id:
             queryset = queryset.filter(user_id=user_id)
         
-        # Filter by client
-        client_id = self.request.query_params.get('client')
-        if client_id:
-            queryset = queryset.filter(client_id=client_id)
-        
-        # Filter by resource type
         resource_type = self.request.query_params.get('resource_type')
         if resource_type:
             queryset = queryset.filter(resource_type=resource_type)
         
-        # Filter by date range
         date_from = self.request.query_params.get('date_from')
         date_to = self.request.query_params.get('date_to')
         if date_from:
@@ -165,7 +193,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         if date_to:
             queryset = queryset.filter(created_at__lte=date_to)
         
-        return queryset.select_related('user', 'client')
+        return queryset.select_related('user', 'client', 'user__floor')
 
 
 class AIProviderViewSet(viewsets.ModelViewSet):

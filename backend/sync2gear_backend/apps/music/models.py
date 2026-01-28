@@ -33,6 +33,16 @@ class Folder(TimestampedModel):
         db_index=True
     )
     
+    # Zone relationship (folders are zone-specific)
+    zone = models.ForeignKey(
+        'zones.Zone',
+        on_delete=models.CASCADE,
+        related_name='folders',
+        null=True,
+        blank=True,
+        db_index=True
+    )
+    
     # Parent folder (for nested folders)
     parent = models.ForeignKey(
         'self',
@@ -59,9 +69,10 @@ class Folder(TimestampedModel):
         ordering = ['name']
         indexes = [
             models.Index(fields=['client', 'type']),
+            models.Index(fields=['zone', 'type']),
             models.Index(fields=['parent']),
         ]
-        unique_together = [['client', 'name', 'type']]  # Unique folder name per client and type
+        unique_together = [['client', 'zone', 'name', 'type']]  # Unique folder name per client, zone and type
     
     def __str__(self):
         return f"{self.name} ({self.type})"
@@ -100,6 +111,14 @@ class MusicFile(TimestampedModel):
         related_name='music_files',
         db_index=True
     )
+    zone = models.ForeignKey(
+        'zones.Zone',
+        on_delete=models.CASCADE,
+        related_name='music_files',
+        null=True,
+        blank=True,
+        db_index=True
+    )
     client = models.ForeignKey(
         'authentication.Client',
         on_delete=models.CASCADE,
@@ -121,6 +140,7 @@ class MusicFile(TimestampedModel):
         ordering = ['folder', 'order', 'title']
         indexes = [
             models.Index(fields=['client', 'folder']),
+            models.Index(fields=['zone', 'folder']),
             models.Index(fields=['title', 'artist']),
             models.Index(fields=['folder', 'order']),
         ]

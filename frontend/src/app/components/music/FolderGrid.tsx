@@ -9,6 +9,7 @@ export function FolderGrid({
   onSelectFolder,
   onEditFolder,
   onDeleteFolder,
+  activeTarget,
 }: {
   folders: Folder[];
   musicFiles: MusicFile[];
@@ -16,8 +17,14 @@ export function FolderGrid({
   onSelectFolder: (folderId: string | null) => void;
   onEditFolder?: (folder: Folder) => void;
   onDeleteFolder?: (folder: Folder) => void;
+  activeTarget?: string | null;
 }) {
-  const allCount = musicFiles.length;
+  // Filter music files by active zone if one is selected
+  const zoneFilteredMusic = activeTarget
+    ? musicFiles.filter((m: any) => m.zoneId === activeTarget || m.zone === activeTarget)
+    : musicFiles;
+  
+  const allCount = zoneFilteredMusic.length;
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
@@ -32,10 +39,9 @@ export function FolderGrid({
       />
 
       {folders.map((f) => {
-        const count =
-          typeof f.musicFilesCount === 'number'
-            ? f.musicFilesCount
-            : musicFiles.filter((mf) => mf.folderId === f.id).length;
+        // Count music files in this folder, filtered by active zone
+        const folderMusic = zoneFilteredMusic.filter((mf) => mf.folderId === f.id);
+        const count = folderMusic.length;
 
         return (
           <FolderCard

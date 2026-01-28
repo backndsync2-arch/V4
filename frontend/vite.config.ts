@@ -16,4 +16,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // Vite automatically handles client-side routing in dev mode
+  // For production, ensure your server is configured to serve index.html for all routes
 })

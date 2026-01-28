@@ -106,6 +106,8 @@ export const normalizeFolder = (raw: any): Folder => {
     clientId: raw?.client_id ?? raw?.clientId ?? '',
     parentId: raw?.parent_id ?? raw?.parentId ?? undefined,
     type: raw?.type,
+    zoneId: raw?.zone_id ?? raw?.zoneId ?? raw?.zone?.id ?? undefined,
+    zone: raw?.zone_name ?? raw?.zone?.name ?? raw?.zone ?? undefined,
     coverImageUrl: String(raw?.cover_image_url ?? raw?.coverImageUrl ?? ''),
     musicFilesCount: typeof raw?.music_files_count === 'number' ? raw.music_files_count : undefined,
     createdAt: toDate(raw?.created_at ?? raw?.createdAt),
@@ -121,13 +123,15 @@ export const normalizeMusicFile = (raw: any): MusicFile => {
     name: String(raw?.title ?? raw?.name ?? raw?.filename ?? ''),
     folderId: String(raw?.folder_id ?? raw?.folderId ?? ''),
     clientId: String(raw?.client_id ?? raw?.clientId ?? ''),
+    zoneId: raw?.zone_id ?? raw?.zoneId ?? raw?.zone?.id ?? undefined,
+    zone: raw?.zone_name ?? raw?.zone?.name ?? raw?.zone ?? undefined,
     url: String(raw?.file_url ?? raw?.url ?? ''),
     size: Number(raw?.file_size ?? raw?.size ?? 0),
     duration: Number(duration),
     type: String(raw?.type ?? 'audio/mpeg'),
     createdAt: toDate(raw?.created_at ?? raw?.createdAt),
     createdBy: String(raw?.uploaded_by_name ?? raw?.createdBy ?? ''),
-  };
+  } as any;
 };
 
 export const normalizeAnnouncement = (raw: any): AnnouncementAudio => {

@@ -8,6 +8,12 @@ import type { Device, Zone } from '../types';
 import { apiFetch, unwrapList, normalizeDevice } from './core';
 
 export const zonesAPI = {
+  // Get all floors
+  getFloors: async (): Promise<any[]> => {
+    const res = await apiFetch('/zones/floors/');
+    return unwrapList(res);
+  },
+
   // Get all zones
   getZones: async (): Promise<Zone[]> => {
     const res = await apiFetch('/zones/zones/');

@@ -91,8 +91,8 @@ export function MusicLibrary() {
     const load = async () => {
       try {
         const [musicFolders, files, z] = await Promise.all([
-          musicAPI.getFolders('music'),
-          musicAPI.getMusicFiles(),
+          musicAPI.getFolders('music', activeTarget || undefined),
+          musicAPI.getMusicFiles(undefined, activeTarget || undefined),
           zonesAPI.getZones(),
         ]);
         setFolders(musicFolders);
@@ -109,7 +109,7 @@ export function MusicLibrary() {
         }
 
         if (isAdmin) {
-          const annFolders = await musicAPI.getFolders('announcements');
+          const annFolders = await musicAPI.getFolders('announcements', activeTarget || undefined);
           setAnnouncementFolders(annFolders);
           if (!announcementUploadFolderId && annFolders.length > 0) {
             setAnnouncementUploadFolderId(annFolders[0].id);
@@ -169,36 +169,53 @@ export function MusicLibrary() {
     const folder = deleteFolderDialog.folder;
     if (!folder) return;
 
-    // Count music files in folder
-    const filesInFolder = musicFiles.filter((f: any) => f.folderId === folder.id);
-    const fileCount = filesInFolder.length;
+    // Get all files in folder
+    const allFilesInFolder = musicFiles.filter((f: any) => f.folderId === folder.id);
+    
+    // If we're in a specific zone, only delete files from that zone
+    const filesToDelete = activeTarget
+      ? allFilesInFolder.filter((f: any) => f.zoneId === activeTarget || f.zone === activeTarget)
+      : allFilesInFolder;
+    
+    const fileCount = filesToDelete.length;
+    const totalFilesInFolder = allFilesInFolder.length;
+
+    if (fileCount === 0) {
+      toast.info('No files to delete in this zone for this folder.');
+      setDeleteFolderDialog({ open: false, folder: null });
+      return;
+    }
 
     try {
-      // First, delete all music files in the folder
-      if (fileCount > 0) {
-        toast.info(`Deleting ${fileCount} music file${fileCount !== 1 ? 's' : ''}...`);
-        const deletePromises = filesInFolder.map((file: any) => 
-          musicAPI.deleteMusicFile(file.id).catch((err: any) => {
-            console.error(`Failed to delete file ${file.id}:`, err);
-            return null; // Continue with other files even if one fails
-          })
-        );
-        await Promise.all(deletePromises);
-      }
+      // Delete only the zone-specific files
+      toast.info(`Deleting ${fileCount} music file${fileCount !== 1 ? 's' : ''} from ${activeTarget ? 'this zone' : 'this folder'}...`);
+      const deletePromises = filesToDelete.map((file: any) => 
+        musicAPI.deleteMusicFile(file.id).catch((err: any) => {
+          console.error(`Failed to delete file ${file.id}:`, err);
+          return null; // Continue with other files even if one fails
+        })
+      );
+      await Promise.all(deletePromises);
 
-      // Then delete the folder
-      await musicAPI.deleteFolder(folder.id);
-      
-      // Update state
-      setFolders((prev) => prev.filter((f) => f.id !== folder.id));
-      setMusicFiles((prev) => prev.filter((f: any) => f.folderId !== folder.id));
-      
-      // If the deleted folder was selected, clear selection
-      if (selectedFolder === folder.id) {
-        setSelectedFolder(null);
+      // Only delete the folder if all files are gone (or if no zone is selected)
+      const remainingFiles = totalFilesInFolder - fileCount;
+      if (remainingFiles === 0) {
+        await musicAPI.deleteFolder(folder.id);
+        setFolders((prev) => prev.filter((f) => f.id !== folder.id));
+        
+        // If the deleted folder was selected, clear selection
+        if (selectedFolder === folder.id) {
+          setSelectedFolder(null);
+        }
+        toast.success(`Folder "${folder.name}" and ${fileCount} file${fileCount !== 1 ? 's' : ''} deleted`);
+      } else {
+        // Folder still has files from other zones, just update state
+        toast.success(`${fileCount} file${fileCount !== 1 ? '' : 's'} deleted from "${folder.name}" (${remainingFiles} file${remainingFiles !== 1 ? 's' : ''} remain in other zones)`);
       }
-
-      toast.success(`Folder "${folder.name}" and ${fileCount} file${fileCount !== 1 ? 's' : ''} deleted`);
+      
+      // Update music files state
+      setMusicFiles((prev) => prev.filter((f: any) => !filesToDelete.some((d: any) => d.id === f.id)));
+      
       setDeleteFolderDialog({ open: false, folder: null });
     } catch (error: any) {
       console.error('Delete folder error:', error);
@@ -330,7 +347,8 @@ export function MusicLibrary() {
         setUploadProgress(100);
 
         // Refresh list from backend to ensure we show correct metadata/URLs.
-        const refreshed = await musicAPI.getMusicFiles(selectedFolder || undefined);
+        // Filter by active zone to show only files from the current zone
+        const refreshed = await musicAPI.getMusicFiles(selectedFolder || undefined, activeTarget || undefined);
         setMusicFiles(prev => {
           // If we fetched only a folder, merge into previous; else replace.
           if (selectedFolder) {
@@ -719,6 +737,7 @@ export function MusicLibrary() {
               onSelectFolder={(id) => setSelectedFolder(id)}
               onEditFolder={handleEditFolder}
               onDeleteFolder={handleDeleteFolder}
+              activeTarget={activeTarget}
             />
           </CardContent>
         </Card>

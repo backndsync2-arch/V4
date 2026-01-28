@@ -25,7 +25,6 @@ export function MobileNav({ currentPage, onNavigate }: MobileNavProps) {
             type="button"
             onClick={() => {
               onNavigate(item.id);
-              window.location.hash = item.id;
             }}
             className={cn(
               'flex flex-col items-center justify-center gap-1.5 transition-all duration-200 min-h-[44px] relative group',

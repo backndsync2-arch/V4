@@ -8,12 +8,14 @@ export function FolderGrid({
   selectedFolderId,
   onSelectFolder,
   onEditFolder,
+  onDeleteFolder,
 }: {
   folders: Folder[];
   musicFiles: MusicFile[];
   selectedFolderId: string | null;
   onSelectFolder: (folderId: string | null) => void;
   onEditFolder?: (folder: Folder) => void;
+  onDeleteFolder?: (folder: Folder) => void;
 }) {
   const allCount = musicFiles.length;
 
@@ -26,7 +28,7 @@ export function FolderGrid({
         selected={selectedFolderId === null}
         onClick={() => onSelectFolder(null)}
         onEdit={onEditFolder ? () => onEditFolder(null) : undefined}
-        canEdit={true}
+        canEdit={false}
       />
 
       {folders.map((f) => {
@@ -45,6 +47,7 @@ export function FolderGrid({
             selected={selectedFolderId === f.id}
             onClick={() => onSelectFolder(f.id)}
             onEdit={onEditFolder ? () => onEditFolder(f) : undefined}
+            onDelete={onDeleteFolder ? () => onDeleteFolder(f) : undefined}
             canEdit={true}
           />
         );

@@ -30,7 +30,6 @@ export function Scheduler() {
   const [intervalMinutes, setIntervalMinutes] = useState('60');
   const [cycleDuration, setCycleDuration] = useState('30');
   const [selectedAnnouncements, setSelectedAnnouncements] = useState<string[]>([]);
-  const [selectedDevices, setSelectedDevices] = useState<string[]>([]);
   const [avoidRepeat, setAvoidRepeat] = useState(true);
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
   const [quietStart, setQuietStart] = useState('22:00');
@@ -40,7 +39,6 @@ export function Scheduler() {
   const clientId = user?.role === 'admin' ? null : user?.clientId;
   const filteredSchedules = clientId ? schedules.filter(s => s.clientId === clientId) : schedules;
   const availableAudio = clientId ? audioFiles.filter(a => a.clientId === clientId && a.enabled) : audioFiles.filter(a => a.enabled);
-  const availableDevices = clientId ? devices.filter(d => d.clientId === clientId) : devices;
 
   const handleCreateSchedule = async () => {
     if (!scheduleName.trim()) {
@@ -51,17 +49,12 @@ export function Scheduler() {
       toast.error('Please select at least one announcement');
       return;
     }
-    if (selectedDevices.length === 0) {
-      toast.error('Please select at least one device');
-      return;
-    }
 
     setIsCreating(true);
     try {
       const scheduleData: Omit<Schedule, 'id' | 'createdAt' | 'updatedAt'> = {
         name: scheduleName,
         clientId: user?.clientId || 'client1',
-        deviceIds: selectedDevices,
         enabled: true,
         schedule: scheduleType === 'interval' ? {
           type: 'interval',
@@ -91,7 +84,6 @@ export function Scheduler() {
       // Reset form
       setScheduleName('');
       setSelectedAnnouncements([]);
-      setSelectedDevices([]);
       setTimelineSlots([]);
       setIsCreateOpen(false);
       
@@ -340,32 +332,6 @@ export function Scheduler() {
                 </TabsContent>
               </Tabs>
 
-              {/* Device Selection */}
-              <div className="space-y-2">
-                <Label>Select Devices</Label>
-                <div className="space-y-2 max-h-40 overflow-y-auto border rounded-lg p-3">
-                  {availableDevices.map(device => (
-                    <label key={device.id} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedDevices.includes(device.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedDevices([...selectedDevices, device.id]);
-                          } else {
-                            setSelectedDevices(selectedDevices.filter(id => id !== device.id));
-                          }
-                        }}
-                        className="rounded"
-                      />
-                      <span>{device.name}</span>
-                      <Badge variant={device.status === 'online' ? 'default' : 'secondary'} className="ml-auto">
-                        {device.status}
-                      </Badge>
-                    </label>
-                  ))}
-                </div>
-              </div>
 
               <Button onClick={handleCreateSchedule} className="w-full" disabled={isCreating}>
                 {isCreating ? 'Creating...' : 'Create Schedule'}

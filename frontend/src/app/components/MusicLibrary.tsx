@@ -19,10 +19,16 @@ import { useLocalPlayer } from '@/lib/localPlayer';
 import { FolderGrid } from '@/app/components/music/FolderGrid';
 import { CreateFolderDialog } from '@/app/components/music/CreateFolderDialog';
 import { EditFolderDialog } from '@/app/components/music/EditFolderDialog';
+import { cn } from '@/app/components/ui/utils';
+import { usePlayback } from '@/lib/playback';
+import { zonesAPI } from '@/lib/api';
+import { ConfirmationDialog } from '@/app/components/ui/confirmation-dialog';
 
 export function MusicLibrary() {
   const { user } = useAuth();
+  const { activeTarget } = usePlayback();
   const musicUploadInputId = React.useId();
+  const musicUploadInputRef = useRef<HTMLInputElement | null>(null);
   const { play: playLocal, track: localTrack, isPlaying: isLocalPlaying } = useLocalPlayer();
   const filesSectionRef = useRef<HTMLDivElement | null>(null);
   const [folders, setFolders] = useState<any[]>([]);
@@ -44,13 +50,22 @@ export function MusicLibrary() {
   const [musicUploadFolderId, setMusicUploadFolderId] = useState<string | null>(null);
   const [pendingMusicFilesCount, setPendingMusicFilesCount] = useState(0);
   const [musicCoverArtMap, setMusicCoverArtMap] = useState<Map<string, File>>(new Map());
+  const [zones, setZones] = useState<any[]>([]);
+  const [musicUploadZoneId, setMusicUploadZoneId] = useState<string | null>(null);
+  const [announcementUploadZoneId, setAnnouncementUploadZoneId] = useState<string | null>(null);
+  const [deleteFolderDialog, setDeleteFolderDialog] = useState<{ open: boolean; folder: any | null }>({ open: false, folder: null });
 
   const isAdmin = user?.role === 'admin';
   const filteredFolders = folders;
   
-  const displayedFiles = selectedFolder
-    ? musicFiles.filter(f => f.folderId === selectedFolder)
+  // Filter music files by selected zone (activeTarget from GlobalHeader)
+  const zoneFilteredFiles = activeTarget
+    ? musicFiles.filter((f: any) => f.zoneId === activeTarget || f.zone === activeTarget)
     : musicFiles;
+  
+  const displayedFiles = selectedFolder
+    ? zoneFilteredFiles.filter(f => f.folderId === selectedFolder)
+    : zoneFilteredFiles;
 
   const searchedFiles = searchQuery
     ? displayedFiles.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -75,14 +90,22 @@ export function MusicLibrary() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [musicFolders, files] = await Promise.all([
+        const [musicFolders, files, z] = await Promise.all([
           musicAPI.getFolders('music'),
           musicAPI.getMusicFiles(),
+          zonesAPI.getZones(),
         ]);
         setFolders(musicFolders);
         setMusicFiles(files);
+        setZones(z || []);
         if (!musicUploadFolderId && musicFolders.length > 0) {
           setMusicUploadFolderId(musicFolders[0].id);
+        }
+        // Set default zone to activeTarget if available
+        if (activeTarget && !musicUploadZoneId) {
+          setMusicUploadZoneId(activeTarget);
+        } else if (!musicUploadZoneId && z && z.length > 0) {
+          setMusicUploadZoneId(z[0].id);
         }
 
         if (isAdmin) {
@@ -90,6 +113,11 @@ export function MusicLibrary() {
           setAnnouncementFolders(annFolders);
           if (!announcementUploadFolderId && annFolders.length > 0) {
             setAnnouncementUploadFolderId(annFolders[0].id);
+          }
+          if (activeTarget && !announcementUploadZoneId) {
+            setAnnouncementUploadZoneId(activeTarget);
+          } else if (!announcementUploadZoneId && z && z.length > 0) {
+            setAnnouncementUploadZoneId(z[0].id);
           }
         }
       } catch (e: any) {
@@ -99,7 +127,18 @@ export function MusicLibrary() {
     };
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin]);
+  }, [isAdmin, activeTarget]);
+
+  // Ensure file input is accessible when dialog opens
+  useEffect(() => {
+    if (isUploadOpen && musicUploadInputRef.current) {
+      // Verify input is in DOM
+      const input = musicUploadInputRef.current;
+      if (!document.body.contains(input) && !input.isConnected) {
+        console.warn('File input not in DOM when dialog opened');
+      }
+    }
+  }, [isUploadOpen]);
 
   // Folder creation is handled by CreateFolderDialog now.
 
@@ -116,6 +155,55 @@ export function MusicLibrary() {
   const handleFolderUpdated = (updatedFolder: any) => {
     setFolders((prev) => prev.map((f) => (f.id === updatedFolder.id ? updatedFolder : f)));
     setEditingFolder(null);
+  };
+
+  const handleDeleteFolder = (folder: any) => {
+    if (!folder || folder === null) {
+      toast.info('"All Music" is a view and cannot be deleted.');
+      return;
+    }
+    setDeleteFolderDialog({ open: true, folder });
+  };
+
+  const confirmDeleteFolder = async () => {
+    const folder = deleteFolderDialog.folder;
+    if (!folder) return;
+
+    // Count music files in folder
+    const filesInFolder = musicFiles.filter((f: any) => f.folderId === folder.id);
+    const fileCount = filesInFolder.length;
+
+    try {
+      // First, delete all music files in the folder
+      if (fileCount > 0) {
+        toast.info(`Deleting ${fileCount} music file${fileCount !== 1 ? 's' : ''}...`);
+        const deletePromises = filesInFolder.map((file: any) => 
+          musicAPI.deleteMusicFile(file.id).catch((err: any) => {
+            console.error(`Failed to delete file ${file.id}:`, err);
+            return null; // Continue with other files even if one fails
+          })
+        );
+        await Promise.all(deletePromises);
+      }
+
+      // Then delete the folder
+      await musicAPI.deleteFolder(folder.id);
+      
+      // Update state
+      setFolders((prev) => prev.filter((f) => f.id !== folder.id));
+      setMusicFiles((prev) => prev.filter((f: any) => f.folderId !== folder.id));
+      
+      // If the deleted folder was selected, clear selection
+      if (selectedFolder === folder.id) {
+        setSelectedFolder(null);
+      }
+
+      toast.success(`Folder "${folder.name}" and ${fileCount} file${fileCount !== 1 ? 's' : ''} deleted`);
+      setDeleteFolderDialog({ open: false, folder: null });
+    } catch (error: any) {
+      console.error('Delete folder error:', error);
+      toast.error(error?.message || 'Failed to delete folder');
+    }
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -168,7 +256,11 @@ export function MusicLibrary() {
           const f = filesToUploadFiltered[i];
           await announcementsAPI.uploadAnnouncement(
             f,
-            { title: f.name.replace(/\.[^/.]+$/, ''), folder_id: targetFolderId || undefined },
+            { 
+              title: f.name.replace(/\.[^/.]+$/, ''), 
+              folder_id: targetFolderId || undefined,
+              zone_id: announcementUploadZoneId || activeTarget || undefined,
+            },
             (p) => {
               // Calculate total progress: completed files + current file progress
               const completedFiles = i; // Files already completed
@@ -202,7 +294,8 @@ export function MusicLibrary() {
             const result = await musicAPI.uploadMusicFile(
               f,
               { 
-                folder_id: folderId || undefined, 
+                folder_id: folderId || undefined,
+                zone_id: musicUploadZoneId || activeTarget || undefined,
                 title: f.name.replace(/\.[^/.]+$/, ''),
                 cover_art: coverArt || undefined,
               },
@@ -349,7 +442,7 @@ export function MusicLibrary() {
   };
 
   return (
-    <DndProvider backend={HTML5Backend}>
+    <>
       <div className="space-y-6">
         <CreateFolderDialog
           open={isCreateFolderOpen}
@@ -362,22 +455,41 @@ export function MusicLibrary() {
           folder={editingFolder}
           onUpdated={handleFolderUpdated}
         />
+        <ConfirmationDialog
+          open={deleteFolderDialog.open}
+          onOpenChange={(open) => setDeleteFolderDialog({ open, folder: deleteFolderDialog.folder })}
+          onConfirm={confirmDeleteFolder}
+          title="Delete Folder"
+          description={
+            deleteFolderDialog.folder
+              ? (() => {
+                  const fileCount = musicFiles.filter((f: any) => f.folderId === deleteFolderDialog.folder?.id).length;
+                  return fileCount > 0
+                    ? `Delete folder "${deleteFolderDialog.folder.name}" and all ${fileCount} music file${fileCount !== 1 ? 's' : ''} inside it? This action cannot be undone.`
+                    : `Delete folder "${deleteFolderDialog.folder.name}"? This action cannot be undone.`;
+                })()
+              : ''
+          }
+          confirmText="Delete"
+          cancelText="Cancel"
+          variant="destructive"
+        />
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex-1 max-w-md">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 z-10" />
               <Input
                 placeholder="Search music files..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="pl-10 bg-white/5 backdrop-blur-sm border-white/20 focus:border-[#1db954] focus:ring-[#1db954]/20 shadow-sm text-white placeholder:text-gray-500"
               />
             </div>
             <div className="mt-2 flex items-center justify-between gap-2">
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-gray-400 font-medium">
                 {isSearching ? (
-                  <>Showing <span className="font-medium text-slate-700">{searchedFiles.length}</span> result{searchedFiles.length !== 1 ? 's' : ''}</>
+                  <>Showing <span className="font-semibold text-white">{searchedFiles.length}</span> result{searchedFiles.length !== 1 ? 's' : ''}</>
                 ) : (
                   <>Browse folders or search your library</>
                 )}
@@ -388,26 +500,45 @@ export function MusicLibrary() {
                   variant="ghost"
                   size="sm"
                   onClick={() => setSearchQuery('')}
+                  className="text-xs hover:bg-white/10 text-gray-400 hover:text-white"
                 >
                   Clear
                 </Button>
               )}
             </div>
           </div>
-          <div className="flex gap-3">
-            <Button variant="outline" onClick={() => setIsCreateFolderOpen(true)}>
+          <div className="flex gap-2 sm:gap-3 flex-wrap">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsCreateFolderOpen(true)}
+              className="bg-white/5 backdrop-blur-sm border-white/20 hover:bg-white/10 shadow-sm text-white"
+            >
               <FolderPlus className="h-4 w-4 mr-2" />
-              New Folder
+              <span className="hidden sm:inline">New Folder</span>
+              <span className="sm:hidden">Folder</span>
             </Button>
 
             <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
               <DialogTrigger asChild>
-                <Button>
+                <Button className="bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] shadow-lg shadow-[#1db954]/30 text-white">
                   <Upload className="h-4 w-4 mr-2" />
-                  Upload {isAdmin ? 'Content' : 'Music'}
+                  <span className="hidden sm:inline">Upload {isAdmin ? 'Content' : 'Music'}</span>
+                  <span className="sm:hidden">Upload</span>
                 </Button>
               </DialogTrigger>
               <DialogContent>
+                <input
+                  id={musicUploadInputId}
+                  ref={musicUploadInputRef}
+                  type="file"
+                  accept="audio/mp3,audio/wav,audio/m4a,audio/mpeg"
+                  multiple
+                  className="sr-only"
+                  onChange={(e) => {
+                    setPendingMusicFilesCount(e.target.files?.length || 0);
+                    handleUpload(e as any);
+                  }}
+                />
                 <DialogHeader>
                   <DialogTitle>Upload {isAdmin ? 'Content' : 'Music'}</DialogTitle>
                   <DialogDescription>
@@ -427,77 +558,109 @@ export function MusicLibrary() {
                           <SelectItem value="announcements">Announcements (Template)</SelectItem>
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-gray-400">
                         {uploadDestination === 'music' ? 'Files will be added to the Music Library as curated playlists' : 'Files will be added to Announcements as ready-made templates'}
                       </p>
                     </div>
                   )}
                   {uploadDestination === 'music' && (
-                    <div className="space-y-2">
-                      <Label>Music Folder</Label>
-                      <Select
-                        value={musicUploadFolderId || selectedFolder || ''}
-                        onValueChange={(value) => setMusicUploadFolderId(value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select folder..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {filteredFolders.map((f: any) => (
-                            <SelectItem key={f.id} value={f.id}>
-                              {f.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-slate-500">Choose which music folder these uploads should be added to.</p>
-                    </div>
+                    <>
+                      <div className="space-y-2">
+                        <Label>Zone <span className="text-red-400">*</span></Label>
+                        <Select
+                          value={musicUploadZoneId || activeTarget || ''}
+                          onValueChange={(value) => setMusicUploadZoneId(value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select zone..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {zones.map((z: any) => (
+                              <SelectItem key={z.id} value={z.id}>
+                                {z.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-gray-400">Select the zone for these music files.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Music Folder</Label>
+                        <Select
+                          value={musicUploadFolderId || selectedFolder || ''}
+                          onValueChange={(value) => setMusicUploadFolderId(value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select folder..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {filteredFolders.map((f: any) => (
+                              <SelectItem key={f.id} value={f.id}>
+                                {f.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-gray-400">Choose which music folder these uploads should be added to.</p>
+                      </div>
+                    </>
                   )}
                   {isAdmin && uploadDestination === 'announcements' && (
-                    <div className="space-y-2">
-                      <Label>Announcement Folder</Label>
-                      <Select
-                        value={announcementUploadFolderId || ''}
-                        onValueChange={(value) => setAnnouncementUploadFolderId(value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select folder..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {announcementFolders.map((f: any) => (
-                            <SelectItem key={f.id} value={f.id}>
-                              {f.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-slate-500">Uploaded files will be stored in this announcements folder.</p>
-                    </div>
+                    <>
+                      <div className="space-y-2">
+                        <Label>Zone <span className="text-red-400">*</span></Label>
+                        <Select
+                          value={announcementUploadZoneId || activeTarget || ''}
+                          onValueChange={(value) => setAnnouncementUploadZoneId(value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select zone..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {zones.map((z: any) => (
+                              <SelectItem key={z.id} value={z.id}>
+                                {z.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-gray-400">Select the zone for these announcement files.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Announcement Folder</Label>
+                        <Select
+                          value={announcementUploadFolderId || ''}
+                          onValueChange={(value) => setAnnouncementUploadFolderId(value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select folder..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {announcementFolders.map((f: any) => (
+                              <SelectItem key={f.id} value={f.id}>
+                                {f.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-gray-400">Uploaded files will be stored in this announcements folder.</p>
+                      </div>
+                    </>
                   )}
-                  <input
-                    id={musicUploadInputId}
-                    type="file"
-                    accept="audio/mp3,audio/wav,audio/m4a,audio/mpeg"
-                    multiple
-                    className="sr-only"
-                    onChange={(e) => {
-                      setPendingMusicFilesCount(e.target.files?.length || 0);
-                      // Reuse existing handler (it uploads immediately)
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      handleUpload(e as any);
-                    }}
-                  />
-                  <div className="flex items-center gap-3">
-                    <Button type="button" variant="outline" asChild>
-                      <label htmlFor={musicUploadInputId} className="cursor-pointer">
-                        Choose files
-                      </label>
-                    </Button>
-                    <span className="text-sm text-slate-600 truncate">
-                      {pendingMusicFilesCount > 0 ? `${pendingMusicFilesCount} file(s) selected` : 'No files selected'}
-                    </span>
+                  <div className="space-y-2">
+                    <Label>Select Audio Files</Label>
+                    <div className="flex items-center gap-3">
+                      <Button type="button" variant="outline" asChild>
+                        <label htmlFor={musicUploadInputId} className="cursor-pointer">
+                          Choose files
+                        </label>
+                      </Button>
+                      <span className="text-sm text-slate-600 truncate">
+                        {pendingMusicFilesCount > 0 ? `${pendingMusicFilesCount} file(s) selected` : 'No files selected'}
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-gray-400">
                     Supported formats: MP3, WAV, M4A • You can manually add cover art after upload
                   </p>
                   {isUploading && (
@@ -513,9 +676,9 @@ export function MusicLibrary() {
                           {uploadProgress < 100 ? 'Please wait...' : 'Finalizing...'}
                         </p>
                       </div>
-                      <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                      <div className="w-full bg-white/10 rounded-md h-2 overflow-hidden">
                         <div 
-                          className="bg-blue-600 h-full transition-all duration-300 ease-out rounded-full"
+                          className="bg-blue-600 h-full transition-all duration-300 ease-out rounded-md"
                           style={{ width: `${uploadProgress}%` }}
                         />
                       </div>
@@ -530,15 +693,18 @@ export function MusicLibrary() {
         </div>
 
         {/* Folders (industry-style top grid) */}
-        <Card className={showFoldersOnMobile ? '' : 'hidden md:block'}>
-          <CardHeader>
+        <Card className={cn(
+          showFoldersOnMobile ? '' : 'hidden md:block',
+          'border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm'
+        )}>
+          <CardHeader className="pb-4">
             <div className="flex items-center justify-between gap-2">
-              <CardTitle>Folders</CardTitle>
+              <CardTitle className="text-xl font-bold text-white">Folders</CardTitle>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="md:hidden"
+                className="md:hidden hover:bg-white/10 text-gray-400 hover:text-white"
                 onClick={() => setShowFoldersOnMobile((v) => !v)}
               >
                 {showFoldersOnMobile ? 'Hide' : 'Show'}
@@ -552,52 +718,63 @@ export function MusicLibrary() {
               selectedFolderId={selectedFolder}
               onSelectFolder={(id) => setSelectedFolder(id)}
               onEditFolder={handleEditFolder}
+              onDeleteFolder={handleDeleteFolder}
             />
           </CardContent>
         </Card>
 
         {/* Music Files */}
         <div ref={filesSectionRef}>
-          <Card>
-              <CardHeader>
+          <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
+              <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>
+                    <CardTitle className="text-xl font-bold text-white">
                       {selectedFolder
                         ? filteredFolders.find(f => f.id === selectedFolder)?.name
                         : 'All Music'}
                     </CardTitle>
-                    <CardDescription>
+                    <CardDescription className="text-gray-400 mt-1.5">
                       {searchedFiles.length} track{searchedFiles.length !== 1 ? 's' : ''} • Drag to reorder
                     </CardDescription>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {searchedFiles.map((file, index) => (
-                    <DraggableTrack
-                      key={file.id}
-                      index={index}
-                      file={file}
-                      moveTrack={moveTrack}
-                      playingTrack={playingTrack}
-                      coverArt={coverArt}
-                      onPlay={handlePlay}
-                      onDelete={handleDelete}
-                      onCoverArtChange={handleCoverArtChange}
-                    />
-                  ))}
-                  {searchedFiles.length === 0 && (
-                    <div className="text-center py-12 text-slate-500">
-                      {searchQuery ? 'No music files match your search' : 'No music files in this folder'}
-                    </div>
-                  )}
-                </div>
+              <CardContent className="pb-4">
+                <DndProvider backend={HTML5Backend}>
+                  <div className="space-y-2">
+                    {searchedFiles.map((file, index) => (
+                      <DraggableTrack
+                        key={file.id}
+                        index={index}
+                        file={file}
+                        moveTrack={moveTrack}
+                        playingTrack={playingTrack}
+                        coverArt={coverArt}
+                        onPlay={handlePlay}
+                        onDelete={handleDelete}
+                        onCoverArtChange={handleCoverArtChange}
+                      />
+                    ))}
+                    {searchedFiles.length === 0 && (
+                      <div className="text-center py-16">
+                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-md bg-white/5 mb-4">
+                          <Search className="h-8 w-8 text-slate-400" />
+                        </div>
+                        <p className="text-gray-400 font-medium">
+                          {searchQuery ? 'No music files match your search' : 'No music files in this folder'}
+                        </p>
+                        {!searchQuery && (
+                          <p className="text-sm text-slate-400 mt-2">Upload music files to get started</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </DndProvider>
               </CardContent>
           </Card>
         </div>
       </div>
-    </DndProvider>
+    </>
   );
 }

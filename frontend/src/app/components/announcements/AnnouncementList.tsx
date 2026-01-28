@@ -43,9 +43,9 @@ export function AnnouncementList({
 }: AnnouncementListProps) {
   if (announcements.length === 0) {
     return (
-      <Card>
+      <Card className="bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10">
         <CardContent>
-          <div className="text-center py-12 text-slate-500">
+          <div className="text-center py-12 text-gray-400">
             {searchQuery ? 'No announcements found matching your search' : 'No announcements in this folder'}
           </div>
         </CardContent>
@@ -55,14 +55,14 @@ export function AnnouncementList({
 
   if (viewMode === 'list') {
     return (
-      <Card>
+      <Card className="bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>
+              <CardTitle className="text-white">
                 {selectedFolder ? folders.find(f => f.id === selectedFolder)?.name : 'All Announcements'}
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="text-gray-400">
                 {announcements.length} announcement{announcements.length !== 1 ? 's' : ''} 
                 {filterEnabled !== 'all' && ` (${filterEnabled})`}
               </CardDescription>
@@ -76,7 +76,7 @@ export function AnnouncementList({
               return (
                 <div
                   key={audio.id}
-                  className="flex flex-col md:flex-row items-start md:items-center gap-4 p-4 bg-slate-50 rounded-lg"
+                  className="flex flex-col md:flex-row items-start md:items-center gap-4 p-4 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-all"
                 >
                   <ImageUpload
                     currentImage={announcementIcons[audio.id] || undefined}
@@ -90,7 +90,9 @@ export function AnnouncementList({
                         size="sm"
                         variant={playingAudio === audio.id ? 'default' : 'outline'}
                         onClick={() => onPlay(audio.id)}
-                        className="shrink-0"
+                        className={playingAudio === audio.id 
+                          ? "shrink-0 bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white shadow-lg shadow-[#1db954]/50" 
+                          : "shrink-0 bg-white/5 hover:bg-white/10 text-white border-white/20"}
                       >
                         {playingAudio === audio.id ? (
                           <Pause className="h-4 w-4" />
@@ -98,30 +100,32 @@ export function AnnouncementList({
                           <Play className="h-4 w-4" />
                         )}
                       </Button>
-                      <Radio className="h-5 w-5 text-slate-400 shrink-0" />
+                      <Radio className="h-5 w-5 text-gray-400 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-medium">{audio.title}</p>
+                          <p className="font-medium text-white">{audio.title}</p>
                           {audio.category && (
-                            <Badge variant="outline" className="shrink-0">
+                            <Badge variant="outline" className="shrink-0 bg-white/5 text-gray-300 border-white/10">
                               {folders.find(f => f.id === audio.category)?.name || audio.category}
                             </Badge>
                           )}
-                          <Badge variant={audio.type === 'tts' ? 'secondary' : 'default'} className="shrink-0">
+                          <Badge variant={audio.type === 'tts' ? 'secondary' : 'default'} className={audio.type === 'tts' 
+                            ? "shrink-0 bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/20 text-[#1db954] border-[#1db954]/30" 
+                            : "shrink-0 bg-white/5 text-gray-300 border-white/10"}>
                             {audio.type.toUpperCase()}
                           </Badge>
                         </div>
                         {script && (
-                          <p className="text-sm text-slate-500 mt-1 line-clamp-1">{script.text}</p>
+                          <p className="text-sm text-gray-400 mt-1 line-clamp-1">{script.text}</p>
                         )}
-                        <p className="text-sm text-slate-500 mt-1">
+                        <p className="text-sm text-gray-400 mt-1">
                           Duration: {formatDuration(audio.duration)}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 flex-wrap">
                       <div className="flex items-center gap-2">
-                        <Label htmlFor={`enabled-${audio.id}`} className="text-sm">
+                        <Label htmlFor={`enabled-${audio.id}`} className="text-sm text-gray-300">
                           Enabled
                         </Label>
                         <Switch
@@ -132,7 +136,7 @@ export function AnnouncementList({
                       </div>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
+                          <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white hover:bg-white/10">
                             <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -156,14 +160,14 @@ export function AnnouncementList({
 
   // Grid view
   return (
-    <Card>
+    <Card className="bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>
+            <CardTitle className="text-white">
               {selectedFolder ? folders.find(f => f.id === selectedFolder)?.name : 'All Announcements'}
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-gray-400">
               {announcements.length} announcement{announcements.length !== 1 ? 's' : ''} 
               {filterEnabled !== 'all' && ` (${filterEnabled})`}
             </CardDescription>
@@ -175,8 +179,8 @@ export function AnnouncementList({
           {announcements.map((audio) => {
             const script = scripts.find(s => s.id === audio.scriptId);
             return (
-              <Card key={audio.id} className="overflow-hidden">
-                <div className="aspect-square bg-gradient-to-br from-blue-100 to-purple-100 relative">
+              <Card key={audio.id} className="overflow-hidden bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10 group hover:shadow-xl hover:shadow-[#1db954]/20 transition-all duration-300">
+                <div className="aspect-square bg-gradient-to-br from-[#1db954]/20 via-[#1ed760]/10 to-[#2a2a2a] relative overflow-hidden">
                   <ImageUpload
                     currentImage={announcementIcons[audio.id] || undefined}
                     onImageChange={(url) => onIconChange(audio.id, url)}
@@ -186,7 +190,9 @@ export function AnnouncementList({
                     size="sm"
                     variant={playingAudio === audio.id ? 'default' : 'outline'}
                     onClick={() => onPlay(audio.id)}
-                    className="absolute bottom-2 right-2"
+                    className={playingAudio === audio.id 
+                      ? "absolute bottom-2 right-2 bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white shadow-lg shadow-[#1db954]/50" 
+                      : "absolute bottom-2 right-2 bg-black/60 hover:bg-black/80 text-white border-white/20 opacity-0 group-hover:opacity-100 transition-opacity"}
                   >
                     {playingAudio === audio.id ? (
                       <Pause className="h-4 w-4" />
@@ -195,14 +201,16 @@ export function AnnouncementList({
                     )}
                   </Button>
                 </div>
-                <CardContent className="p-4">
+                <CardContent className="p-4 bg-[#1a1a1a]">
                   <div className="space-y-2">
-                    <p className="font-medium truncate">{audio.title}</p>
+                    <p className="font-medium truncate text-white">{audio.title}</p>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Badge variant={audio.type === 'tts' ? 'secondary' : 'default'} className="shrink-0">
+                      <Badge variant={audio.type === 'tts' ? 'secondary' : 'default'} className={audio.type === 'tts' 
+                        ? "shrink-0 bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/20 text-[#1db954] border-[#1db954]/30" 
+                        : "shrink-0 bg-white/5 text-gray-300 border-white/10"}>
                         {audio.type.toUpperCase()}
                       </Badge>
-                      <Badge variant="outline" className="shrink-0">
+                      <Badge variant="outline" className="shrink-0 bg-white/5 text-gray-300 border-white/10">
                         {formatDuration(audio.duration)}
                       </Badge>
                     </div>
@@ -213,12 +221,12 @@ export function AnnouncementList({
                       />
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
+                          <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white hover:bg-white/10">
                             <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => onDelete(audio.id)} className="text-red-600">
+                        <DropdownMenuContent align="end" className="bg-[#2a2a2a] border-white/10">
+                          <DropdownMenuItem onClick={() => onDelete(audio.id)} className="text-red-400 hover:bg-red-500/20">
                             <Trash2 className="h-4 w-4 mr-2" />
                             Delete
                           </DropdownMenuItem>

@@ -12,6 +12,7 @@ export function FolderCard({
   subtitle,
   onClick,
   onEdit,
+  onDelete,
   canEdit = true,
 }: {
   name: string;
@@ -21,26 +22,38 @@ export function FolderCard({
   subtitle?: string;
   onClick: () => void;
   onEdit?: (e: React.MouseEvent) => void;
+  onDelete?: (e: React.MouseEvent) => void;
   canEdit?: boolean;
 }) {
   const img = (imageUrl || '').trim();
 
   return (
     <div className="relative group">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onClick}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        }}
         className={cn(
-          'relative w-full rounded-2xl overflow-hidden border text-left bg-white shadow-sm hover:shadow-md transition-all',
-          selected ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200'
+          'relative w-full rounded-lg overflow-hidden border text-left bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm shadow-lg hover:shadow-xl hover:shadow-[#1db954]/20 transition-all duration-200 hover:scale-[1.02] cursor-pointer',
+          selected 
+            ? 'border-[#1db954] ring-2 ring-[#1db954]/30 shadow-[#1db954]/20 bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10' 
+            : 'border-white/10 hover:border-white/20'
         )}
       >
         <div className="relative aspect-square">
           {img ? (
             <img src={img} alt={name} className="h-full w-full object-cover" />
           ) : (
-            <div className="h-full w-full bg-gradient-to-br from-slate-200 via-slate-100 to-white flex items-center justify-center">
-              <Music2 className="h-12 w-12 text-slate-500" />
+            <div className="h-full w-full bg-gradient-to-br from-[#1db954]/20 to-[#1ed760]/10 flex items-center justify-center">
+              <div className="p-3 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-lg shadow-lg">
+                <Music2 className="h-8 w-8 text-white" />
+              </div>
             </div>
           )}
 
@@ -49,7 +62,7 @@ export function FolderCard({
 
           {typeof count === 'number' && (
             <div className="absolute top-3 right-3">
-              <Badge variant="secondary" className="bg-white/90 text-slate-900 border border-white/40">
+              <Badge variant="secondary" className="bg-white/10 text-white border border-white/20">
                 {count}
               </Badge>
             </div>
@@ -62,22 +75,34 @@ export function FolderCard({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="bg-white/95 hover:bg-white text-slate-900 rounded-lg p-2 shadow-md hover:shadow-lg transition-all"
+                    className="bg-white/10 hover:bg-white/20 text-white rounded-lg p-2 shadow-md hover:shadow-lg transition-all"
                     aria-label="Folder options"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <MoreVertical className="h-4 w-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
+                <DropdownMenuContent align="start" className="bg-[#2a2a2a] border-white/10">
                   <DropdownMenuItem
                     onClick={(e) => {
                       e.stopPropagation();
-                      onEdit(e);
+                      if (onEdit) onEdit(e);
                     }}
+                    className="text-white hover:bg-white/10 focus:bg-white/10"
                   >
-                    Edit thumbnail
+                    Edit folder
                   </DropdownMenuItem>
+                  {onDelete && (
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onDelete) onDelete(e);
+                      }}
+                      className="text-red-400 hover:bg-red-500/20 focus:bg-red-500/20"
+                    >
+                      Delete folder
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -90,7 +115,7 @@ export function FolderCard({
             ) : null}
           </div>
         </div>
-      </button>
+      </div>
     </div>
   );
 }

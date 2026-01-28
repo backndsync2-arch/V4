@@ -136,6 +136,8 @@ export const normalizeAnnouncement = (raw: any): AnnouncementAudio => {
     title: String(raw?.title ?? ''),
     clientId: String(raw?.client_id ?? raw?.clientId ?? ''),
     folderId: raw?.folder_id ?? raw?.folderId ?? undefined,
+    zoneId: raw?.zone_id ?? raw?.zoneId ?? undefined,
+    zone: raw?.zone_name ?? raw?.zone?.name ?? raw?.zone ?? undefined,
     url: String(raw?.file_url ?? raw?.url ?? ''),
     duration: Number(raw?.duration ?? 0),
     type: raw?.type ?? (raw?.is_tts ? 'tts' : raw?.is_recording ? 'recorded' : 'uploaded'),

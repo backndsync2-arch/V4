@@ -106,6 +106,8 @@ export interface AnnouncementAudio {
   type: 'tts' | 'uploaded' | 'recorded';
   enabled: boolean;
   category?: string;
+  zoneId?: string;
+  zone?: string;
   createdAt: Date;
   createdBy: string;
   ttsText?: string; // Text content for TTS announcements

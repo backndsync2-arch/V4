@@ -6,6 +6,7 @@ import { Play, Pause, MoreVertical, Trash2, GripVertical } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/app/components/ui/dropdown-menu';
 import { ImageUpload } from '@/app/components/ImageUpload';
 import { formatDuration, formatFileSize, formatDate } from '@/lib/utils';
+import { cn } from '@/app/components/ui/utils';
 
 interface DragItem {
   index: number;
@@ -112,19 +113,21 @@ export function DraggableTrack({
       ref={ref}
       data-handler-id={handlerId}
       style={{ opacity }}
-      className={`flex items-center gap-4 p-4 rounded-lg transition-all ${
+      className={`flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-lg transition-all duration-200 border ${
         isDragging 
-          ? 'bg-blue-100 shadow-lg scale-105 cursor-grabbing' 
-          : 'bg-slate-50 hover:bg-slate-100 cursor-grab'
+          ? 'bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 border-[#1db954] shadow-xl scale-[1.02] cursor-grabbing' 
+          : playingTrack === file.id
+          ? 'bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 border-[#1db954] hover:border-[#1ed760] hover:shadow-md cursor-grab'
+          : 'bg-white/5 border-white/10 hover:border-white/20 hover:shadow-md cursor-grab'
       }`}
     >
       {/* Drag Handle */}
-      <div className="cursor-grab active:cursor-grabbing touch-none">
-        <GripVertical className="h-5 w-5 text-slate-400" />
+      <div className="cursor-grab active:cursor-grabbing touch-none shrink-0">
+        <GripVertical className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400" />
       </div>
 
       {/* Cover Art */}
-      <div className="w-16 h-16 flex-shrink-0">
+      <div className="w-12 h-12 sm:w-16 sm:h-16 flex-shrink-0 rounded-lg overflow-hidden shadow-sm">
         <ImageUpload
           currentImage={coverArt[file.id] || undefined}
           onImageChange={(url) => onCoverArtChange(file.id, url)}
@@ -133,12 +136,16 @@ export function DraggableTrack({
         />
       </div>
 
-      <div className="flex items-center justify-between flex-1">
-        <div className="flex items-center gap-4 flex-1">
+      <div className="flex items-center justify-between flex-1 min-w-0">
+        <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
           <Button
             size="sm"
             variant={playingTrack === file.id ? 'default' : 'outline'}
             onClick={() => onPlay(file.id)}
+            className={cn(
+              "shrink-0",
+              playingTrack === file.id && "bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] shadow-md text-white"
+            )}
           >
             {playingTrack === file.id ? (
               <Pause className="h-4 w-4" />
@@ -146,21 +153,21 @@ export function DraggableTrack({
               <Play className="h-4 w-4" />
             )}
           </Button>
-          <div className="flex-1">
-            <p className="font-medium">{file.name}</p>
-            <p className="text-sm text-slate-500">
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-white truncate">{file.name}</p>
+            <p className="text-xs sm:text-sm text-gray-400 truncate">
               {formatDuration(file.duration)} • {formatFileSize(file.size)} • {formatDate(file.createdAt)}
             </p>
           </div>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" className="shrink-0 hover:bg-white/10 text-gray-400 hover:text-white">
               <MoreVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onDelete(file.id)} className="text-red-600">
+          <DropdownMenuContent align="end" className="bg-[#2a2a2a] border-white/10">
+            <DropdownMenuItem onClick={() => onDelete(file.id)} className="text-red-400 hover:bg-red-500/20">
               <Trash2 className="h-4 w-4 mr-2" />
               Delete
             </DropdownMenuItem>

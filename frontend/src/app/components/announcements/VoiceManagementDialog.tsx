@@ -52,18 +52,18 @@ export function VoiceManagementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="text-white">
             {hasAudio ? 'Change Announcement Voice' : 'Select Voice to Generate & Play'}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-gray-400">
             {announcementTitle ? `${announcementTitle} - Select a voice to generate audio` : 'Select a voice for this announcement'}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Select Voice</Label>
+            <Label className="text-white">Select Voice</Label>
             <Select value={selectedVoice} onValueChange={onVoiceChange}>
               <SelectTrigger>
                 <SelectValue placeholder="Select a voice" />

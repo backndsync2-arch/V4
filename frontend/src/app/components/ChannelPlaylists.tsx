@@ -303,7 +303,7 @@ export function ChannelPlaylists() {
                   {zones.map((zone) => (
                     <label
                       key={zone}
-                      className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-slate-50"
+                      className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-white/10"
                     >
                       <input
                         type="checkbox"
@@ -337,7 +337,7 @@ export function ChannelPlaylists() {
                   {filteredMusic.map((music) => (
                     <label
                       key={music.id}
-                      className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer"
+                      className="flex items-center gap-3 p-2 hover:bg-white/10 rounded cursor-pointer"
                     >
                       <input
                         type="checkbox"
@@ -374,7 +374,7 @@ export function ChannelPlaylists() {
                   {filteredAnnouncements.map((announcement) => (
                     <label
                       key={announcement.id}
-                      className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer"
+                      className="flex items-center gap-3 p-2 hover:bg-white/10 rounded cursor-pointer"
                     >
                       <input
                         type="checkbox"

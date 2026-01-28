@@ -364,7 +364,7 @@ export function Users() {
                               password: e.target.checked ? '' : newUserForm.password
                             })
                           }
-                          className="rounded border-slate-300"
+                          className="rounded border-white/20"
                         />
                         <Label htmlFor="autoGenerate" className="text-sm font-normal cursor-pointer">
                           Auto-generate
@@ -424,7 +424,7 @@ export function Users() {
                             password: e.target.checked ? '' : resetPasswordForm.password
                           })
                         }
-                        className="rounded border-slate-300"
+                        className="rounded border-white/20"
                       />
                       <Label htmlFor="autoGenerateReset" className="text-sm font-normal cursor-pointer">
                         Auto-generate
@@ -479,7 +479,7 @@ export function Users() {
             {filteredUsers.map((user) => (
               <div
                 key={user.id}
-                className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors gap-4"
+                className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white/5 rounded-lg hover:bg-white/10 transition-colors gap-4"
               >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold shrink-0">
@@ -561,7 +561,7 @@ export function Users() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 border border-slate-200 rounded-lg">
+            <div className="p-4 border border-white/10 rounded-lg">
               <Badge className="mb-3">Owner</Badge>
               <ul className="space-y-2 text-sm">
                 <li className="flex items-start gap-2">
@@ -579,7 +579,7 @@ export function Users() {
               </ul>
             </div>
 
-            <div className="p-4 border border-slate-200 rounded-lg">
+            <div className="p-4 border border-white/10 rounded-lg">
               <Badge variant="secondary" className="mb-3">Manager</Badge>
               <ul className="space-y-2 text-sm">
                 <li className="flex items-start gap-2">
@@ -597,7 +597,7 @@ export function Users() {
               </ul>
             </div>
 
-            <div className="p-4 border border-slate-200 rounded-lg">
+            <div className="p-4 border border-white/10 rounded-lg">
               <Badge variant="outline" className="mb-3">Operator</Badge>
               <ul className="space-y-2 text-sm">
                 <li className="flex items-start gap-2">

@@ -118,37 +118,37 @@ export function Profile() {
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-24 md:pb-6">
       <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="profile">
+        <TabsList className="grid w-full grid-cols-3 bg-white/5 border-white/10">
+          <TabsTrigger value="profile" className="text-gray-400 data-[state=active]:text-white data-[state=active]:bg-white/10">
             <UserIcon className="h-4 w-4 mr-2" />
-            Profile
+            <span className="hidden sm:inline">Profile</span>
           </TabsTrigger>
-          <TabsTrigger value="tutorial">
+          <TabsTrigger value="tutorial" className="text-gray-400 data-[state=active]:text-white data-[state=active]:bg-white/10">
             <BookOpen className="h-4 w-4 mr-2" />
-            Tutorial
+            <span className="hidden sm:inline">Tutorial</span>
           </TabsTrigger>
-          <TabsTrigger value="checklist">
+          <TabsTrigger value="checklist" className="text-gray-400 data-[state=active]:text-white data-[state=active]:bg-white/10">
             <CheckSquare className="h-4 w-4 mr-2" />
-            Checklist
+            <span className="hidden sm:inline">Checklist</span>
           </TabsTrigger>
         </TabsList>
 
         {/* Profile Tab */}
         <TabsContent value="profile" className="space-y-6">
           {/* Profile Header */}
-          <Card>
+          <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
             <CardHeader>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
                 <ImageUpload
                   currentImage={profileImage || undefined}
                   onImageChange={setProfileImage}
                   variant="profile"
                   size="lg"
                 />
-                <div>
-                  <CardTitle>{user?.name}</CardTitle>
-                  <CardDescription className="flex items-center gap-2 mt-1">
-                    <Badge variant={user?.role === 'admin' ? 'default' : 'secondary'}>
+                <div className="flex-1 text-center sm:text-left w-full sm:w-auto">
+                  <CardTitle className="text-white text-xl sm:text-2xl">{user?.name}</CardTitle>
+                  <CardDescription className="flex items-center justify-center sm:justify-start gap-2 mt-2">
+                    <Badge variant={user?.role === 'admin' ? 'default' : 'secondary'} className="bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 text-[#1db954] border-[#1db954]/30">
                       {user?.role}
                     </Badge>
                   </CardDescription>
@@ -158,102 +158,107 @@ export function Profile() {
           </Card>
 
           {/* Account Information */}
-          <Card>
+          <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
             <CardHeader>
-              <CardTitle>Account Information</CardTitle>
-              <CardDescription>View and update your account details</CardDescription>
+              <CardTitle className="text-white">Account Information</CardTitle>
+              <CardDescription className="text-gray-400">View and update your account details</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
+                <Label htmlFor="name" className="text-white">Name</Label>
                 <Input
                   id="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email" className="text-white">Email</Label>
                 <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-slate-400" />
+                  <Mail className="h-4 w-4 text-gray-400" />
                   <Input
                     id="email"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                   />
                 </div>
               </div>
               {client && (
                 <div className="space-y-2">
-                  <Label>Client</Label>
-                  <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
-                    <Building2 className="h-4 w-4 text-slate-400" />
-                    <span>{client.name}</span>
-                    <Badge variant="outline" className="ml-auto">{client.status}</Badge>
+                  <Label className="text-white">Client</Label>
+                  <div className="flex items-center gap-2 p-3 bg-white/5 border border-white/10 rounded-lg">
+                    <Building2 className="h-4 w-4 text-gray-400" />
+                    <span className="text-white">{client.name}</span>
+                    <Badge variant="outline" className="ml-auto bg-white/5 border-white/10 text-gray-300">{client.status}</Badge>
                   </div>
                 </div>
               )}
               <div className="space-y-2">
-                <Label>Role</Label>
-                <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
-                  <Shield className="h-4 w-4 text-slate-400" />
-                  <span className="capitalize">{user?.role}</span>
+                <Label className="text-white">Role</Label>
+                <div className="flex items-center gap-2 p-3 bg-white/5 border border-white/10 rounded-lg">
+                  <Shield className="h-4 w-4 text-gray-400" />
+                  <span className="capitalize text-white">{user?.role}</span>
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Member Since</Label>
-                <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
-                  <Calendar className="h-4 w-4 text-slate-400" />
-                  <span>{formatDate(user?.createdAt || new Date())}</span>
+                <Label className="text-white">Member Since</Label>
+                <div className="flex items-center gap-2 p-3 bg-white/5 border border-white/10 rounded-lg">
+                  <Calendar className="h-4 w-4 text-gray-400" />
+                  <span className="text-white">{formatDate(user?.createdAt || new Date())}</span>
                 </div>
               </div>
-              <Button onClick={handleSave} className="w-full">
+              <Button onClick={handleSave} className="w-full bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white shadow-lg shadow-[#1db954]/30">
                 Save Changes
               </Button>
             </CardContent>
           </Card>
 
           {/* Security */}
-          <Card>
+          <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
             <CardHeader>
-              <CardTitle>Security</CardTitle>
-              <CardDescription>Manage your password and security settings</CardDescription>
+              <CardTitle className="text-white">Security</CardTitle>
+              <CardDescription className="text-gray-400">Manage your password and security settings</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="current-password">Current Password</Label>
+                <Label htmlFor="current-password" className="text-white">Current Password</Label>
                 <Input 
                   id="current-password" 
                   type="password" 
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   placeholder="Enter current password"
+                  className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="new-password">New Password</Label>
+                <Label htmlFor="new-password" className="text-white">New Password</Label>
                 <Input 
                   id="new-password" 
                   type="password" 
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Enter new password (min 8 characters)"
+                  className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirm New Password</Label>
+                <Label htmlFor="confirm-password" className="text-white">Confirm New Password</Label>
                 <Input 
                   id="confirm-password" 
                   type="password" 
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Re-enter new password"
+                  className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                 />
               </div>
               <Button 
                 variant="outline" 
-                className="w-full"
+                className="w-full border-white/10 hover:bg-white/10 text-white"
                 onClick={handleChangePassword}
               >
                 Change Password
@@ -261,37 +266,17 @@ export function Profile() {
             </CardContent>
           </Card>
 
-          {/* API Access (for admins) */}
-          {user?.role === 'admin' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>API Access</CardTitle>
-                <CardDescription>Manage API keys and integrations</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-4 bg-slate-50 rounded-lg">
-                  <p className="text-sm font-medium mb-2">API Key</p>
-                  <code className="text-xs text-slate-600 break-all">
-                    sk_live_51MxYz...ABC123
-                  </code>
-                </div>
-                <Button variant="outline" className="w-full">
-                  Regenerate API Key
-                </Button>
-              </CardContent>
-            </Card>
-          )}
 
           {/* Legal & Policies */}
-          <Card>
+          <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
             <CardHeader>
-              <CardTitle>Legal & Policies</CardTitle>
-              <CardDescription>Review important legal documents and policies</CardDescription>
+              <CardTitle className="text-white">Legal & Policies</CardTitle>
+              <CardDescription className="text-gray-400">Review important legal documents and policies</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <Button 
                 variant="outline" 
-                className="w-full justify-start"
+                className="w-full justify-start border-white/10 hover:bg-white/10 text-white"
                 onClick={() => setShowCancellationPolicy(true)}
               >
                 <FileText className="h-4 w-4 mr-2" />
@@ -299,7 +284,7 @@ export function Profile() {
               </Button>
               <Button 
                 variant="outline" 
-                className="w-full justify-start"
+                className="w-full justify-start border-white/10 hover:bg-white/10 text-white"
                 onClick={() => setShowTerms(true)}
               >
                 <FileText className="h-4 w-4 mr-2" />
@@ -307,7 +292,7 @@ export function Profile() {
               </Button>
               <Button 
                 variant="outline" 
-                className="w-full justify-start"
+                className="w-full justify-start border-white/10 hover:bg-white/10 text-white"
                 onClick={() => setShowPrivacy(true)}
               >
                 <Shield className="h-4 w-4 mr-2" />
@@ -319,47 +304,47 @@ export function Profile() {
 
         {/* Tutorial Tab */}
         <TabsContent value="tutorial">
-          <Card>
+          <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
             <CardHeader>
-              <CardTitle>Interactive Tutorial</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-white">Interactive Tutorial</CardTitle>
+              <CardDescription className="text-gray-400">
                 Learn how to use sync2gear with our step-by-step guide
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="p-6 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-start gap-4">
-                  <div className="p-3 bg-blue-600 rounded-xl">
+              <div className="p-6 bg-gradient-to-br from-[#1db954]/10 to-[#1ed760]/5 border border-[#1db954]/20 rounded-lg">
+                <div className="flex flex-col sm:flex-row items-start gap-4">
+                  <div className="p-3 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-xl">
                     <BookOpen className="h-6 w-6 text-white" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-semibold text-lg mb-2">
+                    <h3 className="font-semibold text-lg mb-2 text-white">
                       {user?.role === 'admin' ? 'Staff Tutorial' : 'Customer Tutorial'}
                     </h3>
-                    <p className="text-sm text-slate-700 mb-4">
+                    <p className="text-sm text-gray-400 mb-4">
                       {user?.role === 'admin'
                         ? 'Learn how to manage clients, monitor the system, and provide support as a sync2gear administrator.'
                         : 'Master your music and announcements system with our comprehensive tutorial covering all features.'}
                     </p>
-                    <ul className="space-y-2 mb-4 text-sm text-slate-600">
+                    <ul className="space-y-2 mb-4 text-sm text-gray-300">
                       <li className="flex items-center gap-2">
-                        <CheckSquare className="h-4 w-4 text-blue-600" />
+                        <CheckSquare className="h-4 w-4 text-[#1db954]" />
                         {user?.role === 'admin' ? 'Managing client accounts' : 'Setting up your music library'}
                       </li>
                       <li className="flex items-center gap-2">
-                        <CheckSquare className="h-4 w-4 text-blue-600" />
+                        <CheckSquare className="h-4 w-4 text-[#1db954]" />
                         {user?.role === 'admin' ? 'Client impersonation' : 'Creating announcements'}
                       </li>
                       <li className="flex items-center gap-2">
-                        <CheckSquare className="h-4 w-4 text-blue-600" />
+                        <CheckSquare className="h-4 w-4 text-[#1db954]" />
                         {user?.role === 'admin' ? 'System monitoring' : 'Scheduling automation'}
                       </li>
                       <li className="flex items-center gap-2">
-                        <CheckSquare className="h-4 w-4 text-blue-600" />
+                        <CheckSquare className="h-4 w-4 text-[#1db954]" />
                         {user?.role === 'admin' ? 'Audit logs' : 'Zone management'}
                       </li>
                     </ul>
-                    <Button onClick={handleRestartTutorial}>
+                    <Button onClick={handleRestartTutorial} className="bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white shadow-lg shadow-[#1db954]/30">
                       <BookOpen className="h-4 w-4 mr-2" />
                       Start Tutorial
                     </Button>
@@ -367,9 +352,9 @@ export function Profile() {
                 </div>
               </div>
 
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <h4 className="font-semibold text-amber-900 mb-2">Tutorial Features</h4>
-                <ul className="space-y-1 text-sm text-amber-800">
+              <div className="p-4 bg-white/5 border border-white/10 rounded-lg">
+                <h4 className="font-semibold text-white mb-2">Tutorial Features</h4>
+                <ul className="space-y-1 text-sm text-gray-400">
                   <li>• Interactive step-by-step guidance</li>
                   <li>• Real examples and use cases</li>
                   <li>• Pro tips for advanced features</li>

@@ -31,20 +31,20 @@ export function FolderSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10">
         <DialogHeader>
-          <DialogTitle>Folder Settings: {folderName}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-white">Folder Settings: {folderName}</DialogTitle>
+          <DialogDescription className="text-gray-400">
             Configure playlist intervals and playback order. Announcements will automatically duck music.
           </DialogDescription>
         </DialogHeader>
         
         <div className="space-y-6">
           {/* Enable/Disable */}
-          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
+          <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10">
             <div>
-              <Label className="text-base">Enable Automatic Playlist</Label>
-              <p className="text-sm text-slate-500 mt-1">
+              <Label className="text-base text-white">Enable Automatic Playlist</Label>
+              <p className="text-sm text-gray-400 mt-1">
                 Play announcements from this folder on a schedule
               </p>
             </div>
@@ -60,7 +60,7 @@ export function FolderSettingsDialog({
             <>
               {/* Interval */}
               <div className="space-y-3">
-                <Label className="text-base">Playback Interval</Label>
+                <Label className="text-base text-white">Playback Interval</Label>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 space-y-1">
                     <Label className="text-xs">Minutes</Label>
@@ -96,14 +96,14 @@ export function FolderSettingsDialog({
                     />
                   </div>
                 </div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-gray-400">
                   Total interval: {settings.intervalMinutes * 60 + settings.intervalSeconds} seconds between announcements
                 </p>
               </div>
 
               {/* Playlist Mode */}
               <div className="space-y-3">
-                <Label className="text-base">Playlist Mode</Label>
+                <Label className="text-base text-white">Playlist Mode</Label>
                 <Select
                   value={settings.playlistMode}
                   onValueChange={(value: 'sequential' | 'random' | 'single') => {
@@ -122,10 +122,10 @@ export function FolderSettingsDialog({
               </div>
 
               {/* Prevent Overlap */}
-              <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-lg">
                 <div>
-                  <Label className="text-base">Prevent Overlap</Label>
-                  <p className="text-sm text-blue-700 mt-1">
+                  <Label className="text-base text-white">Prevent Overlap</Label>
+                  <p className="text-sm text-gray-400 mt-1">
                     Never play announcements over each other (recommended)
                   </p>
                 </div>
@@ -139,14 +139,14 @@ export function FolderSettingsDialog({
 
               {/* Announcement Selection */}
               <div className="space-y-3">
-                <Label className="text-base">Select Announcements ({settings.selectedAnnouncements.length} selected)</Label>
-                <div className="max-h-60 overflow-y-auto border rounded-lg p-3 space-y-2">
+                <Label className="text-base text-white">Select Announcements ({settings.selectedAnnouncements.length} selected)</Label>
+                <div className="max-h-60 overflow-y-auto border border-white/10 rounded-lg p-3 space-y-2 bg-white/5">
                   {announcements.map((announcement) => {
                     const isSelected = settings.selectedAnnouncements.includes(announcement.id);
                     return (
                       <label
                         key={announcement.id}
-                        className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-slate-50 min-h-[44px]"
+                        className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-white/10 min-h-[44px]"
                       >
                         <Checkbox
                           checked={isSelected}
@@ -158,8 +158,8 @@ export function FolderSettingsDialog({
                           }}
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium">{announcement.title}</p>
-                          <p className="text-xs text-slate-500">
+                          <p className="text-sm font-medium text-white">{announcement.title}</p>
+                          <p className="text-xs text-gray-400">
                             {announcement.enabled ? 'Enabled' : 'Disabled'}
                           </p>
                         </div>
@@ -167,7 +167,7 @@ export function FolderSettingsDialog({
                     );
                   })}
                 </div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-gray-400">
                   Only selected announcements will be played in this folder's playlist.
                   {settings.preventOverlap && ' Overlap prevention is active.'}
                 </p>

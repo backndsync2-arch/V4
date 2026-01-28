@@ -444,28 +444,28 @@ export function LaunchChecklist({ onComplete }: LaunchChecklistProps) {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-bold">
+        <h2 className="text-2xl font-bold text-white">
           {user.role === 'admin' ? 'System Launch Checklist' : 'Go-Live Checklist'}
         </h2>
-        <p className="text-slate-600 mt-1">
+        <p className="text-gray-400 mt-1">
           Complete these steps to ensure a smooth {user.role === 'admin' ? 'system deployment' : 'launch'}
         </p>
       </div>
 
       {/* Progress Overview */}
-      <Card>
+      <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
         <CardContent className="pt-6">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-600">Overall Progress</p>
-                <p className="text-3xl font-bold mt-1">
+                <p className="text-sm font-medium text-gray-400">Overall Progress</p>
+                <p className="text-3xl font-bold mt-1 text-white">
                   {completed.size} / {checklist.length}
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-sm font-medium text-slate-600">Critical Tasks</p>
-                <p className="text-3xl font-bold mt-1">
+                <p className="text-sm font-medium text-gray-400">Critical Tasks</p>
+                <p className="text-3xl font-bold mt-1 text-white">
                   {criticalCompleted} / {criticalItems.length}
                 </p>
               </div>
@@ -494,16 +494,16 @@ export function LaunchChecklist({ onComplete }: LaunchChecklistProps) {
         const categoryCompleted = items.filter(item => completed.has(item.id)).length;
 
         return (
-          <Card key={category.id}>
+          <Card key={category.id} className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   {React.createElement(category.icon, {
-                    className: "h-5 w-5 text-blue-600"
+                    className: "h-5 w-5 text-[#1db954]"
                   })}
                   <div>
-                    <CardTitle>{category.label}</CardTitle>
-                    <CardDescription>
+                    <CardTitle className="text-white">{category.label}</CardTitle>
+                    <CardDescription className="text-gray-400">
                       {categoryCompleted} of {items.length} completed
                     </CardDescription>
                   </div>
@@ -520,7 +520,7 @@ export function LaunchChecklist({ onComplete }: LaunchChecklistProps) {
                   return (
                     <Collapsible key={item.id} open={isExpanded} onOpenChange={() => toggleExpanded(item.id)}>
                       <div className={`border rounded-lg p-4 transition-colors ${
-                        isCompleted ? 'bg-green-50 border-green-200' : 'bg-white border-slate-200'
+                        isCompleted ? 'bg-[#1db954]/10 border-[#1db954]/30' : 'bg-white/5 border-white/10'
                       }`}>
                         <div className="flex items-start gap-3">
                           <Checkbox
@@ -531,9 +531,9 @@ export function LaunchChecklist({ onComplete }: LaunchChecklistProps) {
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
                               {React.createElement(item.icon, {
-                                className: `h-4 w-4 ${isCompleted ? 'text-green-600' : 'text-slate-400'}`
+                                className: `h-4 w-4 ${isCompleted ? 'text-[#1db954]' : 'text-gray-400'}`
                               })}
-                              <h4 className={`font-semibold ${isCompleted ? 'text-green-900' : 'text-slate-900'}`}>
+                              <h4 className={`font-semibold ${isCompleted ? 'text-[#1db954]' : 'text-white'}`}>
                                 {item.title}
                               </h4>
                               <Badge
@@ -546,12 +546,12 @@ export function LaunchChecklist({ onComplete }: LaunchChecklistProps) {
                                 {item.priority}
                               </Badge>
                             </div>
-                            <p className={`text-sm ${isCompleted ? 'text-green-700' : 'text-slate-600'}`}>
+                            <p className={`text-sm ${isCompleted ? 'text-[#1db954]/80' : 'text-gray-400'}`}>
                               {item.description}
                             </p>
                           </div>
                           <CollapsibleTrigger asChild>
-                            <Button variant="ghost" size="sm">
+                            <Button variant="ghost" size="sm" className="text-white hover:text-white">
                               {isExpanded ? (
                                 <ChevronUp className="h-4 w-4" />
                               ) : (
@@ -566,8 +566,8 @@ export function LaunchChecklist({ onComplete }: LaunchChecklistProps) {
                             <div className="mt-4 ml-8 space-y-2">
                               {item.subTasks.map((task, idx) => (
                                 <div key={idx} className="flex items-start gap-2">
-                                  <Circle className="h-3 w-3 text-slate-400 mt-1 shrink-0" />
-                                  <span className="text-sm text-slate-600">{task}</span>
+                                  <Circle className="h-3 w-3 text-gray-400 mt-1 shrink-0" />
+                                  <span className="text-sm text-gray-400">{task}</span>
                                 </div>
                               ))}
                             </div>
@@ -585,7 +585,7 @@ export function LaunchChecklist({ onComplete }: LaunchChecklistProps) {
 
       {/* Completion Message */}
       {progress === 100 && (
-        <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white">
+        <Card className="border-white/10 shadow-lg bg-gradient-to-r from-[#1db954] to-[#1ed760] text-white">
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
               <div className="p-4 bg-white/20 rounded-xl">
@@ -602,7 +602,7 @@ export function LaunchChecklist({ onComplete }: LaunchChecklistProps) {
                 </p>
               </div>
               {onComplete && (
-                <Button variant="secondary" onClick={onComplete}>
+                <Button variant="secondary" onClick={onComplete} className="bg-white text-[#1db954] hover:bg-white/90">
                   Continue
                 </Button>
               )}

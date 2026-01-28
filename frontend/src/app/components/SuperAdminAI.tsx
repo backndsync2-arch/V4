@@ -239,8 +239,8 @@ export function SuperAdminAI() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">AI Configuration</h1>
-          <p className="text-slate-500 mt-1">
+          <h1 className="text-3xl font-bold text-white">AI Configuration</h1>
+          <p className="text-gray-400 mt-1">
             Manage AI providers, API keys, and activation codes
           </p>
         </div>
@@ -249,7 +249,7 @@ export function SuperAdminAI() {
           if (!open) resetForm();
         }}>
           <DialogTrigger asChild>
-            <Button size="lg">
+            <Button size="lg" className="bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white">
               <Plus className="h-5 w-5 mr-2" />
               Add AI Provider
             </Button>
@@ -333,11 +333,11 @@ export function SuperAdminAI() {
                 </div>
               </div>
 
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm font-medium text-blue-900 mb-2">Features Included:</p>
+              <div className="p-4 bg-white/5 border border-white/10 rounded-lg">
+                <p className="text-sm font-medium text-white mb-2">Features Included:</p>
                 <div className="flex flex-wrap gap-2">
                   {getProviderFeatures(formData.provider).map((feature) => (
-                    <Badge key={feature} variant="outline" className="bg-white">
+                    <Badge key={feature} variant="outline" className="bg-white/10 text-white border-white/20">
                       {feature}
                     </Badge>
                   ))}
@@ -365,49 +365,49 @@ export function SuperAdminAI() {
 
       {/* Overview Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
+        <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Active Providers</p>
-                <p className="text-3xl font-bold mt-2">
+                <p className="text-sm text-gray-400">Active Providers</p>
+                <p className="text-3xl font-bold mt-2 text-white">
                   {aiProviders.filter(p => p.isActive).length}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-green-100">
-                <CheckCircle2 className="h-6 w-6 text-green-600" />
+              <div className="p-3 rounded-lg bg-[#1db954]/20">
+                <CheckCircle2 className="h-6 w-6 text-[#1db954]" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Total Requests</p>
-                <p className="text-3xl font-bold mt-2">
+                <p className="text-sm text-gray-400">Total Requests</p>
+                <p className="text-3xl font-bold mt-2 text-white">
                   {totalRequests.toLocaleString()}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-blue-100">
-                <Sparkles className="h-6 w-6 text-blue-600" />
+              <div className="p-3 rounded-lg bg-blue-500/20">
+                <Sparkles className="h-6 w-6 text-blue-400" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Monthly Spend</p>
-                <p className="text-3xl font-bold mt-2">
+                <p className="text-sm text-gray-400">Monthly Spend</p>
+                <p className="text-3xl font-bold mt-2 text-white">
                   ${totalMonthlySpend.toFixed(2)}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-purple-100">
-                <Key className="h-6 w-6 text-purple-600" />
+              <div className="p-3 rounded-lg bg-purple-500/20">
+                <Key className="h-6 w-6 text-purple-400" />
               </div>
             </div>
           </CardContent>
@@ -416,14 +416,14 @@ export function SuperAdminAI() {
 
       {/* AI Providers List */}
       {aiProviders.length === 0 ? (
-        <Card>
+        <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
           <CardContent className="py-12 text-center">
-            <Sparkles className="h-12 w-12 mx-auto text-slate-400 mb-4" />
-            <h3 className="text-lg font-medium mb-2">No AI providers configured</h3>
-            <p className="text-slate-500 mb-6">
+            <Sparkles className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium mb-2 text-white">No AI providers configured</h3>
+            <p className="text-gray-400 mb-6">
               Add your first AI provider to enable AI features
             </p>
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
+            <Button onClick={() => setIsCreateDialogOpen(true)} className="bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white">
               <Plus className="h-4 w-4 mr-2" />
               Add AI Provider
             </Button>
@@ -432,25 +432,25 @@ export function SuperAdminAI() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {aiProviders.map((provider) => (
-            <Card key={provider.id}>
+            <Card key={provider.id} className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg ${
-                      provider.isActive ? 'bg-green-100' : 'bg-slate-100'
+                      provider.isActive ? 'bg-[#1db954]/20' : 'bg-white/5'
                     }`}>
                       {getProviderIcon(provider.provider)}
                     </div>
                     <div>
-                      <CardTitle className="flex items-center gap-2">
+                      <CardTitle className="flex items-center gap-2 text-white">
                         {provider.name}
                         {provider.isActive ? (
-                          <Badge className="bg-green-600">Active</Badge>
+                          <Badge className="bg-[#1db954] text-white">Active</Badge>
                         ) : (
-                          <Badge variant="secondary">Inactive</Badge>
+                          <Badge variant="secondary" className="bg-white/10 text-white">Inactive</Badge>
                         )}
                       </CardTitle>
-                      <CardDescription className="capitalize mt-1">
+                      <CardDescription className="capitalize mt-1 text-gray-400">
                         {provider.provider}
                       </CardDescription>
                     </div>
@@ -464,13 +464,13 @@ export function SuperAdminAI() {
               <CardContent className="space-y-4">
                 {/* API Key */}
                 <div className="space-y-2">
-                  <Label className="text-xs text-slate-500">API Key</Label>
+                  <Label className="text-xs text-gray-400">API Key</Label>
                   <div className="flex items-center gap-2">
                     <Input
                       type={showApiKey[provider.id] ? 'text' : 'password'}
                       value={provider.apiKey}
                       readOnly
-                      className="font-mono text-sm"
+                      className="font-mono text-sm bg-white/5 border-white/10 text-white"
                     />
                     <Button
                       variant="outline"
@@ -479,6 +479,7 @@ export function SuperAdminAI() {
                         ...showApiKey,
                         [provider.id]: !showApiKey[provider.id],
                       })}
+                      className="border-white/10 text-white hover:bg-white/10"
                     >
                       {showApiKey[provider.id] ? (
                         <EyeOff className="h-4 w-4" />
@@ -490,6 +491,7 @@ export function SuperAdminAI() {
                       variant="outline"
                       size="sm"
                       onClick={() => handleCopyApiKey(provider.apiKey)}
+                      className="border-white/10 text-white hover:bg-white/10"
                     >
                       <Copy className="h-4 w-4" />
                     </Button>
@@ -498,21 +500,21 @@ export function SuperAdminAI() {
 
                 {/* Usage Stats */}
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="p-3 bg-slate-50 rounded-lg">
-                    <p className="text-xs text-slate-500">Requests</p>
-                    <p className="text-lg font-bold">
+                  <div className="p-3 bg-white/5 rounded-lg border border-white/10">
+                    <p className="text-xs text-gray-400">Requests</p>
+                    <p className="text-lg font-bold text-white">
                       {provider.usage.totalRequests.toLocaleString()}
                     </p>
                   </div>
-                  <div className="p-3 bg-slate-50 rounded-lg">
-                    <p className="text-xs text-slate-500">Tokens</p>
-                    <p className="text-lg font-bold">
+                  <div className="p-3 bg-white/5 rounded-lg border border-white/10">
+                    <p className="text-xs text-gray-400">Tokens</p>
+                    <p className="text-lg font-bold text-white">
                       {(provider.usage.totalTokens / 1000).toFixed(1)}K
                     </p>
                   </div>
-                  <div className="p-3 bg-slate-50 rounded-lg">
-                    <p className="text-xs text-slate-500">Cost</p>
-                    <p className="text-lg font-bold">
+                  <div className="p-3 bg-white/5 rounded-lg border border-white/10">
+                    <p className="text-xs text-gray-400">Cost</p>
+                    <p className="text-lg font-bold text-white">
                       ${provider.usage.costUSD.toFixed(2)}
                     </p>
                   </div>
@@ -521,14 +523,14 @@ export function SuperAdminAI() {
                 {/* Limits */}
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Daily Limit</span>
-                    <span className="font-medium">
+                    <span className="text-gray-400">Daily Limit</span>
+                    <span className="font-medium text-white">
                       {provider.limits.dailyRequests.toLocaleString()} requests
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Monthly Budget</span>
-                    <span className="font-medium">
+                    <span className="text-gray-400">Monthly Budget</span>
+                    <span className="font-medium text-white">
                       ${provider.limits.monthlyBudget.toLocaleString()}
                     </span>
                   </div>
@@ -536,10 +538,10 @@ export function SuperAdminAI() {
 
                 {/* Features */}
                 <div className="space-y-2">
-                  <Label className="text-xs text-slate-500">Features</Label>
+                  <Label className="text-xs text-gray-400">Features</Label>
                   <div className="flex flex-wrap gap-2">
                     {provider.features.map((feature) => (
-                      <Badge key={feature} variant="outline">
+                      <Badge key={feature} variant="outline" className="bg-white/10 text-white border-white/20">
                         {feature}
                       </Badge>
                     ))}

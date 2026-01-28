@@ -131,6 +131,7 @@ export const musicAPI = {
     file: File,
     data: {
       folder_id?: string;
+      zone_id?: string;
       title?: string;
       artist?: string;
       album?: string;
@@ -145,6 +146,7 @@ export const musicAPI = {
       formData.append('file', file);
       formData.append('cover_art', data.cover_art);
       if (data.folder_id) formData.append('folder_id', data.folder_id);
+      if (data.zone_id) formData.append('zone_id', data.zone_id);
       if (data.title) formData.append('title', data.title);
       if (data.artist) formData.append('artist', data.artist);
       if (data.album) formData.append('album', data.album);
@@ -192,8 +194,54 @@ export const musicAPI = {
     
     // No cover art, use existing uploadFile function
     const { cover_art: _unused, ...rest } = data;
-    const res = await uploadFile('/music/files/', file, rest, onProgress);
-    return normalizeMusicFile(res);
+    // uploadFile expects formData fields, so we need to handle zone_id
+    const formData = new FormData();
+    formData.append('file', file);
+    if (data.folder_id) formData.append('folder_id', data.folder_id);
+    if (data.zone_id) formData.append('zone_id', data.zone_id);
+    if (data.title) formData.append('title', data.title);
+    if (data.artist) formData.append('artist', data.artist);
+    if (data.album) formData.append('album', data.album);
+    
+    const headers: HeadersInit = {};
+    const token = getAccessToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable && onProgress) {
+          onProgress((e.loaded / e.total) * 100);
+        }
+      });
+      
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(normalizeMusicFile(JSON.parse(xhr.responseText)));
+        } else {
+          let errorData: any = {};
+          try {
+            errorData = JSON.parse(xhr.responseText);
+          } catch {
+            // ignore parse error
+          }
+          reject(new APIError(xhr.status, errorData?.message || 'Upload failed', errorData));
+        }
+      });
+      
+      xhr.addEventListener('error', () => {
+        reject(new APIError(0, 'Network error'));
+      });
+      
+      xhr.open('POST', `${API_BASE_URL}/music/files/`);
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      xhr.send(formData);
+    });
   },
 
   // Batch upload music files

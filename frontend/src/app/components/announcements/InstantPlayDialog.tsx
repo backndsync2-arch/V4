@@ -5,6 +5,7 @@ import { Label } from '@/app/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 import { Badge } from '@/app/components/ui/badge';
 import { Volume2 } from 'lucide-react';
+import { AnnouncementAudio } from './announcements.types';
 
 interface InstantPlayDialogProps {
   open: boolean;
@@ -76,16 +77,16 @@ export function InstantPlayDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10">
         <DialogHeader>
-          <DialogTitle>Play Instant Announcement</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-white">Play Instant Announcement</DialogTitle>
+          <DialogDescription className="text-gray-400">
             Trigger an announcement to play immediately on selected devices (ducks music automatically)
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Select Announcement</Label>
+            <Label className="text-white">Select Announcement</Label>
             <Select value={selectedAnnouncement} onValueChange={onAnnouncementChange}>
               <SelectTrigger>
                 <SelectValue placeholder="Choose announcement" />
@@ -101,10 +102,10 @@ export function InstantPlayDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Select Devices</Label>
-            <div className="space-y-2 max-h-40 overflow-y-auto border rounded-lg p-3">
+            <Label className="text-white">Select Devices</Label>
+            <div className="space-y-2 max-h-40 overflow-y-auto border border-white/10 rounded-lg p-3 bg-white/5">
               {availableDevices.map(device => (
-                <label key={device.id} className="flex items-center gap-2 cursor-pointer min-h-[44px]">
+                <label key={device.id} className="flex items-center gap-2 cursor-pointer min-h-[44px] hover:bg-white/10 p-2 rounded">
                   <input
                     type="checkbox"
                     checked={selectedDevices.includes(device.id)}
@@ -117,7 +118,7 @@ export function InstantPlayDialog({
                     }}
                     className="rounded"
                   />
-                  <span>{device.name}</span>
+                  <span className="text-white">{device.name}</span>
                   <Badge variant={device.status === 'online' ? 'default' : 'secondary'} className="ml-auto">
                     {device.status}
                   </Badge>

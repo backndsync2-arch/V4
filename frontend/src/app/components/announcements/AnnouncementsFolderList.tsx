@@ -13,6 +13,7 @@ interface AnnouncementsFolderListProps {
   onFolderSelect: (folderId: string | null) => void;
   onFolderSettings: (folderId: string) => void;
   audioFiles: AnnouncementAudio[];
+  allAnnouncementsCount?: number;
   isCreateFolderOpen: boolean;
   onCreateFolderOpenChange: (open: boolean) => void;
   newFolderName: string;
@@ -29,6 +30,7 @@ export function AnnouncementsFolderList({
   onFolderSelect,
   onFolderSettings,
   audioFiles,
+  allAnnouncementsCount,
   isCreateFolderOpen,
   onCreateFolderOpenChange,
   newFolderName,
@@ -49,10 +51,10 @@ export function AnnouncementsFolderList({
                 <FolderPlus className="h-4 w-4" />
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10">
               <DialogHeader>
-                <DialogTitle>Create Folder</DialogTitle>
-                <DialogDescription>Organize your announcements with folder-level playlist settings</DialogDescription>
+                <DialogTitle className="text-white">Create Folder</DialogTitle>
+                <DialogDescription className="text-gray-400">Organize your announcements with folder-level playlist settings</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <Input
@@ -73,7 +75,7 @@ export function AnnouncementsFolderList({
           <button
             onClick={() => onFolderSelect(null)}
             className={`flex-shrink-0 md:w-full flex items-center gap-3 p-3 rounded-lg transition-colors min-h-[44px] ${
-              selectedFolder === null ? 'bg-blue-100 text-blue-600' : 'hover:bg-slate-100'
+              selectedFolder === null ? 'bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 text-[#1db954]' : 'hover:bg-white/10'
             }`}
           >
             <Folder className="h-5 w-5 shrink-0" />
@@ -81,7 +83,9 @@ export function AnnouncementsFolderList({
               <div className="text-sm font-medium">All</div>
               <div className="text-sm font-medium">Announcements</div>
             </div>
-            <Badge variant="secondary" className="shrink-0">{audioFiles.length}</Badge>
+            <Badge variant="secondary" className="shrink-0">
+              {audioFiles.length}
+            </Badge>
           </button>
           {folders.map((folder) => {
             const stats = getFolderStats(folder.id);
@@ -90,7 +94,7 @@ export function AnnouncementsFolderList({
               <div key={folder.id} className="flex-shrink-0 md:w-full">
                 <div
                   className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors min-h-[44px] cursor-pointer ${
-                    selectedFolder === folder.id ? 'bg-blue-100 text-blue-600' : 'hover:bg-slate-100'
+                    selectedFolder === folder.id ? 'bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 text-[#1db954]' : 'hover:bg-white/10'
                   }`}
                 >
                   <div 
@@ -108,7 +112,7 @@ export function AnnouncementsFolderList({
                           </Badge>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 truncate">
+                      <p className="text-xs text-gray-400 truncate">
                         {stats.enabled}/{stats.total} enabled
                       </p>
                     </div>

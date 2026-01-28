@@ -212,10 +212,10 @@ export function Zones() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Total Zones</p>
+                <p className="text-sm text-gray-400">Total Zones</p>
                 <p className="text-3xl font-bold mt-2">{Object.keys(zones).length}</p>
               </div>
-              <div className="p-3 rounded-lg bg-blue-100">
+              <div className="p-3 rounded-lg bg-gradient-to-br from-[#1db954]/20 to-[#1ed760]/10">
                 <Grid3x3 className="h-6 w-6 text-blue-600" />
               </div>
             </div>
@@ -226,7 +226,7 @@ export function Zones() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Online Devices</p>
+                <p className="text-sm text-gray-400">Online Devices</p>
                 <p className="text-3xl font-bold mt-2">
                   {filteredDevices.filter(d => d.status === 'online').length}
                 </p>
@@ -242,12 +242,12 @@ export function Zones() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Offline Devices</p>
+                <p className="text-sm text-gray-400">Offline Devices</p>
                 <p className="text-3xl font-bold mt-2">
                   {filteredDevices.filter(d => d.status === 'offline').length}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-slate-100">
+              <div className="p-3 rounded-lg bg-white/10">
                 <WifiOff className="h-6 w-6 text-slate-600" />
               </div>
             </div>
@@ -276,7 +276,7 @@ export function Zones() {
             <div className="space-y-3">
               {zoneDevices.map((device) => (
                 <Dialog key={device.id}>
-                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
+                  <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg hover:bg-white/10 transition-colors">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       {device.status === 'online' ? (
                         <Wifi className="h-5 w-5 text-green-600 shrink-0" />
@@ -285,7 +285,7 @@ export function Zones() {
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{device.name}</p>
-                        <p className="text-sm text-slate-500">
+                        <p className="text-sm text-gray-400">
                           Last seen: {formatRelativeTime(device.lastSeen)}
                         </p>
                       </div>
@@ -310,7 +310,7 @@ export function Zones() {
 
                     <div className="space-y-6">
                       {/* Status */}
-                      <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                      <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
                         <span className="text-sm font-medium">Status</span>
                         <Badge variant={device.status === 'online' ? 'default' : 'secondary'}>
                           {device.status}
@@ -321,7 +321,7 @@ export function Zones() {
                       <div className="space-y-2">
                         <Label>Device Volume</Label>
                         <div className="flex items-center gap-3">
-                          <Volume2 className="h-4 w-4 text-slate-500 shrink-0" />
+                          <Volume2 className="h-4 w-4 text-gray-400 shrink-0" />
                           <Slider
                             value={[deviceVolume]}
                             max={100}
@@ -332,7 +332,7 @@ export function Zones() {
                             }}
                             className="flex-1"
                           />
-                          <span className="text-sm text-slate-500 w-10 text-right">
+                          <span className="text-sm text-gray-400 w-10 text-right">
                             {deviceVolume}%
                           </span>
                         </div>
@@ -382,15 +382,15 @@ export function Zones() {
                       {/* Device Info */}
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                          <span className="text-slate-500">Zone</span>
+                          <span className="text-gray-400">Zone</span>
                           <span className="font-medium">{device.zone}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-slate-500">Last Seen</span>
+                          <span className="text-gray-400">Last Seen</span>
                           <span className="font-medium">{formatRelativeTime(device.lastSeen)}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-slate-500">Device ID</span>
+                          <span className="text-gray-400">Device ID</span>
                           <span className="font-mono text-xs">{device.id}</span>
                         </div>
                       </div>
@@ -491,7 +491,7 @@ export function Zones() {
                 <div className="space-y-3">
                   <Label>Default Volume</Label>
                   <div className="flex items-center gap-3">
-                    <Volume2 className="h-4 w-4 text-slate-500 shrink-0" />
+                    <Volume2 className="h-4 w-4 text-gray-400 shrink-0" />
                     <Slider
                       value={[currentSettings.defaultVolume]}
                       max={100}
@@ -507,11 +507,11 @@ export function Zones() {
                       }}
                       className="flex-1"
                     />
-                    <span className="text-sm text-slate-500 w-10 text-right">
+                    <span className="text-sm text-gray-400 w-10 text-right">
                       {currentSettings.defaultVolume}%
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-gray-400">
                     This volume will be applied to all devices in this zone
                   </p>
                 </div>
@@ -521,7 +521,7 @@ export function Zones() {
                   <Label>Quiet Hours</Label>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label className="text-xs text-slate-500">Start Time</Label>
+                      <Label className="text-xs text-gray-400">Start Time</Label>
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-slate-400 shrink-0" />
                         <Input
@@ -540,7 +540,7 @@ export function Zones() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-xs text-slate-500">End Time</Label>
+                      <Label className="text-xs text-gray-400">End Time</Label>
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-slate-400 shrink-0" />
                         <Input
@@ -559,7 +559,7 @@ export function Zones() {
                       </div>
                     </div>
                   </div>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-gray-400">
                     Playback will automatically pause during quiet hours
                   </p>
                 </div>
@@ -570,11 +570,11 @@ export function Zones() {
                   {zoneSchedules.length > 0 ? (
                     <div className="space-y-2">
                       {zoneSchedules.map(schedule => (
-                        <div key={schedule.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                        <div key={schedule.id} className="p-3 bg-white/5 border border-white/10 rounded-lg">
                           <div className="flex items-center justify-between">
                             <div>
                               <p className="text-sm font-medium">{schedule.name}</p>
-                              <p className="text-xs text-slate-500">
+                              <p className="text-xs text-gray-400">
                                 {schedule.startTime} - {schedule.endTime}
                               </p>
                             </div>
@@ -586,7 +586,7 @@ export function Zones() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm text-slate-500 py-4 text-center bg-slate-50 rounded-lg">
+                    <p className="text-sm text-gray-400 py-4 text-center bg-white/5 rounded-lg">
                       No active schedules for this zone
                     </p>
                   )}
@@ -597,7 +597,7 @@ export function Zones() {
                   <Label>Devices in Zone ({zoneDevices.length})</Label>
                   <div className="space-y-2">
                     {zoneDevices.map(device => (
-                      <div key={device.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                      <div key={device.id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
                         <div className="flex items-center gap-2">
                           {device.status === 'online' ? (
                             <Wifi className="h-4 w-4 text-green-600" />

@@ -65,21 +65,21 @@ export function EditFolderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10">
         <DialogHeader>
-          <DialogTitle>Edit Folder</DialogTitle>
-          <DialogDescription>Update folder name and thumbnail</DialogDescription>
+          <DialogTitle className="text-white">Edit Folder</DialogTitle>
+          <DialogDescription className="text-gray-400">Update folder name and thumbnail</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Thumbnail (optional)</Label>
+            <Label className="text-white">Thumbnail (optional)</Label>
             <div className="flex items-center gap-4">
-              <div className="h-20 w-20 rounded-xl overflow-hidden bg-slate-100 border flex items-center justify-center">
+              <div className="h-20 w-20 rounded-xl overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center">
                 {thumbPreview ? (
                   <img src={thumbPreview} alt="Folder thumbnail" className="h-full w-full object-cover" />
                 ) : (
-                  <span className="text-xs text-slate-500">No image</span>
+                  <span className="text-xs text-gray-400">No image</span>
                 )}
               </div>
 
@@ -127,19 +127,28 @@ export function EditFolderDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Folder name</Label>
+            <Label className="text-white">Folder name</Label>
             <Input
               placeholder="Folder name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              className="bg-white/5 border-white/20 text-white placeholder:text-gray-500 focus:border-[#1db954] focus:ring-[#1db954]/20"
             />
           </div>
 
           <div className="flex gap-2">
-            <Button onClick={handleUpdate} className="flex-1" disabled={!canUpdate}>
+            <Button 
+              onClick={handleUpdate} 
+              className="flex-1 bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white" 
+              disabled={!canUpdate}
+            >
               {isUpdating ? 'Updating...' : 'Save Changes'}
             </Button>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => onOpenChange(false)}
+              className="border-white/20 text-white hover:bg-white/10"
+            >
               Cancel
             </Button>
           </div>

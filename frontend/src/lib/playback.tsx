@@ -21,7 +21,6 @@ interface PlaybackContextType {
   state: PlaybackState;
   mode: PlaybackMode;
   activeTarget: string;
-  targetDeviceCount: { online: number; total: number };
   nowPlaying: NowPlaying | null;
   volume: number;
   ducking: number;
@@ -55,8 +54,7 @@ const PlaybackContext = createContext<PlaybackContextType | undefined>(undefined
 export function PlaybackProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<PlaybackState>('standby');
   const [mode, setMode] = useState<PlaybackMode>('music+announcements');
-  const [activeTarget, setActiveTarget] = useState('all-zones');
-  const [targetDeviceCount] = useState({ online: 3, total: 4 });
+  const [activeTarget, setActiveTarget] = useState('');
   const [volume, setVolumeState] = useState(75);
   const [ducking, setDuckingState] = useState(50);
   const [isShuffleOn, setIsShuffleOn] = useState(false);
@@ -213,12 +211,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   // Handle WebSocket connection separately
   useEffect(() => {
     // Only connect if we have a valid zone ID (UUID format)
-    // "all-zones" is not a valid zone ID, so skip WebSocket connection for it
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (activeTarget && activeTarget !== 'all-zones' && uuidRegex.test(activeTarget)) {
+    if (activeTarget && uuidRegex.test(activeTarget)) {
       wsClient.connect(activeTarget);
     } else {
-      // For "all-zones" or invalid zone IDs, connect to general events endpoint
+      // For invalid zone IDs, connect to general events endpoint
       wsClient.connect();
     }
     
@@ -268,7 +265,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     state,
     mode,
     activeTarget,
-    targetDeviceCount,
     nowPlaying,
     volume,
     ducking,

@@ -306,10 +306,10 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
 
   if (isLoadingFolders) {
     return (
-      <Card className="bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+      <Card className="bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10">
         <CardContent className="pt-6">
           <div className="text-center py-8">
-            <p className="text-slate-600">Loading templates...</p>
+            <p className="text-gray-400">Loading templates...</p>
           </div>
         </CardContent>
       </Card>
@@ -320,18 +320,18 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
 
   return (
     <>
-      <Card className="bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+      <Card className="bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10">
         <CardContent className="pt-6">
           <div className="space-y-4">
             {/* Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center">
+                <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-[#1db954] to-[#1ed760] flex items-center justify-center">
                   <Sparkles className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-lg">Ready-Made Announcements</h3>
-                  <p className="text-sm text-slate-600">Professional template packs by sync2gear</p>
+                  <h3 className="font-bold text-lg text-white">Ready-Made Announcements</h3>
+                  <p className="text-sm text-gray-400">Professional template packs by sync2gear</p>
                 </div>
               </div>
               
@@ -395,7 +395,7 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                           </Select>
                         )}
                         {useCustomCategory && (
-                          <p className="text-xs text-slate-500">Enter your custom category name</p>
+                          <p className="text-xs text-gray-400">Enter your custom category name</p>
                         )}
                       </div>
                       
@@ -409,7 +409,7 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                           onChange={(e) => setGenerateQuantity(e.target.value)}
                           placeholder="5"
                         />
-                        <p className="text-xs text-slate-500">Number of templates to generate (1-50)</p>
+                        <p className="text-xs text-gray-400">Number of templates to generate (1-50)</p>
                       </div>
                       
                       <div className="space-y-2">
@@ -499,7 +499,7 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                 variant="outline"
                 size="sm"
                 onClick={scrollLeft}
-                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full shadow-lg bg-white hidden sm:flex items-center justify-center"
+                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-lg shadow-lg bg-white/10 hidden sm:flex items-center justify-center"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -523,7 +523,7 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                       <div className="absolute top-2 left-2">
-                        <Badge variant="secondary" className="bg-white/90 backdrop-blur-sm">
+                        <Badge variant="secondary" className="bg-white/10 backdrop-blur-sm">
                           {categories.find(c => c.value === folder.category)?.icon} {folder.category}
                         </Badge>
                       </div>
@@ -531,7 +531,7 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                         <Button
                           size="sm"
                           variant="secondary"
-                          className="rounded-full h-8 w-8 p-0 bg-white/90 backdrop-blur-sm hover:bg-white"
+                          className="rounded-lg h-8 w-8 p-0 bg-white/10 backdrop-blur-sm hover:bg-white/10"
                           onClick={(e) => {
                             e.stopPropagation();
                             handlePreview(folder);
@@ -542,8 +542,8 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                       </div>
                     </div>
                     <CardContent className="p-4">
-                      <h4 className="font-semibold truncate">{folder.name}</h4>
-                      <p className="text-sm text-slate-600 line-clamp-2 mt-1">{folder.description}</p>
+                      <h4 className="font-semibold truncate text-white">{folder.name}</h4>
+                      <p className="text-sm text-gray-400 line-clamp-2 mt-1">{folder.description}</p>
                       <div className="flex items-center gap-2 mt-3">
                         <Badge variant="outline" className="text-xs">
                           <FileText className="h-3 w-3 mr-1" />
@@ -563,13 +563,13 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                 variant="outline"
                 size="sm"
                 onClick={scrollRight}
-                className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full shadow-lg bg-white hidden sm:flex items-center justify-center"
+                className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-lg shadow-lg bg-white/10 hidden sm:flex items-center justify-center"
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
 
-            <div className="text-center text-sm text-slate-500">
+            <div className="text-center text-sm text-gray-400">
               Showing {folders.length} pack{folders.length !== 1 ? 's' : ''} in {selectedCategory === 'all' ? 'all categories' : categories.find(c => c.value === selectedCategory)?.label}
             </div>
           </div>
@@ -578,15 +578,15 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
 
       {/* Folder Preview Dialog */}
       <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10">
           {selectedFolder && (
             <>
               <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <FolderOpen className="h-5 w-5 text-blue-600" />
+                <DialogTitle className="flex items-center gap-2 text-white">
+                  <FolderOpen className="h-5 w-5 text-[#1db954]" />
                   {selectedFolder.name}
                 </DialogTitle>
-                <DialogDescription>{selectedFolder.description}</DialogDescription>
+                <DialogDescription className="text-gray-400">{selectedFolder.description}</DialogDescription>
               </DialogHeader>
 
               <div className="space-y-4 flex-1 overflow-y-auto">
@@ -600,14 +600,14 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                   <div className="absolute bottom-4 left-4 right-4">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Badge variant="secondary" className="bg-white/90 backdrop-blur-sm">
+                      <Badge variant="secondary" className="bg-white/10 backdrop-blur-sm">
                         {categories.find(c => c.value === selectedFolder.category)?.icon} {selectedFolder.category}
                       </Badge>
-                      <Badge variant="outline" className="bg-white/90 backdrop-blur-sm">
+                      <Badge variant="outline" className="bg-white/10 backdrop-blur-sm">
                         <FileText className="h-3 w-3 mr-1" />
                         {selectedFolder.templates.length} announcements
                       </Badge>
-                      <Badge variant="outline" className="bg-white/90 backdrop-blur-sm">
+                      <Badge variant="outline" className="bg-white/10 backdrop-blur-sm">
                         <Clock className="h-3 w-3 mr-1" />
                         {formatDuration(getTotalDuration(selectedFolder))} total
                       </Badge>
@@ -616,8 +616,8 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                 </div>
 
                 {/* Selection Controls */}
-                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="text-sm font-medium text-blue-900">
+                <div className="flex items-center justify-between p-3 bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10 rounded-lg border border-[#1db954]/30">
+                  <p className="text-sm font-medium text-[#1db954]">
                     {selectedTemplateIds.length > 0 
                       ? `${selectedTemplateIds.length} of ${selectedFolder.templates.length} selected`
                       : 'Select announcements to add to your library'
@@ -645,14 +645,14 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
 
                 {/* Templates List */}
                 <div className="space-y-3">
-                  <Label className="text-base font-semibold">Announcements in this pack:</Label>
+                  <Label className="text-base font-semibold text-white">Announcements in this pack:</Label>
                   {selectedFolder.templates.map((template) => (
                     <Card 
                       key={template.id}
                       className={`overflow-hidden cursor-pointer transition-all ${
                         selectedTemplateIds.includes(template.id) 
-                          ? 'ring-2 ring-blue-500 bg-blue-50' 
-                          : 'hover:bg-slate-50'
+                          ? 'ring-2 ring-[#1db954] bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10' 
+                          : 'hover:bg-white/5'
                       }`}
                       onClick={() => toggleTemplateSelection(template.id)}
                     >
@@ -666,8 +666,8 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1 min-w-0">
-                                <h4 className="font-semibold text-sm">{template.title}</h4>
-                                <p className="text-xs text-slate-600 mt-1">{template.description}</p>
+                                <h4 className="font-semibold text-sm text-white">{template.title}</h4>
+                                <p className="text-xs text-gray-400 mt-1">{template.description}</p>
                               </div>
                               <Button
                                 variant="ghost"
@@ -690,7 +690,7 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                                 {template.voiceType}
                               </Badge>
                             </div>
-                            <div className="mt-2 p-2 bg-slate-50 rounded text-xs text-slate-700 leading-relaxed">
+                            <div className="mt-2 p-2 bg-white/5 rounded text-xs text-gray-300 leading-relaxed">
                               {template.script}
                             </div>
                           </div>
@@ -712,7 +712,7 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                   <Volume2 className="h-4 w-4 mr-2" />
                   Add Selected to Library ({selectedTemplateIds.length})
                 </Button>
-                <p className="text-xs text-center text-slate-500">
+                <p className="text-xs text-center text-gray-400">
                   Selected announcements will be added to your library and can be customized
                 </p>
               </div>
@@ -723,17 +723,17 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
 
       {/* Generated Templates Section */}
       {showGeneratedTemplates && (
-        <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200 mt-4">
+        <Card className="bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10 mt-4">
           <CardContent className="pt-6">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-purple-600 flex items-center justify-center">
+                  <div className="h-10 w-10 rounded-lg bg-purple-600 flex items-center justify-center">
                     <Wand2 className="h-5 w-5 text-white" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-lg">AI-Generated Templates</h3>
-                    <p className="text-sm text-slate-600">
+                    <h3 className="font-bold text-lg text-white">AI-Generated Templates</h3>
+                    <p className="text-sm text-gray-400">
                       {generatedTemplates.length} templates generated for {
                         generateCategory.startsWith('custom-') 
                           ? generateCategory.replace('custom-', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
@@ -764,8 +764,8 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                         <div className="space-y-3">
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1">
-                              <h4 className="font-semibold text-sm">{template.title}</h4>
-                              <p className="text-xs text-slate-600 mt-1 line-clamp-2">{template.description}</p>
+                              <h4 className="font-semibold text-sm text-white">{template.title}</h4>
+                              <p className="text-xs text-gray-400 mt-1 line-clamp-2">{template.description}</p>
                             </div>
                             <Checkbox
                               checked={isSelected}
@@ -782,7 +782,7 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                               {template.voiceType}
                             </Badge>
                           </div>
-                          <div className="p-2 bg-slate-50 rounded text-xs text-slate-700 leading-relaxed line-clamp-3">
+                          <div className="p-2 bg-white/5 rounded text-xs text-gray-300 leading-relaxed line-clamp-3">
                             {template.script}
                           </div>
                         </div>
@@ -796,7 +796,7 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
               {generatedTemplates.length > 0 && (
                 <div className="border-t pt-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm text-slate-600">
+                    <p className="text-sm text-gray-400">
                       {selectedGeneratedTemplateIds.length} of {generatedTemplates.length} selected
                     </p>
                     <Button
@@ -825,7 +825,7 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                       : `Use Selected Templates (${selectedGeneratedTemplateIds.length})`
                     }
                   </Button>
-                  <p className="text-xs text-center text-slate-500">
+                  <p className="text-xs text-center text-gray-400">
                     Selected templates will be converted to announcements with your chosen voice
                   </p>
                 </div>
@@ -847,7 +847,7 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
           <div className="space-y-4">
             {isLoadingVoices ? (
               <div className="text-center py-8">
-                <p className="text-slate-600">Loading voices...</p>
+                <p className="text-gray-400">Loading voices...</p>
               </div>
             ) : (
               <>

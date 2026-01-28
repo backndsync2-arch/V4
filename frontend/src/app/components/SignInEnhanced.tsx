@@ -110,25 +110,35 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
 
   return (
     <>
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#121212] via-[#1a1a1a] to-[#0a0a0a] p-4 sm:p-6 relative overflow-hidden">
+        {/* Animated background elements */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-[#1db954]/10 rounded-full blur-3xl animate-pulse" />
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-[#1ed760]/10 rounded-full blur-3xl animate-pulse delay-1000" />
+        </div>
+        
         {onBackToLanding && (
           <Button
             variant="ghost"
             onClick={onBackToLanding}
-            className="absolute top-4 left-4 gap-2"
+            className="absolute top-4 left-4 gap-2 z-10 bg-[#1a1a1a]/80 backdrop-blur-sm hover:bg-[#2a2a2a] text-white border-white/10"
           >
             <ArrowLeft className="h-4 w-4" />
             Back
           </Button>
         )}
         
-        <Card className="w-full max-w-md shadow-xl border-slate-200">
-          <CardHeader className="space-y-1">
+        <Card className="w-full max-w-md shadow-2xl border-white/10 bg-[#1a1a1a] backdrop-blur-xl relative z-10">
+          <CardHeader className="space-y-1 pb-6">
             <div className="flex items-center justify-center mb-4">
-              <img src={logoImage} alt="sync2gear" className="h-20 w-20" />
+              <div className="p-3 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-2xl shadow-lg shadow-[#1db954]/30">
+                <img src={logoImage} alt="sync2gear" className="h-16 w-16" />
+              </div>
             </div>
-            <CardTitle className="text-3xl text-center font-bold">sync2gear</CardTitle>
-            <CardDescription className="text-center text-base">
+            <CardTitle className="text-3xl text-center font-bold text-white">
+              sync2gear
+            </CardTitle>
+            <CardDescription className="text-center text-base text-gray-400 mt-2">
               Sign in to manage your business audio
             </CardDescription>
           </CardHeader>
@@ -138,7 +148,7 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-11 gap-2 border-2"
+                className="w-full h-12 gap-3 border-2 border-white/10 hover:border-[#1db954]/50 hover:bg-[#1db954]/10 transition-all duration-200 shadow-sm hover:shadow-md text-white bg-[#2a2a2a]"
                 onClick={handleGoogleSignIn}
                 disabled={isLoading}
               >
@@ -160,13 +170,13 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
                     fill="#EA4335"
                   />
                 </svg>
-                Continue with Google Workspace
+                <span className="font-semibold">Continue with Google Workspace</span>
               </Button>
 
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-11 gap-2 border-2"
+                className="w-full h-12 gap-3 border-2 border-white/10 hover:border-[#1db954]/50 hover:bg-[#1db954]/10 transition-all duration-200 shadow-sm hover:shadow-md text-white bg-[#2a2a2a]"
                 onClick={handleMicrosoftSignIn}
                 disabled={isLoading}
               >
@@ -177,23 +187,23 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
                   <path fill="#05a6f0" d="M1 12h10v10H1z"/>
                   <path fill="#ffba08" d="M12 12h10v10H12z"/>
                 </svg>
-                Continue with Microsoft 365
+                <span className="font-semibold">Continue with Microsoft 365</span>
               </Button>
             </div>
 
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
+                <span className="w-full border-t border-white/10" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-slate-500">Or continue with email</span>
+                <span className="bg-[#1a1a1a] px-2 text-gray-400">Or continue with email</span>
               </div>
             </div>
 
             {/* Email/Password Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
+                <Label htmlFor="email" className="text-white">Email Address</Label>
                 <Input
                   id="email"
                   type="email"
@@ -201,16 +211,16 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="h-11"
+                  className="h-11 bg-[#2a2a2a] border-white/10 text-white placeholder:text-gray-500"
                 />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password" className="text-white">Password</Label>
                   <Button
                     type="button"
                     variant="link"
-                    className="px-0 text-xs text-blue-600"
+                    className="px-0 text-xs text-[#1db954] hover:text-[#1ed760]"
                     onClick={() => setResetPasswordOpen(true)}
                   >
                     Forgot password?
@@ -223,12 +233,12 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="h-11"
+                  className="h-11 bg-[#2a2a2a] border-white/10 text-white placeholder:text-gray-500"
                 />
               </div>
               <Button 
                 type="submit" 
-                className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-base font-semibold" 
+                className="w-full h-12 bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-base font-semibold shadow-lg shadow-[#1db954]/30 transition-all duration-200 text-white" 
                 disabled={isLoading}
               >
                 {isLoading ? 'Signing in...' : 'Sign In'}
@@ -236,24 +246,24 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
             </form>
 
             {/* Security Badge */}
-            <div className="flex items-center justify-center gap-2 text-xs text-slate-500 pt-2">
-              <Shield className="h-4 w-4 text-green-600" />
+            <div className="flex items-center justify-center gap-2 text-xs text-gray-400 pt-2">
+              <Shield className="h-4 w-4 text-[#1db954]" />
               <span>Secured with enterprise-grade encryption</span>
             </div>
             
             {/* Demo Credentials */}
-            <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <p className="font-semibold text-sm mb-3 text-slate-800">Demo Credentials:</p>
+            <div className="mt-6 p-4 bg-[#2a2a2a] rounded-lg border border-white/10">
+              <p className="font-semibold text-sm mb-3 text-white">Demo Credentials:</p>
               <div className="space-y-2 text-sm">
-                <div className="bg-white p-3 rounded border border-blue-100">
+                <div className="bg-[#1a1a1a] p-3 rounded border border-white/10">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-slate-700 font-medium">Admin:</span>
-                    <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded font-semibold">Password Required</span>
+                    <span className="text-gray-300 font-medium">Admin:</span>
+                    <span className="text-xs text-[#1db954] bg-[#1db954]/20 px-2 py-0.5 rounded font-semibold">Password Required</span>
                   </div>
-                  <div className="font-mono text-xs text-slate-800 break-all mb-2">admin@sync2gear.com</div>
+                  <div className="font-mono text-xs text-gray-400 break-all mb-2">admin@sync2gear.com</div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-slate-600">Password:</span>
-                    <code className="text-xs font-mono bg-slate-100 px-2 py-1 rounded border border-slate-300 text-slate-800 break-all">
+                    <span className="text-xs text-gray-500">Password:</span>
+                    <code className="text-xs font-mono bg-[#2a2a2a] px-2 py-1 rounded border border-white/10 text-gray-300 break-all">
                       Admin@Sync2Gear2025!
                     </code>
                     <button
@@ -262,21 +272,21 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
                         navigator.clipboard.writeText('Admin@Sync2Gear2025!');
                         toast.success('Password copied to clipboard');
                       }}
-                      className="text-xs text-blue-600 hover:text-blue-800 underline"
+                      className="text-xs text-[#1db954] hover:text-[#1ed760] underline"
                     >
                       Copy
                     </button>
                   </div>
                 </div>
-                <div className="bg-white p-3 rounded border border-blue-100">
+                <div className="bg-[#1a1a1a] p-3 rounded border border-white/10">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-slate-700 font-medium">Client:</span>
-                    <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded font-semibold">Password Required</span>
+                    <span className="text-gray-300 font-medium">Client:</span>
+                    <span className="text-xs text-[#1db954] bg-[#1db954]/20 px-2 py-0.5 rounded font-semibold">Password Required</span>
                   </div>
-                  <div className="font-mono text-xs text-slate-800 break-all mb-2">client1@example.com</div>
+                  <div className="font-mono text-xs text-gray-400 break-all mb-2">client1@example.com</div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-slate-600">Password:</span>
-                    <code className="text-xs font-mono bg-slate-100 px-2 py-1 rounded border border-slate-300 text-slate-800 break-all">
+                    <span className="text-xs text-gray-500">Password:</span>
+                    <code className="text-xs font-mono bg-[#2a2a2a] px-2 py-1 rounded border border-white/10 text-gray-300 break-all">
                       Client@Example2025!
                     </code>
                     <button
@@ -285,21 +295,21 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
                         navigator.clipboard.writeText('Client@Example2025!');
                         toast.success('Password copied to clipboard');
                       }}
-                      className="text-xs text-blue-600 hover:text-blue-800 underline"
+                      className="text-xs text-[#1db954] hover:text-[#1ed760] underline"
                     >
                       Copy
                     </button>
                   </div>
                 </div>
-                <div className="bg-white p-3 rounded border border-blue-100">
+                <div className="bg-[#1a1a1a] p-3 rounded border border-white/10">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-slate-700 font-medium">Floor User:</span>
-                    <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded font-semibold">Password Required</span>
+                    <span className="text-gray-300 font-medium">Floor User:</span>
+                    <span className="text-xs text-[#1db954] bg-[#1db954]/20 px-2 py-0.5 rounded font-semibold">Password Required</span>
                   </div>
-                  <div className="font-mono text-xs text-slate-800 break-all mb-2">floor1@downtowncoffee.com</div>
+                  <div className="font-mono text-xs text-gray-400 break-all mb-2">floor1@downtowncoffee.com</div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-slate-600">Password:</span>
-                    <code className="text-xs font-mono bg-slate-100 px-2 py-1 rounded border border-slate-300 text-slate-800 break-all">
+                    <span className="text-xs text-gray-500">Password:</span>
+                    <code className="text-xs font-mono bg-[#2a2a2a] px-2 py-1 rounded border border-white/10 text-gray-300 break-all">
                       Floor@Downtown2025!
                     </code>
                     <button
@@ -308,14 +318,14 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
                         navigator.clipboard.writeText('Floor@Downtown2025!');
                         toast.success('Password copied to clipboard');
                       }}
-                      className="text-xs text-blue-600 hover:text-blue-800 underline"
+                      className="text-xs text-[#1db954] hover:text-[#1ed760] underline"
                     >
                       Copy
                     </button>
                   </div>
                 </div>
               </div>
-              <p className="text-xs text-slate-500 mt-3 pt-3 border-t border-blue-200">
+              <p className="text-xs text-gray-400 mt-3 pt-3 border-t border-white/10">
                 🔒 All accounts require proper password authentication. Click "Copy" to copy passwords to clipboard.
               </p>
             </div>
@@ -325,31 +335,32 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
 
       {/* Password Reset Dialog */}
       <Dialog open={resetPasswordOpen} onOpenChange={setResetPasswordOpen}>
-        <DialogContent>
+        <DialogContent className="bg-[#1a1a1a] border-white/10">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5 text-blue-600" />
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <Mail className="h-5 w-5 text-[#1db954]" />
               Reset Your Password
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-gray-400">
               Enter your email address and we'll send you a link to reset your password
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="resetEmail">Email Address</Label>
+              <Label htmlFor="resetEmail" className="text-white">Email Address</Label>
               <Input
                 id="resetEmail"
                 type="email"
                 placeholder="name@business.com"
                 value={resetEmail}
                 onChange={(e) => setResetEmail(e.target.value)}
+                className="bg-[#2a2a2a] border-white/10 text-white placeholder:text-gray-500"
               />
             </div>
 
-            <div className="bg-blue-50 rounded-lg p-4">
-              <p className="text-sm text-blue-800">
+            <div className="bg-[#2a2a2a] rounded-lg p-4 border border-white/10">
+              <p className="text-sm text-gray-300">
                 ✓ Password reset link expires in 1 hour<br />
                 ✓ Check your spam folder if you don't see it<br />
                 ✓ Contact support if you need help
@@ -358,10 +369,10 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setResetPasswordOpen(false)}>
+            <Button variant="outline" onClick={() => setResetPasswordOpen(false)} className="border-white/10 text-white hover:bg-[#2a2a2a]">
               Cancel
             </Button>
-            <Button onClick={handlePasswordReset} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={handlePasswordReset} className="bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white">
               <Mail className="h-4 w-4 mr-2" />
               Send Reset Link
             </Button>

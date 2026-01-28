@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
 import { Switch } from '@/app/components/ui/switch';
+import { Label } from '@/app/components/ui/label';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/app/components/ui/dropdown-menu';
 import { Play, Pause, Volume2, Clock, Trash2, MoreVertical } from 'lucide-react';
 import { formatDuration } from '@/lib/utils';
@@ -38,18 +39,18 @@ export function AnnouncementsGridView({
 }: AnnouncementsGridViewProps) {
   if (announcements.length === 0) {
     return (
-      <div className="col-span-full text-center py-12 text-slate-500">
+      <div className="col-span-full text-center py-12 text-gray-400">
         {searchQuery ? 'No announcements found matching your search' : 'No announcements in this folder'}
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" style={{ touchAction: 'pan-y' }}>
       {announcements.map((audio) => {
         return (
-          <Card key={audio.id} className="overflow-hidden">
-            <div className="aspect-square bg-gradient-to-br from-blue-100 to-purple-100 relative">
+          <Card key={audio.id} className="overflow-hidden border-white/10 bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] shadow-lg hover:shadow-xl hover:shadow-[#1db954]/20 transition-all duration-300 group">
+            <div className="aspect-square bg-gradient-to-br from-[#1db954]/20 via-[#1ed760]/10 to-[#2a2a2a] relative overflow-hidden">
               <ImageUpload
                 currentImage={announcementIcons[audio.id] || undefined}
                 onImageChange={(url) => onIconChange(audio.id, url)}
@@ -59,7 +60,9 @@ export function AnnouncementsGridView({
                 size="sm"
                 variant={playingAudio === audio.id ? 'default' : 'outline'}
                 onClick={() => onPlay(audio.id)}
-                className="absolute bottom-2 right-2"
+                className={playingAudio === audio.id 
+                  ? "absolute bottom-2 right-2 bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white shadow-lg shadow-[#1db954]/50" 
+                  : "absolute bottom-2 right-2 bg-black/60 hover:bg-black/80 text-white border-white/20 opacity-0 group-hover:opacity-100 transition-opacity"}
               >
                 {playingAudio === audio.id ? (
                   <Pause className="h-4 w-4" />
@@ -68,25 +71,25 @@ export function AnnouncementsGridView({
                 )}
               </Button>
             </div>
-            <CardContent className="p-4">
-              <div className="space-y-2">
+            <CardContent className="p-3 bg-[#1a1a1a]">
+              <div className="space-y-2.5">
                 <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-medium text-sm line-clamp-2 flex-1">{audio.title}</h3>
+                  <h3 className="font-medium text-sm line-clamp-2 flex-1 text-white leading-snug pr-1">{audio.title}</h3>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                        <MoreVertical className="h-4 w-4" />
+                      <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-gray-400 hover:text-white hover:bg-white/10 shrink-0 -mt-0.5">
+                        <MoreVertical className="h-3.5 w-3.5" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
+                    <DropdownMenuContent align="end" className="bg-[#2a2a2a] border-white/10">
                       {audio.type === 'tts' && (!audio.url || audio.url === '' || audio.duration === 0) && (
                         <>
-                          <DropdownMenuItem onClick={() => onRegenerateVoice(audio.id)}>
+                          <DropdownMenuItem onClick={() => onRegenerateVoice(audio.id)} className="text-white hover:bg-white/10">
                             <Volume2 className="h-4 w-4 mr-2" />
                             {!audio.url || audio.url === '' ? 'Add Voice' : 'Change Voice'}
                           </DropdownMenuItem>
                           {audio.url && audio.url !== '' && audio.duration === 0 && (
-                            <DropdownMenuItem onClick={() => onRecalculateDuration(audio.id)}>
+                            <DropdownMenuItem onClick={() => onRecalculateDuration(audio.id)} className="text-white hover:bg-white/10">
                               <Clock className="h-4 w-4 mr-2" />
                               Recalculate Duration
                             </DropdownMenuItem>
@@ -94,33 +97,39 @@ export function AnnouncementsGridView({
                         </>
                       )}
                       {audio.type === 'uploaded' && audio.duration === 0 && (
-                        <DropdownMenuItem onClick={() => onRecalculateDuration(audio.id)}>
+                        <DropdownMenuItem onClick={() => onRecalculateDuration(audio.id)} className="text-white hover:bg-white/10">
                           <Clock className="h-4 w-4 mr-2" />
                           Recalculate Duration
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuItem onClick={() => onDelete(audio.id)} className="text-red-600">
+                      <DropdownMenuItem onClick={() => onDelete(audio.id)} className="text-red-400 hover:bg-red-500/20">
                         <Trash2 className="h-4 w-4 mr-2" />
                         Delete
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {audio.category && (
-                    <Badge variant="outline" className="text-xs">
+                    <Badge variant="outline" className="text-[10px] bg-white/5 text-gray-300 border-white/10 px-1.5 py-0.5 h-5">
                       {folders.find(f => f.id === audio.category)?.name || audio.category}
                     </Badge>
                   )}
-                  <Badge variant={audio.type === 'tts' ? 'secondary' : 'default'} className="text-xs">
+                  <Badge variant={audio.type === 'tts' ? 'secondary' : 'default'} className={audio.type === 'tts' 
+                    ? "text-[10px] bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/20 text-[#1db954] border-[#1db954]/30 px-1.5 py-0.5 h-5" 
+                    : "text-[10px] bg-white/5 text-gray-300 border-white/10 px-1.5 py-0.5 h-5"}>
                     {audio.type.toUpperCase()}
                   </Badge>
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="outline" className="text-[10px] bg-white/5 text-gray-300 border-white/10 px-1.5 py-0.5 h-5">
                     {formatDuration(audio.duration)}
                   </Badge>
                 </div>
-                <div className="flex items-center justify-between pt-2">
+                <div className="flex items-center justify-between pt-1.5 border-t border-white/5">
+                  <Label htmlFor={`enabled-grid-${audio.id}`} className="text-[11px] sm:text-xs font-medium text-gray-400 cursor-pointer">
+                    Enabled
+                  </Label>
                   <Switch
+                    id={`enabled-grid-${audio.id}`}
                     checked={audio.enabled}
                     onCheckedChange={() => onToggleEnabled(audio.id)}
                   />

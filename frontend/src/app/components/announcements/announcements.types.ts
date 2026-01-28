@@ -18,6 +18,8 @@ export interface AnnouncementAudio {
   enabled: boolean;
   category?: string;
   folderId?: string;
+  zoneId?: string;
+  zone?: string;
   createdAt: Date | string;
   createdBy: string;
   ttsText?: string; // Text content for TTS announcements

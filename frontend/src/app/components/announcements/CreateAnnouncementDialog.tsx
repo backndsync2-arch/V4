@@ -124,10 +124,10 @@ export function CreateAnnouncementDialog({
   };
 
   return (
-    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10">
       <DialogHeader>
-        <DialogTitle>Create Announcement</DialogTitle>
-        <DialogDescription>Create announcements with text-to-speech, upload, or record</DialogDescription>
+        <DialogTitle className="text-white">Create Announcement</DialogTitle>
+        <DialogDescription className="text-gray-400">Create announcements with text-to-speech, upload, or record</DialogDescription>
       </DialogHeader>
       <Tabs defaultValue="script" className="w-full">
         <TabsList className="grid w-full grid-cols-4">
@@ -166,7 +166,7 @@ export function CreateAnnouncementDialog({
               onChange={(e) => onTextChange(e.target.value)}
               rows={6}
             />
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-gray-400">
               Approx. {Math.ceil(newText.length / 10)} seconds when spoken
             </p>
           </div>
@@ -204,7 +204,7 @@ export function CreateAnnouncementDialog({
                   </>
                 )}
               </Button>
-              <p className="text-xs text-slate-500">Test the voice before creating</p>
+              <p className="text-xs text-gray-400">Test the voice before creating</p>
             </div>
           </div>
           <div className="space-y-2">
@@ -235,7 +235,7 @@ export function CreateAnnouncementDialog({
               value={aiTopic}
               onChange={(e) => onAiTopicChange(e.target.value)}
             />
-            <p className="text-xs text-slate-500">What should the announcement be about?</p>
+            <p className="text-xs text-gray-400">What should the announcement be about?</p>
           </div>
           
           <div className="space-y-2">
@@ -276,7 +276,7 @@ export function CreateAnnouncementDialog({
               onChange={(e) => onAiKeyPointsChange(e.target.value)}
               rows={4}
             />
-            <p className="text-xs text-slate-500">Add specific details to include in the announcement</p>
+            <p className="text-xs text-gray-400">Add specific details to include in the announcement</p>
           </div>
 
           <Button 
@@ -288,15 +288,15 @@ export function CreateAnnouncementDialog({
             <Sparkles className="h-4 w-4 mr-2" />
             {isGenerating ? 'Generating...' : `Generate ${aiQuantity} AI Script${parseInt(aiQuantity) > 1 ? 's' : ''}`}
           </Button>
-          <p className="text-xs text-slate-500 text-center">
+          <p className="text-xs text-gray-400 text-center">
             AI generation uses OpenAI API key configured on the server
           </p>
 
           {generatedScripts.length > 0 && (
-            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
+            <div className="mt-4 p-4 bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border border-white/10 rounded-lg space-y-3">
               <div className="flex items-start justify-between">
-                <Label className="text-blue-900">Generated Scripts ({generatedScripts.filter(s => s.selected).length} selected)</Label>
-                <Badge variant="default" className="bg-blue-600">
+                <Label className="text-white">Generated Scripts ({generatedScripts.filter(s => s.selected).length} selected)</Label>
+                <Badge variant="default" className="bg-gradient-to-r from-[#1db954] to-[#1ed760] text-white">
                   <Sparkles className="h-3 w-3 mr-1" />
                   AI Generated
                 </Badge>
@@ -308,8 +308,8 @@ export function CreateAnnouncementDialog({
                     key={index} 
                     className={`p-3 rounded-lg border-2 transition-all ${
                       script.selected 
-                        ? 'bg-white border-blue-400' 
-                        : 'bg-slate-50 border-slate-200'
+                        ? 'bg-white/5 border-[#1db954]' 
+                        : 'bg-white/5 border-white/10'
                     }`}
                   >
                     <label className="flex items-start gap-3 cursor-pointer min-h-[44px]">
@@ -320,8 +320,8 @@ export function CreateAnnouncementDialog({
                         className="mt-1 rounded"
                       />
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm mb-1">{script.title}</p>
-                        <p className="text-sm text-slate-600 line-clamp-2">{script.text}</p>
+                        <p className="font-medium text-sm mb-1 text-white">{script.title}</p>
+                        <p className="text-sm text-gray-400 line-clamp-2">{script.text}</p>
                       </div>
                     </label>
                   </div>
@@ -331,7 +331,7 @@ export function CreateAnnouncementDialog({
               <div className="space-y-2">
                 <Label>Voice</Label>
                 <Select value={selectedVoice} onValueChange={onVoiceChange}>
-                  <SelectTrigger className="bg-white">
+                  <SelectTrigger className="bg-white/5">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -347,7 +347,7 @@ export function CreateAnnouncementDialog({
               <div className="space-y-2">
                 <Label>Folder</Label>
                 <Select value={newCategory} onValueChange={onCategoryChange}>
-                  <SelectTrigger className="bg-white">
+                  <SelectTrigger className="bg-white/5">
                     <SelectValue placeholder="Select folder..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -391,11 +391,11 @@ export function CreateAnnouncementDialog({
                   Choose file
                 </label>
               </Button>
-              <span className="text-sm text-slate-600 truncate">
+              <span className="text-sm text-gray-400 truncate">
                 {uploadFile ? uploadFile.name : 'No file selected'}
               </span>
             </div>
-            <p className="text-xs text-slate-500">Supported formats: MP3, WAV, M4A (max 10MB)</p>
+            <p className="text-xs text-gray-400">Supported formats: MP3, WAV, M4A (max 10MB)</p>
           </div>
           <div className="space-y-2">
             <Label>Folder</Label>
@@ -418,9 +418,9 @@ export function CreateAnnouncementDialog({
         </TabsContent>
 
         <TabsContent value="record" className="space-y-4">
-          <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-lg">
-            <Mic className="h-12 w-12 mx-auto text-slate-400 mb-4" />
-            <p className="text-slate-500 mb-4">Click to start recording</p>
+          <div className="text-center py-8 border-2 border-dashed border-white/10 rounded-lg">
+            <Mic className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+            <p className="text-gray-400 mb-4">Click to start recording</p>
             <Button variant="outline" size="lg" className="rounded-full">
               <Mic className="h-5 w-5 mr-2" />
               Start Recording

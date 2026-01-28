@@ -40,7 +40,7 @@ export function AnnouncementsListView({
 }: AnnouncementsListViewProps) {
   if (announcements.length === 0) {
     return (
-      <div className="text-center py-12 text-slate-500">
+      <div className="text-center py-12 text-gray-400">
         {searchQuery ? 'No announcements found matching your search' : 'No announcements in this folder'}
       </div>
     );
@@ -53,7 +53,7 @@ export function AnnouncementsListView({
         return (
           <div
             key={audio.id}
-            className="flex flex-col md:flex-row items-start md:items-center gap-4 p-4 bg-slate-50 rounded-lg"
+            className="flex items-start gap-2.5 sm:gap-3 p-2.5 sm:p-3 bg-gradient-to-r from-[#1a1a1a] to-[#2a2a2a] rounded-lg border border-white/10 shadow-lg hover:shadow-xl hover:shadow-[#1db954]/20 transition-all duration-300"
           >
             <ImageUpload
               currentImage={announcementIcons[audio.id] || undefined}
@@ -61,44 +61,39 @@ export function AnnouncementsListView({
               variant="icon"
             />
 
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between flex-1 gap-4 w-full">
-              <div className="flex items-start md:items-center gap-4 flex-1 min-w-0 w-full md:w-auto">
+            <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
+              <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
                 <Button
                   size="sm"
                   variant={playingAudio === audio.id ? 'default' : 'outline'}
                   onClick={() => onPlay(audio.id)}
-                  className="shrink-0"
+                  className={playingAudio === audio.id 
+                    ? "shrink-0 bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white shadow-lg shadow-[#1db954]/50 h-8 w-8 p-0" 
+                    : "shrink-0 bg-white/5 hover:bg-white/10 text-white border-white/20 h-8 w-8 p-0"}
                 >
                   {playingAudio === audio.id ? (
-                    <Pause className="h-4 w-4" />
+                    <Pause className="h-3.5 w-3.5" />
                   ) : (
-                    <Play className="h-4 w-4" />
+                    <Play className="h-3.5 w-3.5" />
                   )}
                 </Button>
-                <Radio className="h-5 w-5 text-slate-400 shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-medium">{audio.title}</p>
-                    {audio.category && (
-                      <Badge variant="outline" className="shrink-0">
-                        {folders.find(f => f.id === audio.category)?.name || audio.category}
-                      </Badge>
-                    )}
-                    <Badge variant={audio.type === 'tts' ? 'secondary' : 'default'} className="shrink-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="font-medium text-sm truncate text-white">{audio.title}</p>
+                    <Badge variant={audio.type === 'tts' ? 'secondary' : 'default'} className={audio.type === 'tts' 
+                      ? "shrink-0 text-[10px] bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/20 text-[#1db954] border-[#1db954]/30 px-1.5 py-0.5" 
+                      : "shrink-0 text-[10px] bg-white/5 text-gray-300 border-white/10 px-1.5 py-0.5"}>
                       {audio.type.toUpperCase()}
                     </Badge>
                   </div>
-                  {script && (
-                    <p className="text-sm text-slate-500 mt-1 line-clamp-1">{script.text}</p>
-                  )}
-                  <p className="text-sm text-slate-500 mt-1">
-                    Duration: {formatDuration(audio.duration)}
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    {formatDuration(audio.duration)}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor={`enabled-${audio.id}`} className="text-sm">
+              <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <Label htmlFor={`enabled-${audio.id}`} className="text-[11px] sm:text-xs font-medium whitespace-nowrap text-gray-400">
                     Enabled
                   </Label>
                   <Switch
@@ -109,19 +104,19 @@ export function AnnouncementsListView({
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm">
-                      <MoreVertical className="h-4 w-4" />
+                    <Button variant="ghost" size="sm" className="shrink-0 text-gray-400 hover:text-white hover:bg-white/10 h-7 w-7 p-0">
+                      <MoreVertical className="h-3.5 w-3.5" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                  <DropdownMenuContent align="end" className="bg-[#2a2a2a] border-white/10">
                     {audio.type === 'tts' && (!audio.url || audio.url === '' || audio.duration === 0) && (
                       <>
-                        <DropdownMenuItem onClick={() => onRegenerateVoice(audio.id)}>
+                        <DropdownMenuItem onClick={() => onRegenerateVoice(audio.id)} className="text-white hover:bg-white/10">
                           <Volume2 className="h-4 w-4 mr-2" />
                           {!audio.url || audio.url === '' ? 'Add Voice' : 'Change Voice'}
                         </DropdownMenuItem>
                         {audio.url && audio.url !== '' && audio.duration === 0 && (
-                          <DropdownMenuItem onClick={() => onRecalculateDuration(audio.id)}>
+                          <DropdownMenuItem onClick={() => onRecalculateDuration(audio.id)} className="text-white hover:bg-white/10">
                             <Clock className="h-4 w-4 mr-2" />
                             Recalculate Duration
                           </DropdownMenuItem>
@@ -129,12 +124,12 @@ export function AnnouncementsListView({
                       </>
                     )}
                     {audio.type === 'uploaded' && audio.duration === 0 && (
-                      <DropdownMenuItem onClick={() => onRecalculateDuration(audio.id)}>
+                      <DropdownMenuItem onClick={() => onRecalculateDuration(audio.id)} className="text-white hover:bg-white/10">
                         <Clock className="h-4 w-4 mr-2" />
                         Recalculate Duration
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem onClick={() => onDelete(audio.id)} className="text-red-600">
+                    <DropdownMenuItem onClick={() => onDelete(audio.id)} className="text-red-400 hover:bg-red-500/20">
                       <Trash2 className="h-4 w-4 mr-2" />
                       Delete
                     </DropdownMenuItem>

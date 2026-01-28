@@ -17,7 +17,6 @@ import { Users } from '@/app/components/Users';
 import { Admin } from '@/app/components/Admin';
 import { AdminSettings } from '@/app/components/AdminSettings';
 import { Profile } from '@/app/components/Profile';
-import { ChannelPlaylists } from '@/app/components/ChannelPlaylists';
 import { TutorialOverlay } from '@/app/components/TutorialOverlay';
 import { Toaster } from '@/app/components/ui/sonner';
 
@@ -34,7 +33,7 @@ function AppContent() {
   // Initialize currentPage from URL hash, default to 'dashboard'
   const getPageFromHash = () => {
     const hash = window.location.hash.slice(1) || 'dashboard';
-    const validPages = ['dashboard', 'music', 'announcements', 'channel-playlists', 'scheduler', 'zones', 'users', 'admin', 'admin-settings', 'profile', 'login'];
+    const validPages = ['dashboard', 'music', 'announcements', 'scheduler', 'zones', 'users', 'admin', 'admin-settings', 'profile', 'login'];
     // If hash is 'login', show login page
     if (hash === 'login') {
       return 'login';
@@ -183,8 +182,6 @@ function AppContent() {
           return <MusicLibrary />;
         case 'announcements':
           return <AnnouncementsFinal />;
-        case 'channel-playlists':
-          return <ChannelPlaylists />;
         case 'scheduler':
           return <Scheduler />;
         case 'zones':

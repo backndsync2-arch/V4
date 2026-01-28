@@ -7,6 +7,7 @@ import { formatRelativeTime } from '@/lib/utils';
 import { DashboardPlayback } from '@/app/components/DashboardPlayback';
 import { announcementsAPI, musicAPI, schedulerAPI, wsClient, zonesAPI } from '@/lib/api';
 import { toast } from 'sonner';
+import { cn } from '@/app/components/ui/utils';
 
 export function Dashboard() {
   const { user } = useAuth();
@@ -107,17 +108,17 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         {stats.map((stat) => (
-          <Card key={stat.title}>
+          <Card key={stat.title} className="border-white/10 shadow-lg hover:shadow-xl hover:shadow-[#1db954]/20 transition-all duration-300 hover:scale-[1.02] bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500">{stat.title}</p>
-                  <p className="text-3xl font-bold mt-2">{stat.value}</p>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-400 mb-1">{stat.title}</p>
+                  <p className="text-3xl font-bold text-white">{stat.value}</p>
                 </div>
-                <div className={`p-3 rounded-lg ${stat.bgColor}`}>
-                  <stat.icon className={`h-6 w-6 ${stat.color}`} />
+                <div className="p-3.5 rounded-lg bg-gradient-to-br from-[#1db954]/20 to-[#1ed760]/20 shadow-md border border-[#1db954]/30">
+                  <stat.icon className="h-6 w-6 text-[#1db954]" />
                 </div>
               </div>
             </CardContent>
@@ -128,73 +129,39 @@ export function Dashboard() {
       {/* Live Playback Control */}
       <DashboardPlayback />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Device Status */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Device Status</CardTitle>
-            <CardDescription>Monitor your connected devices</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {filteredDevices.length === 0 ? (
-                <p className="text-slate-500 text-sm">No devices found.</p>
-              ) : (
-                filteredDevices.map((device: any) => (
-                  <div key={device.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className={`h-2 w-2 rounded-full ${device.status === 'online' ? 'bg-green-500' : 'bg-slate-400'}`} />
-                      <div>
-                        <p className="font-medium">{device.name}</p>
-                        <p className="text-sm text-slate-500">{device.zone || '—'}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <Badge variant={device.status === 'online' ? 'default' : 'secondary'}>
-                        {device.status}
-                      </Badge>
-                      <p className="text-xs text-slate-500 mt-1">
-                        {formatRelativeTime(device.lastSeen)}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
 
         {/* Recent Device Events (real-time) */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>Live device status updates</CardDescription>
+        <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl font-bold text-white">Recent Activity</CardTitle>
+            <CardDescription className="text-gray-400">Live device status updates</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               {recentEvents.length === 0 ? (
-                <p className="text-slate-500 text-sm">No activity yet.</p>
+                <p className="text-gray-400 text-sm text-center py-8">No activity yet.</p>
               ) : (
                 recentEvents.map((event: any, idx: number) => (
-                  <div key={event.id ?? `${event.type}-${idx}`} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                  <div key={event.id ?? `${event.type}-${idx}`} className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200">
                     <div className="flex items-center gap-3">
                       {event.type === 'device_status_change' ? (
-                        event.is_online ? <CheckCircle2 className="h-5 w-5 text-green-600" /> : <XCircle className="h-5 w-5 text-red-600" />
+                        event.is_online ? <CheckCircle2 className="h-5 w-5 text-[#1db954]" /> : <XCircle className="h-5 w-5 text-gray-500" />
                       ) : (
-                        <Clock className="h-5 w-5 text-orange-600" />
+                        <Clock className="h-5 w-5 text-[#1db954]" />
                       )}
                       <div>
-                        <p className="font-medium">
+                        <p className="font-semibold text-white">
                           {event.type === 'device_status_change'
                             ? `Device ${event.is_online ? 'online' : 'offline'}`
                             : 'Device heartbeat'}
                         </p>
-                        <p className="text-sm text-slate-500">{event.device_name || event.device_id || event.deviceId || '—'}</p>
+                        <p className="text-sm text-gray-400">{event.device_name || event.device_id || event.deviceId || '—'}</p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <Badge variant="secondary">{event.type}</Badge>
-                      <p className="text-xs text-slate-500 mt-1">
+                      <Badge variant="secondary" className="shadow-sm bg-white/10 text-gray-300 border-white/20">{event.type}</Badge>
+                      <p className="text-xs text-gray-400 mt-1.5">
                         {formatRelativeTime(event._ts ?? new Date())}
                       </p>
                     </div>
@@ -207,23 +174,25 @@ export function Dashboard() {
       </div>
 
       {/* Active Schedules */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Active Schedules</CardTitle>
-          <CardDescription>Currently running announcement schedules</CardDescription>
+      <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-xl font-bold text-white">Active Schedules</CardTitle>
+          <CardDescription className="text-gray-400">Currently running announcement schedules</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
             {filteredSchedules.filter((s: any) => Boolean(s.enabled)).length === 0 ? (
-              <p className="text-slate-500 text-sm">No active schedules.</p>
+              <p className="text-gray-400 text-sm text-center py-8">No active schedules.</p>
             ) : (
               filteredSchedules.filter((s: any) => Boolean(s.enabled)).map((schedule: any) => (
-                <div key={schedule.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
+                <div key={schedule.id} className="flex items-center justify-between p-4 bg-gradient-to-r from-[#1db954]/10 to-[#1ed760]/5 rounded-lg border border-[#1db954]/20 hover:border-[#1db954]/40 hover:shadow-lg hover:shadow-[#1db954]/20 transition-all duration-200">
                   <div className="flex items-center gap-3">
-                    <Calendar className="h-5 w-5 text-blue-600" />
+                    <div className="p-2 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-lg shadow-sm">
+                      <Calendar className="h-5 w-5 text-white" />
+                    </div>
                     <div>
-                      <p className="font-medium">{schedule.name}</p>
-                      <p className="text-sm text-slate-500">
+                      <p className="font-semibold text-white">{schedule.name}</p>
+                      <p className="text-sm text-gray-400">
                         {schedule.schedule?.type === 'interval'
                           ? `Every ${schedule.schedule?.intervalMinutes ?? '—'} minutes`
                           : schedule.schedule?.type === 'timeline'
@@ -233,8 +202,8 @@ export function Dashboard() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <Badge>Active</Badge>
-                    <p className="text-xs text-slate-500 mt-1">
+                    <Badge className="bg-gradient-to-r from-[#1db954] to-[#1ed760] text-white shadow-sm border-0">Active</Badge>
+                    <p className="text-xs text-gray-400 mt-1.5">
                       {(schedule.deviceIds?.length ?? 0)} device{(schedule.deviceIds?.length ?? 0) !== 1 ? 's' : ''}
                     </p>
                   </div>

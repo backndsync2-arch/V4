@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '@/lib/auth';
-import { Music2, LayoutDashboard, Music, Radio, Calendar, User, Users, Grid3x3, LogOut, UsersRound, ListMusic } from 'lucide-react';
+import { Music2, LayoutDashboard, Music, Radio, Calendar, User, Users, Grid3x3, LogOut, UsersRound } from 'lucide-react';
 import { cn } from '@/app/components/ui/utils';
 import { GlobalHeader } from '@/app/components/GlobalHeader';
 import { MiniPlayer } from '@/app/components/MiniPlayer';
@@ -24,9 +24,8 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'music', label: 'Music Library', icon: Music },
     { id: 'announcements', label: 'Announcements', icon: Radio },
-    { id: 'channel-playlists', label: 'Channel Playlists', icon: ListMusic },
     { id: 'scheduler', label: 'Scheduler', icon: Calendar },
-    { id: 'zones', label: 'Zones & Devices', icon: Grid3x3 },
+    { id: 'zones', label: 'Zones', icon: Grid3x3 },
     // Hide Team Members for client users or when not logged in
     ...(user && user.role !== 'client' ? [{ id: 'users', label: 'Team Members', icon: UsersRound }] : []),
     ...(user?.role === 'admin' ? [{ id: 'admin', label: 'Admin', icon: Users }] : []),
@@ -34,29 +33,29 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-gradient-to-br from-[#121212] via-[#1a1a1a] to-[#0a0a0a]">
       {/* Impersonation Banner */}
       <ImpersonationBanner />
 
       {/* Desktop Sidebar */}
       <aside className={cn(
-        "hidden lg:block fixed left-0 h-screen w-64 bg-slate-900 text-white z-50",
+        "hidden lg:block fixed left-0 h-screen w-64 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 text-white z-50 shadow-2xl",
         impersonatingClient ? "top-[52px]" : "top-0"
       )}>
-        <div className="flex flex-col h-full">
-          <div className="p-6 border-b border-slate-700 shrink-0">
+        <div className="flex flex-col h-full backdrop-blur-sm">
+          <div className="p-6 border-b border-white/10 shrink-0 bg-gradient-to-r from-[#1db954]/20 to-[#1ed760]/10">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg shadow-lg">
-                <Music2 className="h-6 w-6" />
+              <div className="p-2.5 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-xl shadow-lg shadow-[#1db954]/50">
+                <Music2 className="h-6 w-6 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold">sync2gear</h1>
-                <p className="text-xs text-slate-400 capitalize">{user?.role || 'Guest'}</p>
+                <h1 className="text-xl font-bold text-white">sync2gear</h1>
+                <p className="text-xs text-gray-400 capitalize mt-0.5">{user?.role || 'Guest'}</p>
               </div>
             </div>
           </div>
 
-          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
             {navItems.map((item) => (
               <button
                 key={item.id}
@@ -66,23 +65,29 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
                   window.location.hash = item.id;
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all',
+                  'w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative',
                   currentPage === item.id
-                    ? 'bg-blue-600 text-white shadow-lg'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    ? 'bg-gradient-to-r from-[#1db954] to-[#1ed760] text-white shadow-lg shadow-[#1db954]/30 scale-[1.02]'
+                    : 'text-gray-400 hover:bg-white/5 hover:text-white hover:scale-[1.01]'
                 )}
               >
-                <item.icon className="h-5 w-5 shrink-0" />
-                <span className="truncate">{item.label}</span>
+                <item.icon className={cn(
+                  "h-5 w-5 shrink-0 transition-transform",
+                  currentPage === item.id && "scale-110"
+                )} />
+                <span className="truncate font-medium">{item.label}</span>
+                {currentPage === item.id && (
+                  <div className="absolute right-2 w-1.5 h-1.5 bg-white rounded-full" />
+                )}
               </button>
             ))}
           </nav>
 
-          <div className="p-4 border-t border-slate-700 shrink-0">
+          <div className="p-4 border-t border-white/10 shrink-0 bg-gradient-to-r from-[#0a0a0a] to-[#1a1a1a]">
             {user ? (
               <button
                 onClick={signOut}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-red-500/20 hover:text-red-400 transition-all duration-200 border border-transparent hover:border-red-500/30"
               >
                 <LogOut className="h-5 w-5" />
                 <span>Sign out</span>
@@ -94,7 +99,7 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
                   onNavigate('login');
                   window.location.hash = 'login';
                 }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-[#1db954] to-[#1ed760] text-white hover:from-[#1ed760] hover:to-[#1db954] transition-all duration-200 shadow-lg shadow-[#1db954]/30"
               >
                 <User className="h-5 w-5" />
                 <span>Sign in</span>
@@ -107,15 +112,15 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
       {/* Main content */}
       <div className="lg:ml-64">
         {/* Mobile Header */}
-        <header className="lg:hidden bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-30">
+        <header className="lg:hidden bg-[#1a1a1a]/95 backdrop-blur-xl border-b border-white/10 px-4 py-3.5 sticky top-0 z-30 shadow-lg">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg shadow">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-xl shadow-lg shadow-[#1db954]/30">
                 <Music2 className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h1 className="text-lg font-bold">sync2gear</h1>
-                <p className="text-xs text-slate-500 capitalize">{user?.role || 'Guest'}</p>
+                <h1 className="text-lg font-bold text-white">sync2gear</h1>
+                <p className="text-xs text-gray-400 capitalize font-medium">{user?.role || 'Guest'}</p>
               </div>
             </div>
             <MobileMenu currentPage={currentPage} onNavigate={onNavigate} />
@@ -126,13 +131,13 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
         <GlobalHeader />
 
         {/* Desktop Page Header */}
-        <header className="hidden lg:block bg-white border-b border-slate-200 px-6 xl:px-8 py-4">
+        <header className="hidden lg:block bg-[#1a1a1a]/95 backdrop-blur-xl border-b border-white/10 px-6 xl:px-8 py-5 shadow-lg">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-semibold text-slate-900">
+              <h2 className="text-2xl font-bold text-white">
                 {navItems.find(item => item.id === currentPage)?.label}
               </h2>
-              <p className="text-sm text-slate-500 mt-1">
+              <p className="text-sm text-gray-400 mt-1.5">
                 {user ? `${user.name} • ${user.email}` : 'Not signed in'}
               </p>
             </div>
@@ -140,16 +145,19 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
         </header>
 
         <main className={cn(
-          "p-4 md:p-6 lg:p-8",
-          // Add bottom padding when music is playing to prevent content from being hidden
-          isMusicPlaying && "pb-20 lg:pb-20"
+          "p-4 sm:p-5 md:p-6 lg:p-8",
+          // Always add bottom padding on mobile for MobileNav (80px = h-20)
+          // When music is playing, add extra padding for MiniPlayer (~78px) + MobileNav (80px) = ~158px
+          // Using pb-44 (176px) to ensure no overlap with extra breathing room
+          "pb-24 lg:pb-8",
+          isMusicPlaying && "pb-44 lg:pb-20"
         )}>
           {children}
         </main>
       </div>
 
       {/* Mini Player (above mobile nav) */}
-      <div className="fixed bottom-16 left-0 right-0 lg:bottom-0 lg:left-64 z-30">
+      <div className="fixed bottom-20 left-0 right-0 lg:bottom-0 lg:left-64 z-30">
         <MiniPlayer />
       </div>
 

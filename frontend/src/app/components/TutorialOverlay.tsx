@@ -419,10 +419,10 @@ export function TutorialOverlay({ onComplete }: TutorialOverlayProps) {
             </div>
 
             <DialogFooter className="flex flex-col-reverse sm:flex-row justify-between gap-2 sm:gap-0">
-              <Button variant="ghost" onClick={handleSkip} className="w-full sm:w-auto">
+              <Button variant="ghost" onClick={handleSkip} className="w-full sm:w-auto text-gray-400 hover:text-white">
                 Skip Tutorial
               </Button>
-              <Button onClick={() => setShowWelcome(false)} className="w-full sm:w-auto">
+              <Button onClick={() => setShowWelcome(false)} className="w-full sm:w-auto bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white">
                 Start Tutorial
                 <ChevronRight className="h-4 w-4 ml-2" />
               </Button>

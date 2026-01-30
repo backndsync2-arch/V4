@@ -146,11 +146,11 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-12 gap-3 border-2 border-white/10 hover:border-[#1db954]/50 hover:bg-[#1db954]/10 transition-all duration-200 shadow-sm hover:shadow-md text-white bg-[#2a2a2a]"
+                className="w-full h-12 gap-3 border border-white/10 hover:border-[#1db954]/50 hover:bg-[#1db954]/10 transition-all duration-200 text-white bg-[#2a2a2a] disabled:opacity-50"
                 onClick={handleGoogleSignIn}
                 disabled={isLoading}
               >
-                <svg className="h-5 w-5" viewBox="0 0 24 24">
+                <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24">
                   <path
                     d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
                     fill="#4285F4"
@@ -168,40 +168,40 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
                     fill="#EA4335"
                   />
                 </svg>
-                <span className="font-semibold">Continue with Google Workspace</span>
+                <span className="font-medium">Continue with Google Workspace</span>
               </Button>
 
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-12 gap-3 border-2 border-white/10 hover:border-[#1db954]/50 hover:bg-[#1db954]/10 transition-all duration-200 shadow-sm hover:shadow-md text-white bg-[#2a2a2a]"
+                className="w-full h-12 gap-3 border border-white/10 hover:border-[#1db954]/50 hover:bg-[#1db954]/10 transition-all duration-200 text-white bg-[#2a2a2a] disabled:opacity-50"
                 onClick={handleMicrosoftSignIn}
                 disabled={isLoading}
               >
-                <svg className="h-5 w-5" viewBox="0 0 23 23">
+                <svg className="h-5 w-5 shrink-0" viewBox="0 0 23 23">
                   <path fill="#f3f3f3" d="M0 0h23v23H0z"/>
                   <path fill="#f35325" d="M1 1h10v10H1z"/>
                   <path fill="#81bc06" d="M12 1h10v10H12z"/>
                   <path fill="#05a6f0" d="M1 12h10v10H1z"/>
                   <path fill="#ffba08" d="M12 12h10v10H12z"/>
                 </svg>
-                <span className="font-semibold">Continue with Microsoft 365</span>
+                <span className="font-medium">Continue with Microsoft 365</span>
               </Button>
             </div>
 
-            <div className="relative">
+            <div className="relative my-4">
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t border-white/10" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-[#1a1a1a] px-2 text-gray-400">Or continue with email</span>
+                <span className="bg-[#1a1a1a] px-3 text-gray-400 font-medium">Or continue with email</span>
               </div>
             </div>
 
             {/* Email/Password Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-white">Email Address</Label>
+                <Label htmlFor="email" className="text-gray-300">Email Address</Label>
                 <Input
                   id="email"
                   type="email"
@@ -209,16 +209,16 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="h-11 bg-[#2a2a2a] border-white/10 text-white placeholder:text-gray-500"
+                  className="h-11 bg-[#2a2a2a] border-white/10 text-white placeholder:text-gray-500 focus-visible:border-[#1db954] focus-visible:ring-[#1db954]/20"
                 />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="password" className="text-white">Password</Label>
+                  <Label htmlFor="password" className="text-gray-300">Password</Label>
                   <Button
                     type="button"
                     variant="link"
-                    className="px-0 text-xs text-[#1db954] hover:text-[#1ed760]"
+                    className="px-0 text-xs text-[#1db954] hover:text-[#1ed760] h-auto py-0"
                     onClick={() => setResetPasswordOpen(true)}
                   >
                     Forgot password?
@@ -231,15 +231,20 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="h-11 bg-[#2a2a2a] border-white/10 text-white placeholder:text-gray-500"
+                  className="h-11 bg-[#2a2a2a] border-white/10 text-white placeholder:text-gray-500 focus-visible:border-[#1db954] focus-visible:ring-[#1db954]/20"
                 />
               </div>
               <Button 
                 type="submit" 
-                className="w-full h-12 bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-base font-semibold shadow-lg shadow-[#1db954]/30 transition-all duration-200 text-white" 
+                className="w-full h-12 bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-base font-semibold shadow-lg shadow-[#1db954]/30 transition-all duration-200 text-white disabled:opacity-50 disabled:cursor-not-allowed" 
                 disabled={isLoading}
               >
-                {isLoading ? 'Signing in...' : 'Sign In'}
+                {isLoading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Signing in...
+                  </span>
+                ) : 'Sign In'}
               </Button>
             </form>
 
@@ -249,82 +254,115 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
               <span>Secured with enterprise-grade encryption</span>
             </div>
             
-            {/* Demo Credentials */}
-            <div className="mt-6 p-4 bg-[#2a2a2a] rounded-lg border border-white/10">
-              <p className="font-semibold text-sm mb-3 text-white">Demo Credentials:</p>
-              <div className="space-y-2 text-sm">
-                <div className="bg-[#1a1a1a] p-3 rounded border border-white/10">
+            {/* Quick Access Credentials */}
+            <div className="mt-6 p-4 bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] rounded-lg border border-white/10">
+              <div className="flex items-center gap-2 mb-3">
+                <Shield className="h-4 w-4 text-[#1db954]" />
+                <p className="font-semibold text-sm text-white">Quick Access</p>
+              </div>
+              <div className="space-y-2.5 text-sm">
+                <div className="bg-[#1a1a1a] p-3 rounded-lg border border-white/10 hover:border-[#1db954]/30 transition-colors">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-gray-300 font-medium">Admin:</span>
-                    <span className="text-xs text-[#1db954] bg-[#1db954]/20 px-2 py-0.5 rounded font-semibold">Password Required</span>
+                    <span className="text-gray-300 font-medium text-xs">Admin Account</span>
+                    <span className="text-xs text-[#1db954] bg-[#1db954]/20 px-2 py-0.5 rounded font-semibold">Active</span>
                   </div>
                   <div className="font-mono text-xs text-gray-400 break-all mb-2">admin@sync2gear.com</div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-gray-500">Password:</span>
-                    <code className="text-xs font-mono bg-[#2a2a2a] px-2 py-1 rounded border border-white/10 text-gray-300 break-all">
-                      Admin@Sync2Gear2025!
-                    </code>
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEmail('admin@sync2gear.com');
+                        toast.success('Email filled');
+                      }}
+                      className="h-7 text-xs border-white/10 text-gray-300 hover:bg-[#1db954]/10 hover:text-[#1db954] hover:border-[#1db954]/30"
+                    >
+                      Use Email
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => {
                         navigator.clipboard.writeText('Admin@Sync2Gear2025!');
-                        toast.success('Password copied to clipboard');
+                        toast.success('Password copied');
                       }}
-                      className="text-xs text-[#1db954] hover:text-[#1ed760] underline"
+                      className="h-7 text-xs border-white/10 text-gray-300 hover:bg-[#1db954]/10 hover:text-[#1db954] hover:border-[#1db954]/30"
                     >
-                      Copy
-                    </button>
+                      Copy Password
+                    </Button>
                   </div>
                 </div>
-                <div className="bg-[#1a1a1a] p-3 rounded border border-white/10">
+                <div className="bg-[#1a1a1a] p-3 rounded-lg border border-white/10 hover:border-[#1db954]/30 transition-colors">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-gray-300 font-medium">Client:</span>
-                    <span className="text-xs text-[#1db954] bg-[#1db954]/20 px-2 py-0.5 rounded font-semibold">Password Required</span>
+                    <span className="text-gray-300 font-medium text-xs">Client Account</span>
+                    <span className="text-xs text-[#1db954] bg-[#1db954]/20 px-2 py-0.5 rounded font-semibold">Active</span>
                   </div>
                   <div className="font-mono text-xs text-gray-400 break-all mb-2">client1@example.com</div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-gray-500">Password:</span>
-                    <code className="text-xs font-mono bg-[#2a2a2a] px-2 py-1 rounded border border-white/10 text-gray-300 break-all">
-                      Client@Example2025!
-                    </code>
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEmail('client1@example.com');
+                        toast.success('Email filled');
+                      }}
+                      className="h-7 text-xs border-white/10 text-gray-300 hover:bg-[#1db954]/10 hover:text-[#1db954] hover:border-[#1db954]/30"
+                    >
+                      Use Email
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => {
                         navigator.clipboard.writeText('Client@Example2025!');
-                        toast.success('Password copied to clipboard');
+                        toast.success('Password copied');
                       }}
-                      className="text-xs text-[#1db954] hover:text-[#1ed760] underline"
+                      className="h-7 text-xs border-white/10 text-gray-300 hover:bg-[#1db954]/10 hover:text-[#1db954] hover:border-[#1db954]/30"
                     >
-                      Copy
-                    </button>
+                      Copy Password
+                    </Button>
                   </div>
                 </div>
-                <div className="bg-[#1a1a1a] p-3 rounded border border-white/10">
+                <div className="bg-[#1a1a1a] p-3 rounded-lg border border-white/10 hover:border-[#1db954]/30 transition-colors">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-gray-300 font-medium">Floor User:</span>
-                    <span className="text-xs text-[#1db954] bg-[#1db954]/20 px-2 py-0.5 rounded font-semibold">Password Required</span>
+                    <span className="text-gray-300 font-medium text-xs">Floor User</span>
+                    <span className="text-xs text-[#1db954] bg-[#1db954]/20 px-2 py-0.5 rounded font-semibold">Active</span>
                   </div>
                   <div className="font-mono text-xs text-gray-400 break-all mb-2">floor1@downtowncoffee.com</div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-gray-500">Password:</span>
-                    <code className="text-xs font-mono bg-[#2a2a2a] px-2 py-1 rounded border border-white/10 text-gray-300 break-all">
-                      Floor@Downtown2025!
-                    </code>
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEmail('floor1@downtowncoffee.com');
+                        toast.success('Email filled');
+                      }}
+                      className="h-7 text-xs border-white/10 text-gray-300 hover:bg-[#1db954]/10 hover:text-[#1db954] hover:border-[#1db954]/30"
+                    >
+                      Use Email
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => {
                         navigator.clipboard.writeText('Floor@Downtown2025!');
-                        toast.success('Password copied to clipboard');
+                        toast.success('Password copied');
                       }}
-                      className="text-xs text-[#1db954] hover:text-[#1ed760] underline"
+                      className="h-7 text-xs border-white/10 text-gray-300 hover:bg-[#1db954]/10 hover:text-[#1db954] hover:border-[#1db954]/30"
                     >
-                      Copy
-                    </button>
+                      Copy Password
+                    </Button>
                   </div>
                 </div>
               </div>
               <p className="text-xs text-gray-400 mt-3 pt-3 border-t border-white/10">
-                🔒 All accounts require proper password authentication. Click "Copy" to copy passwords to clipboard.
+                Quick access credentials for testing. All accounts require proper authentication.
               </p>
             </div>
           </CardContent>
@@ -346,31 +384,38 @@ export function SignInEnhanced({ onBackToLanding }: SignInEnhancedProps) {
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="resetEmail" className="text-white">Email Address</Label>
+              <Label htmlFor="resetEmail" className="text-gray-300">Email Address</Label>
               <Input
                 id="resetEmail"
                 type="email"
                 placeholder="name@business.com"
                 value={resetEmail}
                 onChange={(e) => setResetEmail(e.target.value)}
-                className="bg-[#2a2a2a] border-white/10 text-white placeholder:text-gray-500"
+                className="bg-[#2a2a2a] border-white/10 text-white placeholder:text-gray-500 focus-visible:border-[#1db954] focus-visible:ring-[#1db954]/20"
               />
             </div>
 
-            <div className="bg-[#2a2a2a] rounded-lg p-4 border border-white/10">
-              <p className="text-sm text-gray-300">
-                ✓ Password reset link expires in 1 hour<br />
-                ✓ Check your spam folder if you don't see it<br />
-                ✓ Contact support if you need help
+            <div className="bg-[#1db954]/10 border border-[#1db954]/30 rounded-lg p-4">
+              <p className="text-sm text-[#1db954] space-y-1">
+                <div>✓ Password reset link expires in 1 hour</div>
+                <div>✓ Check your spam folder if you don't see it</div>
+                <div>✓ Contact support if you need help</div>
               </p>
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setResetPasswordOpen(false)} className="border-white/10 text-white hover:bg-[#2a2a2a]">
+            <Button 
+              variant="outline" 
+              onClick={() => setResetPasswordOpen(false)} 
+              className="border-white/10 text-gray-300 hover:bg-[#2a2a2a] hover:text-white"
+            >
               Cancel
             </Button>
-            <Button onClick={handlePasswordReset} className="bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white">
+            <Button 
+              onClick={handlePasswordReset} 
+              className="bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white"
+            >
               <Mail className="h-4 w-4 mr-2" />
               Send Reset Link
             </Button>

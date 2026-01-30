@@ -83,6 +83,22 @@ class UserManagementViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(client_id=client_id)
         
         return queryset.select_related('client', 'floor')
+    
+    def create(self, request, *args, **kwargs):
+        """Create user with password handling."""
+        from apps.authentication.serializers import UserCreateSerializer
+        from rest_framework import status
+        
+        # Use UserCreateSerializer for creation (handles password)
+        serializer = UserCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Create user
+        user = serializer.save()
+        
+        # Return user with UserSerializer (read format)
+        user_serializer = UserSerializer(user)
+        return Response(user_serializer.data, status=status.HTTP_201_CREATED)
 
 
 class SystemStatsView(viewsets.ViewSet):
@@ -144,6 +160,8 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     
     def get_queryset(self):
         """Get audit logs based on user role."""
+        from django.db.models import Case, When, Value, IntegerField
+        
         user = self.request.user
         
         # Admin can see all logs
@@ -192,6 +210,18 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(created_at__gte=date_from)
         if date_to:
             queryset = queryset.filter(created_at__lte=date_to)
+        
+        # Order by role priority (admin first, then client, then others), then by created_at
+        queryset = queryset.annotate(
+            role_priority=Case(
+                When(user__role='admin', then=Value(1)),
+                When(user__role='client', then=Value(2)),
+                When(user__role='staff', then=Value(3)),
+                When(user__role='floor_user', then=Value(4)),
+                default=Value(5),
+                output_field=IntegerField(),
+            )
+        ).order_by('role_priority', '-created_at')
         
         return queryset.select_related('user', 'client', 'user__floor')
 

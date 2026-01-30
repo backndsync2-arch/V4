@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
@@ -7,7 +7,6 @@ import { Label } from '@/app/components/ui/label';
 import { User as UserIcon, Mail, Building2, Shield, Calendar, HelpCircle, BookOpen, CheckSquare, FileText } from 'lucide-react';
 import { Badge } from '@/app/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
-import { mockClients } from '@/lib/mockData';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import { LaunchChecklist } from '@/app/components/LaunchChecklist';
@@ -15,9 +14,10 @@ import { ImageUpload } from '@/app/components/ImageUpload';
 import { CancellationPolicy } from '@/app/components/CancellationPolicy';
 import { TermsAndConditions } from '@/app/components/TermsAndConditions';
 import { PrivacyPolicy } from '@/app/components/PrivacyPolicy';
+import { authAPI, adminAPI } from '@/lib/api';
 
 export function Profile() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
   const [profileImage, setProfileImage] = useState<string | null>(null);
@@ -27,11 +27,57 @@ export function Profile() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [client, setClient] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
 
-  const client = user?.clientId ? mockClients.find(c => c.id === user.clientId) : null;
+  // Load client info if user has clientId
+  useEffect(() => {
+    if (user?.clientId && user?.role === 'admin') {
+      loadClient();
+    }
+  }, [user?.clientId, user?.role]);
 
-  const handleSave = () => {
-    toast.success('Profile updated successfully');
+  const loadClient = async () => {
+    try {
+      const clients = await adminAPI.getClients();
+      const found = clients.find((c: any) => c.id === user?.clientId);
+      setClient(found);
+    } catch (error: any) {
+      console.error('Failed to load client:', error);
+    }
+  };
+
+  // Update local state when user changes
+  useEffect(() => {
+    if (user) {
+      setName(user.name || '');
+      setEmail(user.email || '');
+    }
+  }, [user]);
+
+  const handleSave = async () => {
+    if (!name.trim() || !email.trim()) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await authAPI.updateProfile({
+        name: name.trim(),
+        email: email.trim(),
+      });
+      toast.success('Profile updated successfully');
+      // Refresh user data
+      if (refreshUser) {
+        await refreshUser();
+      }
+    } catch (error: any) {
+      console.error('Failed to update profile:', error);
+      toast.error(error?.message || 'Failed to update profile');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleRestartTutorial = () => {
@@ -43,7 +89,7 @@ export function Profile() {
     toast.success('Tutorial restarted!');
   };
 
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
       toast.error('Please fill in all password fields');
       return;
@@ -59,14 +105,24 @@ export function Profile() {
       return;
     }
 
-    // Clear password fields
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
+    try {
+      setLoading(true);
+      await authAPI.changePassword(currentPassword, newPassword);
+      
+      // Clear password fields
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
 
-    toast.success('Password changed successfully', {
-      description: 'Your password has been updated',
-    });
+      toast.success('Password changed successfully', {
+        description: 'Your password has been updated',
+      });
+    } catch (error: any) {
+      console.error('Failed to change password:', error);
+      toast.error(error?.message || 'Failed to change password. Please check your current password.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // If showing any legal document, render only that with back button

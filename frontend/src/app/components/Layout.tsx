@@ -33,7 +33,7 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#121212] via-[#1a1a1a] to-[#0a0a0a]">
+    <div className="min-h-screen bg-gradient-to-br from-[#121212] via-[#1a1a1a] to-[#0a0a0a] overflow-y-auto">
       {/* Impersonation Banner */}
       <ImpersonationBanner />
 
@@ -107,7 +107,7 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
       </aside>
 
       {/* Main content */}
-      <div className="lg:ml-64">
+      <div className="lg:ml-64 min-h-screen">
         {/* Mobile Header */}
         <header className="lg:hidden bg-[#1a1a1a]/95 backdrop-blur-xl border-b border-white/10 px-4 py-3.5 sticky top-0 z-30 shadow-lg">
           <div className="flex items-center justify-between">

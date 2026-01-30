@@ -1,99 +1,163 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
+import { Card, CardContent } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
-import { Input } from '@/app/components/ui/input';
-import { Label } from '@/app/components/ui/label';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
-import { mockSchedules, mockAnnouncementAudio, mockDevices } from '@/lib/mockData';
-import { schedulerAPI } from '@/lib/api';
-import { Calendar, Plus, Clock, Repeat, MoreVertical, Trash2, Play, Pause } from 'lucide-react';
-import { Badge } from '@/app/components/ui/badge';
-import { Switch } from '@/app/components/ui/switch';
+import { Dialog, DialogTrigger } from '@/app/components/ui/dialog';
+import { schedulerAPI, announcementsAPI, zonesAPI, musicAPI } from '@/lib/api';
+import { Calendar, Plus, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/app/components/ui/dropdown-menu';
-import type { Schedule, IntervalSchedule, TimelineSchedule } from '@/lib/types';
+import type { Schedule } from '@/lib/types';
+import type { Zone } from '@/lib/api';
+import { usePlayback } from '@/lib/playback';
+import { ScheduleCard } from './scheduler/ScheduleCard';
+import { ScheduleFormDialog } from './scheduler/ScheduleFormDialog';
+import { DeleteScheduleDialog } from './scheduler/DeleteScheduleDialog';
 
 export function Scheduler() {
   const { user } = useAuth();
-  const [schedules, setSchedules] = useState(mockSchedules);
-  const [audioFiles, setAudioFiles] = useState(mockAnnouncementAudio);
-  const [devices, setDevices] = useState(mockDevices);
+  const { activeTarget } = usePlayback();
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [audioFiles, setAudioFiles] = useState<any[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [folders, setFolders] = useState<any[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteScheduleId, setDeleteScheduleId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Form state
-  const [scheduleName, setScheduleName] = useState('');
-  const [scheduleType, setScheduleType] = useState<'interval' | 'timeline'>('interval');
-  const [intervalMinutes, setIntervalMinutes] = useState('60');
-  const [cycleDuration, setCycleDuration] = useState('30');
-  const [selectedAnnouncements, setSelectedAnnouncements] = useState<string[]>([]);
-  const [avoidRepeat, setAvoidRepeat] = useState(true);
-  const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
-  const [quietStart, setQuietStart] = useState('22:00');
-  const [quietEnd, setQuietEnd] = useState('08:00');
-  const [timelineSlots, setTimelineSlots] = useState<{ announcementId: string; timestampSeconds: number }[]>([]);
+  // Load data on mount and when active zone changes
+  useEffect(() => {
+    loadData();
+  }, [user, activeTarget]);
+
+  const loadData = async () => {
+    if (!user) return;
+    
+    setIsLoading(true);
+    try {
+      const [schedulesData, announcementsData, zonesData, foldersData] = await Promise.all([
+        schedulerAPI.getSchedules(),
+        announcementsAPI.getAnnouncements(),
+        zonesAPI.getZones(),
+        musicAPI.getFolders('announcements'),
+      ]);
+      
+      setSchedules(schedulesData);
+      setAudioFiles(announcementsData);
+      setZones(zonesData);
+      setFolders(foldersData);
+    } catch (error: any) {
+      toast.error('Failed to load data: ' + (error.message || 'Unknown error'));
+      console.error('Load data error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const clientId = user?.role === 'admin' ? null : user?.clientId;
-  const filteredSchedules = clientId ? schedules.filter(s => s.clientId === clientId) : schedules;
-  const availableAudio = clientId ? audioFiles.filter(a => a.clientId === clientId && a.enabled) : audioFiles.filter(a => a.enabled);
+  
+  // Filter schedules by client and optionally by active zone
+  let filteredSchedules = clientId ? schedules.filter(s => s.clientId === clientId) : schedules;
+  
+  // Filter by active zone if one is selected
+  if (activeTarget) {
+    filteredSchedules = filteredSchedules.filter((s) => {
+      if (s.zoneIds && s.zoneIds.includes(activeTarget)) return true;
+      if (s.zones && s.zones.some((z: any) => z.id === activeTarget || z.name === activeTarget)) return true;
+      return false;
+    });
+  }
+  
+  // Filter announcements by client
+  let availableAudio = clientId 
+    ? audioFiles.filter(a => a.clientId === clientId && a.enabled) 
+    : audioFiles.filter(a => a.enabled);
+  
+  // Filter announcements by active zone if one is selected
+  if (activeTarget) {
+    availableAudio = availableAudio.filter(a => {
+      const hasDirectZone = String(a.zoneId || '') === String(activeTarget || '') || a.zone === activeTarget;
+      
+      if (hasDirectZone) {
+        return true;
+      }
+      
+      if (a.folderId || a.category) {
+        const announcementFolder = folders.find(f => 
+          String(f.id) === String(a.folderId || a.category || '')
+        );
+        
+        if (announcementFolder) {
+          const folderZoneId = String(announcementFolder.zoneId || '');
+          const activeZoneId = String(activeTarget || '');
+          return folderZoneId === activeZoneId || announcementFolder.zone === activeTarget;
+        }
+      }
+      
+      return false;
+    });
+  }
+  
+  // Filter available zones - if active zone is selected, only show that zone
+  const availableZones = activeTarget 
+    ? zones.filter(z => z.id === activeTarget || z.name === activeTarget)
+    : zones;
 
-  const handleCreateSchedule = async () => {
-    if (!scheduleName.trim()) {
-      toast.error('Please enter a schedule name');
-      return;
+  // Helper to format time for display (convert 24h to 12h with AM/PM)
+  const formatTime12h = (time24h: string): string => {
+    if (time24h.includes('AM') || time24h.includes('PM')) {
+      return time24h;
     }
-    if (selectedAnnouncements.length === 0) {
-      toast.error('Please select at least one announcement');
-      return;
-    }
+    const [hours, minutes] = time24h.split(':');
+    const hour24 = parseInt(hours);
+    const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
+    const period = hour24 >= 12 ? 'PM' : 'AM';
+    return `${hour12}:${minutes} ${period}`;
+  };
 
-    setIsCreating(true);
+  const handleCreateSchedule = async (scheduleData: any) => {
+    setIsSaving(true);
     try {
-      const scheduleData: Omit<Schedule, 'id' | 'createdAt' | 'updatedAt'> = {
-        name: scheduleName,
-        clientId: user?.clientId || 'client1',
-        enabled: true,
-        schedule: scheduleType === 'interval' ? {
-          type: 'interval',
-          intervalMinutes: parseInt(intervalMinutes),
-          announcementIds: selectedAnnouncements,
-          avoidRepeat,
-          ...(quietHoursEnabled ? {
-            quietHoursStart: quietStart,
-            quietHoursEnd: quietEnd,
-          } : {}),
-        } as IntervalSchedule : {
-          type: 'timeline',
-          cycleDurationMinutes: parseInt(cycleDuration),
-          announcements: timelineSlots,
-        } as TimelineSchedule,
-        createdBy: user?.id || 'user1',
-      };
-
       const newSchedule = await schedulerAPI.createSchedule(scheduleData);
-
-      setSchedules([...schedules, {
-        ...newSchedule,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }]);
-      
-      // Reset form
-      setScheduleName('');
-      setSelectedAnnouncements([]);
-      setTimelineSlots([]);
+      setSchedules([...schedules, newSchedule]);
       setIsCreateOpen(false);
-      
-      toast.success(`Created schedule: ${scheduleName}`);
+      toast.success(`Created schedule: ${scheduleData.name}`);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to create schedule');
+      const errorMessage = error?.message || error?.data?.message || error?.data?.error || 'Failed to create schedule';
+      toast.error(String(errorMessage));
       console.error('Create schedule error:', error);
     } finally {
-      setIsCreating(false);
+      setIsSaving(false);
     }
+  };
+
+  const handleUpdateSchedule = async (scheduleData: any) => {
+    if (!editingSchedule) return;
+    
+    setIsSaving(true);
+    try {
+      const updatedSchedule = await schedulerAPI.updateSchedule(editingSchedule.id, scheduleData);
+      setSchedules(schedules.map(s =>
+        s.id === editingSchedule.id ? updatedSchedule : s
+      ));
+      setIsEditOpen(false);
+      setEditingSchedule(null);
+      toast.success(`Updated schedule: ${scheduleData.name}`);
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.data?.message || error?.data?.error || 'Failed to update schedule';
+      toast.error(String(errorMessage));
+      console.error('Update schedule error:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEdit = (schedule: Schedule) => {
+    setEditingSchedule(schedule);
+    setIsEditOpen(true);
   };
 
   const handleToggleEnabled = async (scheduleId: string) => {
@@ -101,9 +165,9 @@ export function Scheduler() {
     const newEnabled = !schedule?.enabled;
     
     try {
-      await schedulerAPI.toggleSchedule(scheduleId, newEnabled);
+      const updatedSchedule = await schedulerAPI.toggleSchedule(scheduleId, newEnabled);
       setSchedules(schedules.map(s =>
-        s.id === scheduleId ? { ...s, enabled: newEnabled } : s
+        s.id === scheduleId ? updatedSchedule : s
       ));
       toast.success(`${schedule?.enabled ? 'Disabled' : 'Enabled'} ${schedule?.name}`);
     } catch (error: any) {
@@ -112,12 +176,21 @@ export function Scheduler() {
     }
   };
 
-  const handleDelete = async (scheduleId: string) => {
-    const schedule = schedules.find(s => s.id === scheduleId);
+  const handleDeleteClick = (scheduleId: string) => {
+    setDeleteScheduleId(scheduleId);
+    setIsDeleting(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteScheduleId) return;
+    
+    const schedule = schedules.find(s => s.id === deleteScheduleId);
     
     try {
-      await schedulerAPI.deleteSchedule(scheduleId);
-      setSchedules(schedules.filter(s => s.id !== scheduleId));
+      await schedulerAPI.deleteSchedule(deleteScheduleId);
+      setSchedules(schedules.filter(s => s.id !== deleteScheduleId));
+      setIsDeleting(false);
+      setDeleteScheduleId(null);
       toast.success(`Deleted ${schedule?.name}`);
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete schedule');
@@ -125,327 +198,96 @@ export function Scheduler() {
     }
   };
 
-  const addTimelineSlot = () => {
-    if (selectedAnnouncements.length === 0) return;
-    setTimelineSlots([...timelineSlots, {
-      announcementId: selectedAnnouncements[0],
-      timestampSeconds: 0,
-    }]);
-  };
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-[#1db954]" />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-32 md:pb-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-slate-600">Create and manage announcement schedules</p>
+          <h2 className="text-2xl font-bold text-white mb-1">Scheduler</h2>
+          <p className="text-gray-400">Create and manage announcement schedules</p>
+          {activeTarget && (
+            <p className="text-sm text-[#1db954] mt-1">
+              Filtered by active zone
+            </p>
+          )}
         </div>
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Schedule
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Create Schedule</DialogTitle>
-              <DialogDescription>Set up automated announcement scheduling</DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-6">
-              {/* Basic Info */}
-              <div className="space-y-2">
-                <Label>Schedule Name</Label>
-                <Input
-                  placeholder="e.g. Hourly Promotions"
-                  value={scheduleName}
-                  onChange={(e) => setScheduleName(e.target.value)}
-                />
-              </div>
-
-              {/* Schedule Type */}
-              <Tabs value={scheduleType} onValueChange={(v) => setScheduleType(v as 'interval' | 'timeline')}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="interval">
-                    <Repeat className="h-4 w-4 mr-2" />
-                    Interval-Based
-                  </TabsTrigger>
-                  <TabsTrigger value="timeline">
-                    <Clock className="h-4 w-4 mr-2" />
-                    Timeline-Based
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="interval" className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Play Every (minutes)</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={intervalMinutes}
-                      onChange={(e) => setIntervalMinutes(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Select Announcements</Label>
-                    <div className="space-y-2 max-h-40 overflow-y-auto border rounded-lg p-3">
-                      {availableAudio.map(audio => (
-                        <label key={audio.id} className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selectedAnnouncements.includes(audio.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedAnnouncements([...selectedAnnouncements, audio.id]);
-                              } else {
-                                setSelectedAnnouncements(selectedAnnouncements.filter(id => id !== audio.id));
-                              }
-                            }}
-                            className="rounded"
-                          />
-                          <span>{audio.title}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      id="avoid-repeat"
-                      checked={avoidRepeat}
-                      onCheckedChange={setAvoidRepeat}
-                    />
-                    <Label htmlFor="avoid-repeat">Avoid repeating same announcement back-to-back</Label>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        id="quiet-hours"
-                        checked={quietHoursEnabled}
-                        onCheckedChange={setQuietHoursEnabled}
-                      />
-                      <Label htmlFor="quiet-hours">Enable Quiet Hours</Label>
-                    </div>
-                    {quietHoursEnabled && (
-                      <div className="grid grid-cols-2 gap-3 ml-8">
-                        <div className="space-y-2">
-                          <Label>Start Time</Label>
-                          <Input
-                            type="time"
-                            value={quietStart}
-                            onChange={(e) => setQuietStart(e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>End Time</Label>
-                          <Input
-                            type="time"
-                            value={quietEnd}
-                            onChange={(e) => setQuietEnd(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="timeline" className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Cycle Duration (minutes)</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={cycleDuration}
-                      onChange={(e) => setCycleDuration(e.target.value)}
-                    />
-                    <p className="text-sm text-slate-500">
-                      The schedule will repeat every {cycleDuration} minutes
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label>Timeline Slots</Label>
-                      <Button size="sm" variant="outline" onClick={addTimelineSlot}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        Add Slot
-                      </Button>
-                    </div>
-                    <div className="space-y-3 border rounded-lg p-3">
-                      {timelineSlots.map((slot, index) => (
-                        <div key={index} className="flex items-center gap-3">
-                          <Select
-                            value={slot.announcementId}
-                            onValueChange={(value) => {
-                              const newSlots = [...timelineSlots];
-                              newSlots[index].announcementId = value;
-                              setTimelineSlots(newSlots);
-                            }}
-                          >
-                            <SelectTrigger className="flex-1">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {availableAudio.map(audio => (
-                                <SelectItem key={audio.id} value={audio.id}>
-                                  {audio.title}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <div className="flex items-center gap-2">
-                            <Label>At</Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              max={parseInt(cycleDuration) * 60}
-                              placeholder="Seconds"
-                              className="w-24"
-                              value={slot.timestampSeconds}
-                              onChange={(e) => {
-                                const newSlots = [...timelineSlots];
-                                newSlots[index].timestampSeconds = parseInt(e.target.value) || 0;
-                                setTimelineSlots(newSlots);
-                              }}
-                            />
-                            <span className="text-sm text-slate-500">sec</span>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setTimelineSlots(timelineSlots.filter((_, i) => i !== index))}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
-                      {timelineSlots.length === 0 && (
-                        <p className="text-sm text-slate-500 text-center py-4">
-                          No slots added yet. Click "Add Slot" to begin.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </TabsContent>
-              </Tabs>
-
-
-              <Button onClick={handleCreateSchedule} className="w-full" disabled={isCreating}>
-                {isCreating ? 'Creating...' : 'Create Schedule'}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={loadData}
+            disabled={isLoading}
+            className="gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Create Schedule
               </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <ScheduleFormDialog
+              open={isCreateOpen}
+              onOpenChange={setIsCreateOpen}
+              editingSchedule={null}
+              availableAudio={availableAudio}
+              availableZones={availableZones}
+              activeTarget={activeTarget}
+              onSave={handleCreateSchedule}
+              isLoading={isSaving}
+            />
+          </Dialog>
+        </div>
       </div>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <ScheduleFormDialog
+          open={isEditOpen}
+          onOpenChange={(open) => {
+            setIsEditOpen(open);
+            if (!open) setEditingSchedule(null);
+          }}
+          editingSchedule={editingSchedule}
+          availableAudio={availableAudio}
+          availableZones={availableZones}
+          activeTarget={activeTarget}
+          onSave={handleUpdateSchedule}
+          isLoading={isSaving}
+        />
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteScheduleDialog
+        open={isDeleting}
+        onOpenChange={setIsDeleting}
+        scheduleName={schedules.find(s => s.id === deleteScheduleId)?.name || ''}
+        onConfirm={handleDeleteConfirm}
+      />
 
       {/* Schedules List */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {filteredSchedules.map((schedule) => (
-          <Card key={schedule.id}>
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <CardTitle className="flex items-center gap-2">
-                    {schedule.schedule.type === 'interval' ? (
-                      <Repeat className="h-5 w-5 text-blue-600" />
-                    ) : (
-                      <Clock className="h-5 w-5 text-purple-600" />
-                    )}
-                    {schedule.name}
-                  </CardTitle>
-                  <CardDescription className="mt-2">
-                    {schedule.schedule.type === 'interval'
-                      ? `Plays every ${schedule.schedule.intervalMinutes} minutes`
-                      : `${schedule.schedule.cycleDurationMinutes} minute cycle`}
-                  </CardDescription>
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleDelete(schedule.id)} className="text-red-600">
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor={`enabled-${schedule.id}`}>Active</Label>
-                    <Switch
-                      id={`enabled-${schedule.id}`}
-                      checked={schedule.enabled}
-                      onCheckedChange={() => handleToggleEnabled(schedule.id)}
-                    />
-                  </div>
-                  <Badge variant={schedule.enabled ? 'default' : 'secondary'}>
-                    {schedule.enabled ? 'Running' : 'Paused'}
-                  </Badge>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Devices ({schedule.deviceIds.length})</p>
-                  <div className="flex flex-wrap gap-2">
-                    {schedule.deviceIds.map(deviceId => {
-                      const device = devices.find(d => d.id === deviceId);
-                      return device ? (
-                        <Badge key={deviceId} variant="outline">
-                          {device.name}
-                        </Badge>
-                      ) : null;
-                    })}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">
-                    {schedule.schedule.type === 'interval' ? 'Announcements' : 'Timeline'}
-                  </p>
-                  {schedule.schedule.type === 'interval' ? (
-                    <div className="flex flex-wrap gap-2">
-                      {schedule.schedule.announcementIds.map(audioId => {
-                        const audio = audioFiles.find(a => a.id === audioId);
-                        return audio ? (
-                          <Badge key={audioId} variant="secondary">
-                            {audio.title}
-                          </Badge>
-                        ) : null;
-                      })}
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {schedule.schedule.announcements.map((slot, index) => {
-                        const audio = audioFiles.find(a => a.id === slot.announcementId);
-                        const mins = Math.floor(slot.timestampSeconds / 60);
-                        const secs = slot.timestampSeconds % 60;
-                        return audio ? (
-                          <div key={index} className="text-sm text-slate-600">
-                            {mins}:{secs.toString().padStart(2, '0')} - {audio.title}
-                          </div>
-                        ) : null;
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {schedule.schedule.type === 'interval' && schedule.schedule.quietHoursStart && (
-                  <div className="text-sm text-slate-600">
-                    Quiet hours: {schedule.schedule.quietHoursStart} - {schedule.schedule.quietHoursEnd}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          <ScheduleCard
+            key={schedule.id}
+            schedule={schedule}
+            audioFiles={audioFiles}
+            zones={zones}
+            onToggleEnabled={handleToggleEnabled}
+            onEdit={handleEdit}
+            onDelete={handleDeleteClick}
+            formatTime12h={formatTime12h}
+          />
         ))}
       </div>
 

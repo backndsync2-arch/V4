@@ -1,38 +1,71 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
-import { Music, Radio, Calendar, Activity, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Music, Radio, Activity, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import { Badge } from '@/app/components/ui/badge';
 import { formatRelativeTime } from '@/lib/utils';
 import { DashboardPlayback } from '@/app/components/DashboardPlayback';
-import { announcementsAPI, musicAPI, schedulerAPI, wsClient, zonesAPI } from '@/lib/api';
-import { toast } from 'sonner';
-import { cn } from '@/app/components/ui/utils';
+import { announcementsAPI, musicAPI, zonesAPI, wsClient } from '@/lib/api';
+import { API_BASE_URL, getAccessToken } from '@/lib/api/core';
 import { usePlayback } from '@/lib/playback';
+import { toast } from 'sonner';
+import { Calendar } from 'lucide-react';
 
 export function Dashboard() {
   const { user } = useAuth();
   const { activeTarget } = usePlayback();
   const [devices, setDevices] = useState<any[]>([]);
-  const [schedules, setSchedules] = useState<any[]>([]);
   const [recentEvents, setRecentEvents] = useState<any[]>([]);
   const [musicFiles, setMusicFiles] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [announcementFolders, setAnnouncementFolders] = useState<any[]>([]);
+  const [schedules, setSchedules] = useState<any[]>([]);
+  const executeTriggeredRef = useRef<Set<string>>(new Set()); // Track schedules that have triggered execution
+  
+  // Update countdown every second - when it reaches 0, reload schedules to get updated countdown
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSchedules(prev => {
+        let shouldReload = false;
+        const updated = prev.map(schedule => {
+          if (schedule.countdownSeconds !== null && schedule.countdownSeconds > 0) {
+            const newCountdown = schedule.countdownSeconds - 1;
+            
+            // When countdown reaches 0, mark for reload
+            if (newCountdown === 0) {
+              shouldReload = true;
+            }
+            
+            return { ...schedule, countdownSeconds: newCountdown };
+          }
+          return schedule;
+        });
+        
+        // Reload schedules if any reached 0 to get updated countdown from backend
+        if (shouldReload) {
+          setTimeout(() => {
+            loadSchedules();
+          }, 1000); // Small delay to let backend update
+        }
+        
+        return updated;
+      });
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   // Filter by client if not admin
   const clientId = user?.role === 'admin' ? null : user?.clientId;
   
-  // First filter by client
+  // Filter by client
   let clientFilteredDevices = clientId ? devices.filter(d => d.clientId === clientId) : devices;
-  let clientFilteredSchedules = clientId ? schedules.filter(s => s.clientId === clientId) : schedules;
   let clientFilteredMusic = clientId ? musicFiles.filter(m => m.clientId === clientId) : musicFiles;
   let clientFilteredAnnouncements = clientId ? announcements.filter(a => a.clientId === clientId) : announcements;
   
-  // Then filter by active zone if one is selected
+  // Filter by active zone if one is selected
   const filteredDevices = activeTarget 
     ? clientFilteredDevices.filter((d: any) => {
-        // Check if device belongs to the active zone
         return d.zoneId === activeTarget || 
                d.zone === activeTarget || 
                (d.zone && typeof d.zone === 'object' && d.zone.id === activeTarget) ||
@@ -40,58 +73,106 @@ export function Dashboard() {
       })
     : clientFilteredDevices;
   
-  const filteredSchedules = activeTarget
-    ? clientFilteredSchedules.filter((s: any) => {
-        // Check if schedule targets the active zone
-        if (s.zones && Array.isArray(s.zones)) {
-          return s.zones.some((z: any) => z === activeTarget || (typeof z === 'object' && z.id === activeTarget));
-        }
-        if (s.zoneIds && Array.isArray(s.zoneIds)) {
-          return s.zoneIds.includes(activeTarget);
-        }
-        // If no zone info, include it (backward compatibility)
-        return true;
-      })
-    : clientFilteredSchedules;
-  
   const filteredMusic = activeTarget
     ? clientFilteredMusic.filter((m: any) => m.zoneId === activeTarget || m.zone === activeTarget)
     : clientFilteredMusic;
   
-  // Filter announcements by folder's zone (since folders are zone-specific)
+  // Filter announcements by folder's zone
   const filteredAnnouncements = activeTarget
     ? clientFilteredAnnouncements.filter((a: any) => {
-        // Find the folder for this announcement
         const announcementFolder = announcementFolders.find(f => 
           String(f.id) === String(a.folderId) || String(f.id) === String(a.category)
         );
-        // If announcement has a folder, check if folder belongs to active zone
         if (announcementFolder) {
           const folderZoneId = String(announcementFolder.zoneId || '');
           const activeZoneId = String(activeTarget || '');
           return folderZoneId === activeZoneId || announcementFolder.zone === activeTarget;
         }
-        // If no folder, check if announcement itself has zone info (backward compatibility)
         return String(a.zoneId || '') === String(activeTarget || '') || a.zone === activeTarget;
       })
     : clientFilteredAnnouncements;
 
+  // Load schedules
+  const loadSchedules = async () => {
+    if (!user) return;
+    try {
+      const token = getAccessToken();
+      const response = await fetch(`${API_BASE_URL}/schedules/simple/active/`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setSchedules(data);
+        
+        // If any schedule has countdownSeconds: 0, immediately trigger execution
+        const schedulesAtZero = data.filter((s: any) => s.countdownSeconds === 0);
+        if (schedulesAtZero.length > 0) {
+          // Check if we've already triggered execution for these schedules
+          const schedulesToExecute = schedulesAtZero.filter((s: any) => {
+            const key = `${s.id}-execute-at-zero`;
+            if (!executeTriggeredRef.current.has(key)) {
+              executeTriggeredRef.current.add(key);
+              return true;
+            }
+            return false;
+          });
+          
+          if (schedulesToExecute.length > 0) {
+            console.log(`[Dashboard] Schedule(s) at 0 seconds detected, triggering execution:`, schedulesToExecute.map((s: any) => s.name));
+            
+            // Trigger execution immediately
+            try {
+              await fetch(`${API_BASE_URL}/schedules/simple/execute/`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+              });
+              
+              // Clear the trigger keys after a delay
+              setTimeout(() => {
+                schedulesToExecute.forEach((s: any) => {
+                  executeTriggeredRef.current.delete(`${s.id}-execute-at-zero`);
+                });
+              }, 5000);
+              
+              // Reload schedules after execution to get updated countdown
+              setTimeout(() => {
+                loadSchedules();
+              }, 1000);
+            } catch (error) {
+              console.error('[Dashboard] Failed to execute schedules at 0:', error);
+              // Clear trigger on error
+              schedulesToExecute.forEach((s: any) => {
+                executeTriggeredRef.current.delete(`${s.id}-execute-at-zero`);
+              });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load schedules:', error);
+    }
+  };
+
+  // Load data
   useEffect(() => {
     let mounted = true;
     const load = async (silent = false) => {
       try {
-        const [music, anns, devs, sch, folders] = await Promise.all([
+        const [music, anns, devs, folders] = await Promise.all([
           musicAPI.getMusicFiles(),
           announcementsAPI.getAnnouncements(),
           zonesAPI.getDevices(),
-          schedulerAPI.getSchedules(),
           musicAPI.getFolders('announcements', activeTarget || undefined),
         ]);
         if (!mounted) return;
         setMusicFiles(music);
         setAnnouncements(anns);
         setDevices(devs);
-        setSchedules(sch);
         setAnnouncementFolders(folders);
       } catch (e: any) {
         console.error('Dashboard load failed:', e);
@@ -99,17 +180,21 @@ export function Dashboard() {
       }
     };
     load(false);
+    loadSchedules(); // Load schedules on mount
 
-    // Light polling for "realtime" feel without relying on external services
-    const interval = window.setInterval(() => load(true), 10000);
+    // Poll every 10 seconds
+    const interval = window.setInterval(() => {
+      load(true);
+      loadSchedules(); // Also refresh schedules
+    }, 10000);
     return () => {
       mounted = false;
       window.clearInterval(interval);
     };
-  }, [activeTarget]);
+  }, [activeTarget, user]);
 
+  // WebSocket for device events only
   useEffect(() => {
-    // Real-time events (device status changes, etc.)
     const onDeviceEvent = (data: any) => {
       setRecentEvents((prev) => {
         const next = [{ ...data, _ts: new Date() }, ...prev];
@@ -117,9 +202,13 @@ export function Dashboard() {
       });
     };
 
-    wsClient.connect();
-    wsClient.on('device_status_change', onDeviceEvent);
-    wsClient.on('device_heartbeat', onDeviceEvent);
+    try {
+      wsClient.connect();
+      wsClient.on('device_status_change', onDeviceEvent);
+      wsClient.on('device_heartbeat', onDeviceEvent);
+    } catch (error) {
+      // WebSocket not available - that's OK
+    }
 
     return () => {
       wsClient.off('device_status_change', onDeviceEvent);
@@ -143,13 +232,6 @@ export function Dashboard() {
       bgColor: 'bg-green-100',
     },
     {
-      title: 'Active Schedules',
-      value: filteredSchedules.filter((s: any) => Boolean(s.enabled)).length,
-      icon: Calendar,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-100',
-    },
-    {
       title: 'Online Devices',
       value: `${filteredDevices.filter((d: any) => d.status === 'online').length}/${filteredDevices.length}`,
       icon: Activity,
@@ -159,9 +241,9 @@ export function Dashboard() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-32 md:pb-12">
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {stats.map((stat) => (
           <Card key={stat.title} className="border-white/10 shadow-lg hover:shadow-xl hover:shadow-[#1db954]/20 transition-all duration-300 hover:scale-[1.02] bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
             <CardContent className="pt-6">
@@ -182,82 +264,125 @@ export function Dashboard() {
       {/* Live Playback Control */}
       <DashboardPlayback />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-
-        {/* Recent Device Events (real-time) */}
+      {/* Active Schedules */}
+      {schedules.length > 0 && (
         <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
           <CardHeader className="pb-4">
-            <CardTitle className="text-xl font-bold text-white">Recent Activity</CardTitle>
-            <CardDescription className="text-gray-400">Live device status updates</CardDescription>
+            <div className="flex items-center gap-2">
+              <Calendar className="h-5 w-5 text-[#1db954]" />
+              <CardTitle className="text-xl font-bold text-white">Active Schedules</CardTitle>
+            </div>
+            <CardDescription className="text-gray-400">Upcoming scheduled announcements</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {recentEvents.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-8">No activity yet.</p>
-              ) : (
-                recentEvents.map((event: any, idx: number) => (
-                  <div key={event.id ?? `${event.type}-${idx}`} className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200">
-                    <div className="flex items-center gap-3">
-                      {event.type === 'device_status_change' ? (
-                        event.is_online ? <CheckCircle2 className="h-5 w-5 text-[#1db954]" /> : <XCircle className="h-5 w-5 text-gray-500" />
-                      ) : (
-                        <Clock className="h-5 w-5 text-[#1db954]" />
-                      )}
-                      <div>
-                        <p className="font-semibold text-white">
-                          {event.type === 'device_status_change'
-                            ? `Device ${event.is_online ? 'online' : 'offline'}`
-                            : 'Device heartbeat'}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {schedules.map((schedule) => {
+                const scheduledAnnouncements = (schedule.announcementIds || [])
+                  .map((annId: string) => announcements.find(a => a.id === annId))
+                  .filter(Boolean);
+                
+                const minutes = schedule.countdownSeconds !== null 
+                  ? Math.floor(schedule.countdownSeconds / 60) 
+                  : null;
+                const seconds = schedule.countdownSeconds !== null 
+                  ? schedule.countdownSeconds % 60 
+                  : null;
+                
+                return (
+                  <div 
+                    key={schedule.id} 
+                    className="p-4 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-white mb-1">{schedule.name}</h3>
+                        <p className="text-xs text-gray-400">
+                          Every {schedule.intervalMinutes} minutes
                         </p>
-                        <p className="text-sm text-gray-400">{event.device_name || event.device_id || event.deviceId || '—'}</p>
                       </div>
+                      <Badge variant="secondary" className="bg-[#1db954]/20 text-[#1db954] border-[#1db954]/30">
+                        Active
+                      </Badge>
                     </div>
-                    <div className="text-right">
-                      <Badge variant="secondary" className="shadow-sm bg-white/10 text-gray-300 border-white/20">{event.type}</Badge>
-                      <p className="text-xs text-gray-400 mt-1.5">
-                        {formatRelativeTime(event._ts ?? new Date())}
+                    
+                    {schedule.countdownSeconds !== null && (
+                      <div className="mb-3">
+                        <p className="text-xs text-gray-400 mb-1">Next execution in:</p>
+                        <div className="text-2xl font-bold text-[#1db954]">
+                          {minutes !== null && seconds !== null 
+                            ? `${minutes}:${seconds.toString().padStart(2, '0')}`
+                            : '—'}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {scheduledAnnouncements.length > 0 && (
+                      <div>
+                        <p className="text-xs text-gray-400 mb-2">Will play:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {scheduledAnnouncements.slice(0, 2).map((ann: any) => (
+                            <Badge 
+                              key={ann.id} 
+                              variant="outline" 
+                              className="text-xs bg-blue-500/10 border-blue-500/30 text-blue-300"
+                            >
+                              {ann.title}
+                            </Badge>
+                          ))}
+                          {scheduledAnnouncements.length > 2 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{scheduledAnnouncements.length - 2} more
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="mt-3 pt-3 border-t border-white/10">
+                      <p className="text-xs text-gray-400">
+                        {schedule.zoneIds?.length || 0} zone(s)
                       </p>
                     </div>
                   </div>
-                ))
-              )}
+                );
+              })}
             </div>
           </CardContent>
         </Card>
-      </div>
+      )}
 
-      {/* Active Schedules */}
+      {/* Recent Device Events */}
       <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
         <CardHeader className="pb-4">
-          <CardTitle className="text-xl font-bold text-white">Active Schedules</CardTitle>
-          <CardDescription className="text-gray-400">Currently running announcement schedules</CardDescription>
+          <CardTitle className="text-xl font-bold text-white">Recent Activity</CardTitle>
+          <CardDescription className="text-gray-400">Live device status updates</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {filteredSchedules.filter((s: any) => Boolean(s.enabled)).length === 0 ? (
-              <p className="text-gray-400 text-sm text-center py-8">No active schedules.</p>
+            {recentEvents.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-8">No activity yet.</p>
             ) : (
-              filteredSchedules.filter((s: any) => Boolean(s.enabled)).map((schedule: any) => (
-                <div key={schedule.id} className="flex items-center justify-between p-4 bg-gradient-to-r from-[#1db954]/10 to-[#1ed760]/5 rounded-lg border border-[#1db954]/20 hover:border-[#1db954]/40 hover:shadow-lg hover:shadow-[#1db954]/20 transition-all duration-200">
+              recentEvents.map((event: any, idx: number) => (
+                <div key={event.id ?? `${event.type}-${idx}`} className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-lg shadow-sm">
-                      <Calendar className="h-5 w-5 text-white" />
-                    </div>
+                    {event.type === 'device_status_change' ? (
+                      event.is_online ? <CheckCircle2 className="h-5 w-5 text-[#1db954]" /> : <XCircle className="h-5 w-5 text-gray-500" />
+                    ) : (
+                      <Clock className="h-5 w-5 text-[#1db954]" />
+                    )}
                     <div>
-                      <p className="font-semibold text-white">{schedule.name}</p>
-                      <p className="text-sm text-gray-400">
-                        {schedule.schedule?.type === 'interval'
-                          ? `Every ${schedule.schedule?.intervalMinutes ?? '—'} minutes`
-                          : schedule.schedule?.type === 'timeline'
-                            ? `${schedule.schedule?.cycleDurationMinutes ?? '—'} min cycle`
-                            : '—'}
+                      <p className="font-semibold text-white">
+                        {event.type === 'device_status_change'
+                          ? `Device ${event.is_online ? 'online' : 'offline'}`
+                          : 'Device heartbeat'}
                       </p>
+                      <p className="text-sm text-gray-400">{event.device_name || event.device_id || event.deviceId || '—'}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <Badge className="bg-gradient-to-r from-[#1db954] to-[#1ed760] text-white shadow-sm border-0">Active</Badge>
+                    <Badge variant="secondary" className="shadow-sm bg-white/10 text-gray-300 border-white/20">{event.type}</Badge>
                     <p className="text-xs text-gray-400 mt-1.5">
-                      {(schedule.deviceIds?.length ?? 0)} device{(schedule.deviceIds?.length ?? 0) !== 1 ? 's' : ''}
+                      {formatRelativeTime(event._ts ?? new Date())}
                     </p>
                   </div>
                 </div>

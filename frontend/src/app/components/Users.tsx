@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
@@ -7,60 +7,28 @@ import { Label } from '@/app/components/ui/label';
 import { Badge } from '@/app/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
-import { Users as UsersIcon, UserPlus, Mail, Shield, Trash2, Edit, Search, CheckCircle2, XCircle, Key, Copy, RefreshCw } from 'lucide-react';
+import { Users as UsersIcon, UserPlus, Mail, Shield, Trash2, Edit, Search, CheckCircle2, XCircle, Key, Copy, RefreshCw, Loader2 } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/utils';
 import { toast } from 'sonner';
+import { adminAPI } from '@/lib/api';
 
 interface User {
   id: string;
   name: string;
   email: string;
-  role: 'owner' | 'manager' | 'operator';
-  status: 'active' | 'inactive';
-  lastLogin: Date;
-  permissions: string[];
+  role: 'client' | 'floor_user' | 'staff' | 'admin';
+  status?: 'active' | 'inactive';
+  is_active?: boolean;
+  last_login?: string | Date;
+  lastLogin?: Date;
+  permissions?: string[];
+  client_id?: string;
 }
 
 export function Users() {
   const { user: currentUser } = useAuth();
-  const [users, setUsers] = useState<User[]>([
-    {
-      id: '1',
-      name: 'Sarah Johnson',
-      email: 'sarah@retailstore.com',
-      role: 'owner',
-      status: 'active',
-      lastLogin: new Date(Date.now() - 1000 * 60 * 30),
-      permissions: ['all'],
-    },
-    {
-      id: '2',
-      name: 'Mike Chen',
-      email: 'mike@retailstore.com',
-      role: 'manager',
-      status: 'active',
-      lastLogin: new Date(Date.now() - 1000 * 60 * 60 * 2),
-      permissions: ['music', 'announcements', 'scheduler'],
-    },
-    {
-      id: '3',
-      name: 'Emily Rodriguez',
-      email: 'emily@retailstore.com',
-      role: 'operator',
-      status: 'active',
-      lastLogin: new Date(Date.now() - 1000 * 60 * 60 * 5),
-      permissions: ['announcements'],
-    },
-    {
-      id: '4',
-      name: 'Tom Wilson',
-      email: 'tom@retailstore.com',
-      role: 'operator',
-      status: 'inactive',
-      lastLogin: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7),
-      permissions: ['music'],
-    },
-  ]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -70,7 +38,7 @@ export function Users() {
   const [newUserForm, setNewUserForm] = useState({
     name: '',
     email: '',
-    role: 'operator' as User['role'],
+    role: 'client' as User['role'],
     password: '',
     autoGeneratePassword: true,
   });
@@ -79,21 +47,67 @@ export function Users() {
     autoGenerate: true,
   });
 
+  // Load users from API
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      setLoading(true);
+      const usersData = await adminAPI.getUsers();
+      // Filter to only show users from the same client (unless admin)
+      const filtered = currentUser?.role === 'admin' 
+        ? usersData 
+        : usersData.filter((u: User) => u.client_id === currentUser?.clientId);
+      
+      // Normalize user data
+      const normalized = filtered.map((u: any) => ({
+        ...u,
+        status: u.is_active ? 'active' : 'inactive',
+        lastLogin: u.last_login ? new Date(u.last_login) : new Date(0),
+      }));
+      
+      setUsers(normalized);
+    } catch (error: any) {
+      console.error('Failed to load users:', error);
+      toast.error('Failed to load team members');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredUsers = users.filter(
     (user) =>
       user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Generate random password
+  // Generate random password that meets Django's password validation requirements
+  // Requirements: at least 8 chars, not too common, not entirely numeric
   const generatePassword = () => {
     const length = 12;
-    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
-    let password = '';
-    for (let i = 0; i < length; i++) {
-      password += charset.charAt(Math.floor(Math.random() * charset.length));
+    // Ensure we have at least one uppercase, one lowercase, one number, and one special char
+    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const special = '!@#$%^&*';
+    const all = uppercase + lowercase + numbers + special;
+    
+    // Start with one of each required type
+    let password = 
+      uppercase.charAt(Math.floor(Math.random() * uppercase.length)) +
+      lowercase.charAt(Math.floor(Math.random() * lowercase.length)) +
+      numbers.charAt(Math.floor(Math.random() * numbers.length)) +
+      special.charAt(Math.floor(Math.random() * special.length));
+    
+    // Fill the rest randomly
+    for (let i = password.length; i < length; i++) {
+      password += all.charAt(Math.floor(Math.random() * all.length));
     }
-    return password;
+    
+    // Shuffle the password
+    return password.split('').sort(() => Math.random() - 0.5).join('');
   };
 
   // Copy password to clipboard
@@ -102,9 +116,17 @@ export function Users() {
     toast.success('Password copied to clipboard');
   };
 
-  const handleAddUser = () => {
+  const handleAddUser = async () => {
     if (!newUserForm.name || !newUserForm.email) {
       toast.error('Please fill in all fields');
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const trimmedEmail = newUserForm.email.trim().toLowerCase();
+    if (!emailRegex.test(trimmedEmail)) {
+      toast.error('Please enter a valid email address');
       return;
     }
 
@@ -118,57 +140,155 @@ export function Users() {
       return;
     }
 
-    const newUser: User = {
-      id: Date.now().toString(),
-      name: newUserForm.name,
-      email: newUserForm.email,
-      role: newUserForm.role,
-      status: 'active',
-      lastLogin: new Date(),
-      permissions: newUserForm.role === 'owner' ? ['all'] : ['announcements'],
-    };
+    try {
+      // Prepare user data - only include client_id if it exists and user is not admin
+      const userData: any = {
+        name: newUserForm.name.trim(),
+        email: trimmedEmail,
+        password: finalPassword,
+        role: newUserForm.role,
+      };
+      
+      // Only add client_id if user is not admin and has a clientId
+      if (currentUser?.role !== 'admin' && currentUser?.clientId) {
+        userData.client_id = currentUser.clientId;
+      }
+      
+      console.log('Creating user with data:', { ...userData, password: '***' });
+      
+      const newUser = await adminAPI.createUser(userData);
 
-    setUsers([...users, newUser]);
-    setNewUserForm({ 
-      name: '', 
-      email: '', 
-      role: 'operator',
-      password: '',
-      autoGeneratePassword: true,
-    });
-    setIsAddDialogOpen(false);
-    
-    toast.success(`${newUser.name} created successfully`, {
-      description: newUserForm.autoGeneratePassword 
-        ? `Password: ${finalPassword} (copied to clipboard)` 
-        : `Account created with custom password`,
-      duration: 8000,
-    });
-    
-    // Auto-copy generated password to clipboard
-    if (newUserForm.autoGeneratePassword) {
-      copyToClipboard(finalPassword);
+      setNewUserForm({ 
+        name: '', 
+        email: '', 
+        role: 'client',
+        password: '',
+        autoGeneratePassword: true,
+      });
+      setIsAddDialogOpen(false);
+      
+      toast.success(`${newUser.name} created successfully`, {
+        description: newUserForm.autoGeneratePassword 
+          ? `Password: ${finalPassword} (copied to clipboard)` 
+          : `Account created with custom password`,
+        duration: 8000,
+      });
+      
+      // Auto-copy generated password to clipboard
+      if (newUserForm.autoGeneratePassword) {
+        copyToClipboard(finalPassword);
+      }
+
+      // Reload users
+      loadUsers();
+    } catch (error: any) {
+      console.error('Failed to create user:', error);
+      console.error('Error data:', error?.data);
+      
+      // Extract error message from Django REST Framework validation errors
+      let errorMessage = 'Failed to create user';
+      const errorMessages: string[] = [];
+      
+      if (error?.data) {
+        const errorData = error.data;
+        
+        // Check for nested error structure: {error: {details: {...}}}
+        let details = errorData;
+        if (errorData.error && errorData.error.details) {
+          details = errorData.error.details;
+        } else if (errorData.details) {
+          details = errorData.details;
+        }
+        
+        // Extract field-specific errors
+        if (details && typeof details === 'object') {
+          Object.keys(details).forEach(key => {
+            if (Array.isArray(details[key])) {
+              details[key].forEach((msg: string) => {
+                errorMessages.push(`${key}: ${msg}`);
+              });
+            } else if (typeof details[key] === 'string') {
+              errorMessages.push(`${key}: ${details[key]}`);
+            }
+          });
+        }
+        
+        // If no field errors found, try other error formats
+        if (errorMessages.length === 0) {
+          // Check for direct field errors in errorData
+          Object.keys(errorData).forEach(key => {
+            if (key !== 'error' && key !== 'code' && key !== 'message') {
+              if (Array.isArray(errorData[key])) {
+                errorData[key].forEach((msg: string) => {
+                  errorMessages.push(`${key}: ${msg}`);
+                });
+              } else if (typeof errorData[key] === 'string') {
+                errorMessages.push(`${key}: ${errorData[key]}`);
+              }
+            }
+          });
+        }
+        
+        // Fallback to message if available
+        if (errorMessages.length === 0) {
+          if (errorData?.error?.message && typeof errorData.error.message === 'string') {
+            errorMessages.push(errorData.error.message);
+          } else if (errorData?.message && typeof errorData.message === 'string') {
+            errorMessages.push(errorData.message);
+          } else if (typeof errorData === 'string') {
+            errorMessages.push(errorData);
+          }
+        }
+      } else if (error?.message && typeof error.message === 'string') {
+        errorMessages.push(error.message);
+      } else if (typeof error === 'string') {
+        errorMessages.push(error);
+      }
+      
+      // Display all error messages
+      if (errorMessages.length > 0) {
+        errorMessage = errorMessages.join('; ');
+      }
+      
+      toast.error(errorMessage, {
+        duration: 5000,
+      });
     }
   };
 
-  const handleToggleStatus = (userId: string) => {
-    setUsers(
-      users.map((u) =>
-        u.id === userId
-          ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' }
-          : u
-      )
-    );
-    const user = users.find((u) => u.id === userId);
-    toast.success(
-      `${user?.name} ${user?.status === 'active' ? 'deactivated' : 'activated'}`
-    );
+  const handleToggleStatus = async (userId: string) => {
+    try {
+      const user = users.find((u) => u.id === userId);
+      if (!user) return;
+
+      const newStatus = user.status === 'active' ? 'inactive' : 'active';
+      await adminAPI.updateUser(userId, {
+        is_active: newStatus === 'active',
+      });
+      
+      toast.success(
+        `${user.name} ${newStatus === 'active' ? 'activated' : 'deactivated'}`
+      );
+      
+      loadUsers();
+    } catch (error: any) {
+      console.error('Failed to toggle user status:', error);
+      toast.error('Failed to update user status');
+    }
   };
 
-  const handleDeleteUser = (userId: string) => {
-    const user = users.find((u) => u.id === userId);
-    setUsers(users.filter((u) => u.id !== userId));
-    toast.success(`${user?.name} has been removed`);
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      const user = users.find((u) => u.id === userId);
+      if (!user) return;
+
+      await adminAPI.deleteUser(userId);
+      toast.success(`${user.name} has been removed`);
+      loadUsers();
+    } catch (error: any) {
+      console.error('Failed to delete user:', error);
+      toast.error('Failed to delete user');
+    }
   };
 
   const handleResetPassword = () => {
@@ -211,14 +331,40 @@ export function Users() {
 
   const getRoleBadgeVariant = (role: User['role']) => {
     switch (role) {
-      case 'owner':
+      case 'admin':
         return 'default';
-      case 'manager':
+      case 'staff':
         return 'secondary';
-      case 'operator':
+      case 'client':
+      case 'floor_user':
+        return 'outline';
+      default:
         return 'outline';
     }
   };
+  
+  const getRoleDisplayName = (role: User['role']) => {
+    switch (role) {
+      case 'client':
+        return 'Client User';
+      case 'floor_user':
+        return 'Floor User';
+      case 'staff':
+        return 'Staff';
+      case 'admin':
+        return 'Admin';
+      default:
+        return role;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-[#1db954]" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-24 md:pb-6">
@@ -258,9 +404,9 @@ export function Users() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Managers</p>
+                <p className="text-sm text-slate-500">Client Users</p>
                 <p className="text-3xl font-bold mt-2">
-                  {users.filter((u) => u.role === 'manager').length}
+                  {users.filter((u) => u.role === 'client').length}
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-purple-100">
@@ -274,9 +420,9 @@ export function Users() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Operators</p>
+                <p className="text-sm text-slate-500">Floor Users</p>
                 <p className="text-3xl font-bold mt-2">
-                  {users.filter((u) => u.role === 'operator').length}
+                  {users.filter((u) => u.role === 'floor_user').length}
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-orange-100">
@@ -343,9 +489,14 @@ export function Users() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="owner">Owner (Full Access)</SelectItem>
-                        <SelectItem value="manager">Manager (Most Features)</SelectItem>
-                        <SelectItem value="operator">Operator (Limited Access)</SelectItem>
+                        <SelectItem value="client">Client User (Full Access)</SelectItem>
+                        <SelectItem value="floor_user">Floor User (Restricted Access)</SelectItem>
+                        {currentUser?.role === 'admin' && (
+                          <>
+                            <SelectItem value="staff">Staff (Support Access)</SelectItem>
+                            <SelectItem value="admin">Admin (System Access)</SelectItem>
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -488,8 +639,8 @@ export function Users() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-medium truncate">{user.name}</p>
-                      <Badge variant={getRoleBadgeVariant(user.role)}>
-                        {user.role}
+                      <Badge variant={getRoleBadgeVariant(user.role)} className="capitalize">
+                        {getRoleDisplayName(user.role)}
                       </Badge>
                       {user.status === 'inactive' && (
                         <Badge variant="destructive">Inactive</Badge>
@@ -500,7 +651,9 @@ export function Users() {
                       <span className="truncate">{user.email}</span>
                       <span className="hidden sm:inline">•</span>
                       <span className="text-xs">
-                        Last login {formatRelativeTime(user.lastLogin)}
+                        Last login: {user.lastLogin && user.lastLogin.getTime() > 0 
+                          ? formatRelativeTime(user.lastLogin) 
+                          : 'Never'}
                       </span>
                     </div>
                   </div>
@@ -562,15 +715,15 @@ export function Users() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="p-4 border border-white/10 rounded-lg">
-              <Badge className="mb-3">Owner</Badge>
+              <Badge className="mb-3">Client User</Badge>
               <ul className="space-y-2 text-sm">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
-                  <span>Full system access</span>
+                  <span>Full client access</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
-                  <span>Manage users & billing</span>
+                  <span>Manage team members</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
@@ -580,7 +733,7 @@ export function Users() {
             </div>
 
             <div className="p-4 border border-white/10 rounded-lg">
-              <Badge variant="secondary" className="mb-3">Manager</Badge>
+              <Badge variant="secondary" className="mb-3">Floor User</Badge>
               <ul className="space-y-2 text-sm">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
@@ -598,7 +751,7 @@ export function Users() {
             </div>
 
             <div className="p-4 border border-white/10 rounded-lg">
-              <Badge variant="outline" className="mb-3">Operator</Badge>
+              <Badge variant="outline" className="mb-3">Staff</Badge>
               <ul className="space-y-2 text-sm">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />

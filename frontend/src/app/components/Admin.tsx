@@ -22,10 +22,11 @@ import { adminAPI, zonesAPI } from '@/lib/api';
 export function Admin() {
   const navigate = useNavigate();
   const { user, impersonateClient } = useAuth();
-  const [clients, setClients] = useState(mockClients);
-  const [users, setUsers] = useState(mockUsers);
+  const [clients, setClients] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [floors, setFloors] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddClientOpen, setIsAddClientOpen] = useState(false);
   const [newClientName, setNewClientName] = useState('');
@@ -37,11 +38,46 @@ export function Admin() {
   const [resetPasswordAutoGenerate, setResetPasswordAutoGenerate] = useState(true);
   const [resetPasswordValue, setResetPasswordValue] = useState('');
 
+  // Load clients and users
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      loadClients();
+      loadUsers();
+    }
+  }, [user?.role]);
+
+  const loadClients = async () => {
+    try {
+      const clientsData = await adminAPI.getClients();
+      // Ensure it's always an array
+      setClients(Array.isArray(clientsData) ? clientsData : []);
+    } catch (error: any) {
+      console.error('Failed to load clients:', error);
+      toast.error('Failed to load clients');
+      setClients([]); // Set to empty array on error
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadUsers = async () => {
+    try {
+      const usersData = await adminAPI.getUsers();
+      // Ensure it's always an array
+      setUsers(Array.isArray(usersData) ? usersData : []);
+    } catch (error: any) {
+      console.error('Failed to load users:', error);
+      toast.error('Failed to load users');
+      setUsers([]); // Set to empty array on error
+    }
+  };
+
   // Load audit logs from API
   useEffect(() => {
     const loadAuditLogs = async () => {
       try {
         const params: any = {};
+        // Admin can optionally filter by client, but by default sees all logs
         if (user?.role === 'admin' && selectedClient) {
           params.client = selectedClient;
         }
@@ -57,9 +93,13 @@ export function Admin() {
       } catch (error: any) {
         console.error('Failed to load audit logs:', error);
         toast.error(error?.message || 'Failed to load audit logs');
+        setAuditLogs([]);
       }
     };
     loadAuditLogs();
+    // Refresh every 10 seconds for real-time updates
+    const interval = setInterval(loadAuditLogs, 10000);
+    return () => clearInterval(interval);
   }, [user?.role, selectedClient, selectedFloor, selectedRole]);
 
   // Load floors for client users
@@ -95,36 +135,26 @@ export function Admin() {
       })
     : filteredLogs;
 
-  const handleAddClient = () => {
+  const handleAddClient = async () => {
     if (!newClientName.trim()) {
       toast.error('Please enter a client name');
       return;
     }
-
-    const newClient = {
-      id: `client_${Date.now()}`,
-      name: newClientName,
-      status: 'active' as const,
-      createdAt: new Date(),
-    };
-
-    setClients([...clients, newClient]);
-    setNewClientName('');
-    setIsAddClientOpen(false);
-    toast.success(`Client "${newClientName}" created`);
-
-    // Add audit log
-    const log = {
-      id: `log_${Date.now()}`,
-      userId: 'user1',
-      userName: 'Admin User',
-      action: 'create',
-      resource: 'client',
-      resourceId: newClient.id,
-      details: `Created client: ${newClientName}`,
-      timestamp: new Date(),
-    };
-    setAuditLogs([log, ...auditLogs]);
+    
+    try {
+      await adminAPI.createClient({
+        name: newClientName.trim(),
+        email: `${newClientName.toLowerCase().replace(/\s+/g, '')}@example.com`,
+        subscription_tier: 'trial',
+      });
+      toast.success('Client created successfully');
+      setNewClientName('');
+      setIsAddClientOpen(false);
+      loadClients();
+    } catch (error: any) {
+      console.error('Failed to create client:', error);
+      toast.error(error?.message || 'Failed to create client');
+    }
   };
 
   const handleToggleClientStatus = (clientId: string) => {
@@ -218,6 +248,18 @@ export function Admin() {
     setUserToResetPassword(user);
     setIsResetPasswordDialogOpen(true);
   };
+
+  // Show loading state
+  if (loading && user?.role === 'admin') {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1db954] mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading admin data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -402,16 +444,19 @@ export function Admin() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {clients.map((client) => (
+                  {Array.isArray(clients) && clients.map((client) => {
+                    const status = client.status || (client.is_active ? 'active' : 'inactive');
+                    const createdAt = client.createdAt || client.created_at;
+                    return (
                     <TableRow key={client.id}>
-                      <TableCell className="font-medium">{client.name}</TableCell>
+                      <TableCell className="font-medium">{client.name || client.business_name}</TableCell>
                       <TableCell>
-                        <Badge variant={client.status === 'active' ? 'default' : 'secondary'}>
-                          {client.status}
+                        <Badge variant={status === 'active' ? 'default' : 'secondary'}>
+                          {status}
                         </Badge>
                       </TableCell>
                       <TableCell>{client.email}</TableCell>
-                      <TableCell>{formatDateTime(client.createdAt)}</TableCell>
+                      <TableCell>{createdAt ? formatDateTime(createdAt) : 'N/A'}</TableCell>
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -425,7 +470,7 @@ export function Admin() {
                               Impersonate
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleToggleClientStatus(client.id)}>
-                              {client.status === 'active' ? (
+                              {status === 'active' ? (
                                 <>
                                   <Ban className="h-4 w-4 mr-2" />
                                   Suspend
@@ -441,7 +486,8 @@ export function Admin() {
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
@@ -468,8 +514,8 @@ export function Admin() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((user) => {
-                    const client = clients.find(c => c.id === user.clientId);
+                  {Array.isArray(users) && users.map((user) => {
+                    const client = Array.isArray(clients) ? clients.find(c => c.id === user.clientId) : null;
                     return (
                       <TableRow key={user.id}>
                         <TableCell className="font-medium">{user.name}</TableCell>
@@ -575,6 +621,8 @@ export function Admin() {
                     <TableRow>
                       <TableHead className="text-white">Timestamp</TableHead>
                       <TableHead className="text-white">User</TableHead>
+                      <TableHead className="text-white">Role</TableHead>
+                      <TableHead className="text-white">Client</TableHead>
                       <TableHead className="text-white">Action</TableHead>
                       <TableHead className="text-white">Resource</TableHead>
                       <TableHead className="text-white">Details</TableHead>
@@ -583,30 +631,86 @@ export function Admin() {
                   <TableBody>
                     {!Array.isArray(searchedLogs) || searchedLogs.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-gray-400 py-8">
+                        <TableCell colSpan={7} className="text-center text-gray-400 py-8">
                           No audit logs found
                         </TableCell>
                       </TableRow>
                     ) : (
-                      searchedLogs.map((log: any) => (
-                        <TableRow key={log.id}>
-                          <TableCell className="text-gray-300">
-                            {formatDateTime(log.created_at || log.timestamp)}
-                          </TableCell>
-                          <TableCell className="text-gray-300">
-                            {log.user?.name || log.userName || 'Unknown'}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="capitalize bg-white/10 text-white border-white/20">
-                              {log.action}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="capitalize text-gray-300">{log.resource_type || log.resource}</TableCell>
-                          <TableCell className="text-sm text-gray-400">
-                            {typeof log.details === 'object' ? JSON.stringify(log.details) : (log.details || '—')}
-                          </TableCell>
-                        </TableRow>
-                      ))
+                      searchedLogs.map((log: any) => {
+                        const userRole = log.user_role || log.user?.role || 'unknown';
+                        const roleBadgeVariant = userRole === 'admin' ? 'default' : 
+                                                userRole === 'client' ? 'secondary' : 
+                                                userRole === 'staff' ? 'outline' : 'secondary';
+                        const roleDisplayName = userRole === 'admin' ? 'Admin' :
+                                               userRole === 'client' ? 'Client' :
+                                               userRole === 'staff' ? 'Staff' :
+                                               userRole === 'floor_user' ? 'Floor User' : userRole;
+                        
+                        // Format details nicely
+                        let detailsText = '—';
+                        if (log.details) {
+                          if (typeof log.details === 'string') {
+                            detailsText = log.details;
+                          } else if (typeof log.details === 'object') {
+                            // Extract meaningful details
+                            const detailParts: string[] = [];
+                            if (log.details.path) detailParts.push(`Path: ${log.details.path}`);
+                            if (log.details.method) detailParts.push(`Method: ${log.details.method}`);
+                            if (log.details.status_code) detailParts.push(`Status: ${log.details.status_code}`);
+                            if (log.details.body && Object.keys(log.details.body).length > 0) {
+                              const bodyStr = JSON.stringify(log.details.body);
+                              if (bodyStr.length < 100) {
+                                detailParts.push(`Body: ${bodyStr}`);
+                              } else {
+                                detailParts.push(`Body: ${bodyStr.substring(0, 100)}...`);
+                              }
+                            }
+                            detailsText = detailParts.length > 0 ? detailParts.join(' • ') : JSON.stringify(log.details);
+                          }
+                        }
+                        
+                        return (
+                          <TableRow key={log.id || log.timestamp} className="hover:bg-white/5">
+                            <TableCell className="text-gray-300 text-sm">
+                              {formatDateTime(log.created_at || log.timestamp)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col">
+                                <span className="text-white font-medium">{log.user_name || log.user?.name || 'Unknown User'}</span>
+                                {log.user_email || log.user?.email ? (
+                                  <span className="text-xs text-gray-400">{log.user_email || log.user?.email}</span>
+                                ) : null}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={roleBadgeVariant} className="capitalize">
+                                {roleDisplayName}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-gray-300">
+                              {log.client_name || log.client?.name || '—'}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="capitalize bg-white/10 text-white border-white/20">
+                                {log.action || 'unknown'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="capitalize text-gray-300">
+                              {log.resource_type || log.resource || '—'}
+                            </TableCell>
+                            <TableCell className="text-xs text-gray-400 max-w-md">
+                              <div className="truncate" title={detailsText}>
+                                {detailsText}
+                              </div>
+                              {log.ip_address && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  IP: {log.ip_address}
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>

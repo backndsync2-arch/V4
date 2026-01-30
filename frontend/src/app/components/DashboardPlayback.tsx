@@ -154,6 +154,16 @@ export function DashboardPlayback() {
         return;
       }
 
+      // Ensure AudioContext is ready before starting playback
+      try {
+        const { backgroundAudio } = await import('@/lib/backgroundAudio');
+        // Force create if not exists (user has clicked play button)
+        backgroundAudio.createAudioContext();
+        await backgroundAudio.resumeAudioContext();
+      } catch (err) {
+        console.warn('Could not initialize AudioContext:', err);
+      }
+
       // Start backend playback (pass music file IDs directly)
       if (zoneId) {
         await playbackAPI.play(zoneId, [], false, selectedMusicIds);
@@ -278,6 +288,16 @@ export function DashboardPlayback() {
       const targetVolume = Math.max(0, Math.min(1, announcementVolume / 100));
       ann.volume = targetVolume;
       
+      // Ensure AudioContext is created and resumed before playing (required for autoplay policy)
+      try {
+        const { backgroundAudio } = await import('@/lib/backgroundAudio');
+        // Force create if not exists (user has interacted by now)
+        backgroundAudio.createAudioContext();
+        await backgroundAudio.resumeAudioContext();
+      } catch (err) {
+        console.warn('Could not resume AudioContext, continuing anyway:', err);
+      }
+      
       // Monitor and maintain announcement volume during playback
       // This ensures announcements stay at the user-set volume
       const volumeMonitor = setInterval(() => {
@@ -316,15 +336,24 @@ export function DashboardPlayback() {
       ann.addEventListener('ended', onEnded);
 
       try {
+        // Load the audio first
+        ann.load();
+        // Then play - this ensures AudioContext is ready
         await ann.play();
         // Double-check volume after play starts
         const targetVolume = Math.max(0, Math.min(1, announcementVolume / 100));
         ann.volume = targetVolume;
-      } catch (e) {
+      } catch (e: any) {
         clearInterval(volumeMonitor);
         ann.removeEventListener('ended', onEnded);
         console.error('Announcement play failed:', e);
-        toast.error('Failed to play announcement audio');
+        
+        // More specific error message
+        if (e.name === 'NotAllowedError' || e.message?.includes('user gesture')) {
+          toast.error('Please click play to start audio playback (browser requires user interaction)');
+        } else {
+          toast.error('Failed to play announcement audio: ' + (e.message || 'Unknown error'));
+        }
         setIsPlayingAnnouncement(false);
         setTimeUntilNextAnnouncement(announcementInterval);
       }

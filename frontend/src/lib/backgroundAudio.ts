@@ -19,9 +19,9 @@ export class BackgroundAudioManager {
    * Initialize background audio capabilities
    */
   private async initialize() {
-    // Create AudioContext but don't resume yet (needs user gesture)
-    // We'll create it in suspended state and resume on first user interaction
-    this.createAudioContext();
+    // DON'T create AudioContext here - wait for first user interaction
+    // Creating it in suspended state still triggers browser warnings
+    // We'll create it lazily when needed (on first user interaction)
 
     // Setup Media Session API (lock screen controls)
     this.setupMediaSession();
@@ -29,7 +29,7 @@ export class BackgroundAudioManager {
     // DON'T request Wake Lock here - needs user gesture
     // Will be requested in enableBackground() instead
 
-    // Setup user interaction handlers to resume AudioContext
+    // Setup user interaction handlers to create and resume AudioContext
     this.setupUserInteractionHandlers();
 
     // Prevent audio context suspension
@@ -38,13 +38,13 @@ export class BackgroundAudioManager {
     // Handle visibility changes
     this.setupVisibilityHandlers();
 
-    console.log('[BackgroundAudio] Initialized');
+    console.log('[BackgroundAudio] Initialized (AudioContext will be created on first user interaction)');
   }
 
   /**
    * Create or resume AudioContext
    */
-  private createAudioContext() {
+  public createAudioContext() {
     if (!this.audioContext) {
       // @ts-ignore - webkit prefix for iOS
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -58,33 +58,56 @@ export class BackgroundAudioManager {
   /**
    * Resume AudioContext (must be called after user interaction)
    */
-  private async resumeAudioContext() {
+  public async resumeAudioContext() {
+    if (!this.audioContext) {
+      this.createAudioContext();
+    }
     if (this.audioContext && this.audioContext.state === 'suspended') {
       try {
         await this.audioContext.resume();
         console.log('[BackgroundAudio] AudioContext resumed');
       } catch (err) {
         console.warn('[BackgroundAudio] Failed to resume AudioContext:', err);
+        throw err; // Re-throw so caller can handle
       }
     }
   }
 
   /**
-   * Setup handlers to resume AudioContext on first user interaction
+   * Setup handlers to create and resume AudioContext on first user interaction
    */
   private setupUserInteractionHandlers() {
-    let hasResumed = false;
+    let hasInitialized = false;
     
-    const resumeOnce = async () => {
-      if (hasResumed) return;
-      hasResumed = true;
-      await this.resumeAudioContext();
+    const initializeOnce = async (event?: Event) => {
+      if (hasInitialized) return;
+      hasInitialized = true;
+      // Don't block event propagation - run asynchronously
+      setTimeout(async () => {
+        try {
+          // Create AudioContext on first user interaction (not before)
+          if (!this.audioContext) {
+            this.createAudioContext();
+          }
+          // Resume it immediately after creation
+          await this.resumeAudioContext();
+          console.log('[BackgroundAudio] AudioContext created and resumed on user interaction:', event?.type);
+        } catch (err) {
+          console.warn('[BackgroundAudio] Failed to initialize on interaction:', err);
+          // Reset flag so we can try again on next interaction
+          hasInitialized = false;
+        }
+      }, 0);
     };
 
     // Listen for first user interaction (once: true automatically removes listeners)
+    // Use bubble phase (default) to not interfere with navigation
     ['touchstart', 'touchend', 'mousedown', 'keydown', 'click'].forEach(event => {
-      document.addEventListener(event, resumeOnce, { once: true });
+      document.addEventListener(event, initializeOnce, { once: true });
     });
+
+    // Also listen for play events on audio/video elements
+    document.addEventListener('play', initializeOnce, { once: true });
   }
 
   /**
@@ -142,8 +165,6 @@ export class BackgroundAudioManager {
    * Prevent audio context from being suspended
    */
   private preventAudioSuspension() {
-    if (!this.audioContext) return;
-
     // Keep audio context alive (only if it was already running)
     const keepAlive = async () => {
       if (this.audioContext && 
@@ -209,15 +230,27 @@ export class BackgroundAudioManager {
   /**
    * Setup audio element for background playback
    */
-  public setupAudio(audioElement: HTMLAudioElement) {
+  public async setupAudio(audioElement: HTMLAudioElement) {
     this.currentAudio = audioElement;
+
+    // Ensure AudioContext is resumed before connecting
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      try {
+        await this.resumeAudioContext();
+      } catch (err) {
+        console.warn('[BackgroundAudio] Could not resume AudioContext:', err);
+      }
+    }
 
     // Connect to AudioContext for better control
     if (this.audioContext && !audioElement.hasAttribute('data-connected')) {
       try {
-        const source = this.audioContext.createMediaElementSource(audioElement);
-        source.connect(this.audioContext.destination);
-        audioElement.setAttribute('data-connected', 'true');
+        // Only connect if AudioContext is running
+        if (this.audioContext.state !== 'suspended') {
+          const source = this.audioContext.createMediaElementSource(audioElement);
+          source.connect(this.audioContext.destination);
+          audioElement.setAttribute('data-connected', 'true');
+        }
       } catch (err) {
         console.warn('[BackgroundAudio] Could not connect to AudioContext:', err);
       }

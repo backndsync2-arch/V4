@@ -30,8 +30,8 @@ class ScheduleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsSameClient]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name']
-    ordering_fields = ['name', 'priority', 'created_at']
-    ordering = ['-priority', 'name']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['name']
     
     def get_queryset(self):
         """Filter schedules by client."""
@@ -46,7 +46,7 @@ class ScheduleViewSet(viewsets.ModelViewSet):
         if enabled is not None:
             queryset = queryset.filter(enabled=enabled.lower() == 'true')
         
-        return queryset.prefetch_related('zones', 'devices')
+        return queryset.prefetch_related('zones')
     
     def get_serializer_class(self):
         """Use create serializer for POST."""
@@ -55,24 +55,67 @@ class ScheduleViewSet(viewsets.ModelViewSet):
         return ScheduleSerializer
     
     def perform_create(self, serializer):
-        """Create schedule with client and creator."""
-        serializer.save(
-            client=self.request.user.client,
-            created_by=self.request.user
-        )
+        """Create schedule with client and creator, handling zones."""
+        zones_data = self.request.data.get('zones', [])
+        
+        with transaction.atomic():
+            schedule = serializer.save(
+                client=self.request.user.client,
+                created_by=self.request.user
+            )
+            if zones_data:
+                schedule.zones.set(zones_data)
     
     @action(detail=True, methods=['post'])
     def toggle(self, request, pk=None):
         """Toggle schedule enabled status."""
         schedule = self.get_object()
-        schedule.enabled = not schedule.enabled
+        enabled_status = request.data.get('enabled', None)
+        if enabled_status is None:
+            raise ValidationError("Boolean field 'enabled' is required.")
+
+        schedule.enabled = bool(enabled_status)
         schedule.save(update_fields=['enabled'])
-        
+
         return Response({
             'id': str(schedule.id),
             'enabled': schedule.enabled,
             'message': 'Schedule enabled' if schedule.enabled else 'Schedule disabled'
         })
+    
+    @action(detail=False, methods=['post'])
+    def check_now(self, request):
+        """Manually trigger schedule check (for testing without Celery)."""
+        try:
+            from .tasks import check_schedules
+            # Try to run as Celery task, fallback to direct call if Celery unavailable
+            try:
+                check_schedules.delay()
+                return Response({'message': 'Schedule check queued'})
+            except Exception:
+                # Celery not available, run directly
+                check_schedules()
+                return Response({'message': 'Schedule check executed (direct mode)'})
+        except Exception as e:
+            logger.error(f"Error in manual schedule check: {e}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['post'])
+    def check_now(self, request):
+        """Manually trigger schedule check (for testing without Celery)."""
+        try:
+            from .tasks import check_schedules
+            # Try to run as Celery task, fallback to direct call if Celery unavailable
+            try:
+                check_schedules.delay()
+                return Response({'message': 'Schedule check queued'})
+            except Exception:
+                # Celery not available, run directly
+                check_schedules()
+                return Response({'message': 'Schedule check executed (direct mode)'})
+        except Exception as e:
+            logger.error(f"Error in manual schedule check: {e}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ChannelPlaylistViewSet(viewsets.ModelViewSet):

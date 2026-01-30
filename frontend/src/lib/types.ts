@@ -117,7 +117,7 @@ export interface AnnouncementAudio {
   ttsText?: string; // Text content for TTS announcements
 }
 
-export type ScheduleType = 'interval' | 'timeline';
+export type ScheduleType = 'interval' | 'timeline' | 'datetime';
 
 export interface IntervalSchedule {
   type: 'interval';
@@ -137,16 +137,32 @@ export interface TimelineSchedule {
   }[];
 }
 
+export interface DateTimeSchedule {
+  type: 'datetime';
+  dateTimeSlots: {
+    announcementId: string;
+    date: string; // YYYY-MM-DD format
+    time: string; // HH:mm format (24-hour) or HH:mm AM/PM
+    repeat?: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'none'; // Repeat pattern
+    repeatDays?: number[]; // For weekly: [0,1,2,3,4,5,6] (Sunday=0)
+    endDate?: string; // YYYY-MM-DD format for recurring schedules
+  }[];
+}
+
 export interface Schedule {
   id: string;
   name: string;
   clientId: string;
   deviceIds: string[];
+  zoneIds?: string[];
+  zones?: Zone[];
   enabled: boolean;
-  schedule: IntervalSchedule | TimelineSchedule;
+  schedule: IntervalSchedule | TimelineSchedule | DateTimeSchedule;
+  lastExecutedAt?: Date;
   createdAt: Date;
   createdBy: string;
   updatedAt: Date;
+  priority?: number;
 }
 
 // Channel Playlist - Unified music + announcements playlist

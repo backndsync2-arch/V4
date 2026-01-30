@@ -42,16 +42,27 @@ class Schedule(TimestampedModel):
     #     {"announcementId": "uuid2", "timestampSeconds": 1500}
     #   ]
     # }
+    # Structure for datetime:
+    # {
+    #   "type": "datetime",
+    #   "dateTimeSlots": [
+    #     {
+    #       "announcementId": "uuid1",
+    #       "date": "2025-01-15",
+    #       "time": "09:00 AM",
+    #       "repeat": "daily",
+    #       "repeatDays": [1,2,3,4,5],
+    #       "endDate": "2025-12-31"
+    #     }
+    #   ]
+    # }
     
-    # Target zones/devices
+    # Target zones
     zones = models.ManyToManyField('zones.Zone', related_name='schedules', blank=True)
-    devices = models.ManyToManyField('zones.Device', related_name='schedules', blank=True)
-    
-    # Priority (higher = more important)
-    priority = models.IntegerField(default=0, db_index=True)
     
     # State
     enabled = models.BooleanField(default=True, db_index=True)
+    last_executed_at = models.DateTimeField(null=True, blank=True, db_index=True)
     
     # Relationships
     client = models.ForeignKey(
@@ -69,10 +80,10 @@ class Schedule(TimestampedModel):
     
     class Meta:
         db_table = 'schedules'
-        ordering = ['-priority', 'name']
+        ordering = ['name']
         indexes = [
             models.Index(fields=['client', 'enabled']),
-            models.Index(fields=['enabled', 'priority']),
+            models.Index(fields=['enabled']),
         ]
     
     def __str__(self):

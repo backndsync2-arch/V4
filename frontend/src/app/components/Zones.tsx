@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
 import { usePlayback } from '@/lib/playback';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
@@ -8,63 +8,91 @@ import { Label } from '@/app/components/ui/label';
 import { Slider } from '@/app/components/ui/slider';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
-import { mockDevices, mockAnnouncementAudio, mockSchedules, mockChannelPlaylists } from '@/lib/mockData';
-import { Wifi, WifiOff, Volume2, Radio, Play, Settings, Plus, Grid3x3, Clock, Music } from 'lucide-react';
+import { Wifi, WifiOff, Volume2, Radio, Play, Settings, Plus, Grid3x3, Clock, Music, Loader2 } from 'lucide-react';
 import { Badge } from '@/app/components/ui/badge';
 import { formatRelativeTime, formatDuration } from '@/lib/utils';
 import { toast } from 'sonner';
+import { zonesAPI } from '@/lib/api';
+import { announcementsAPI } from '@/lib/api';
+
+interface Zone {
+  id: string;
+  name: string;
+  description?: string;
+  floor?: { id: string; name: string } | null;
+  default_volume: number;
+  is_active: boolean;
+}
+
+interface Device {
+  id: string;
+  name: string;
+  device_type: string;
+  zone: { id: string; name: string };
+  is_online: boolean;
+  last_seen: string | null;
+  volume: number;
+  status: 'online' | 'offline';
+}
 
 export function Zones() {
   const { user } = useAuth();
   const { playInstantAnnouncement } = usePlayback();
-  const [devices, setDevices] = useState(mockDevices);
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [availableAnnouncements, setAvailableAnnouncements] = useState<any[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
-  const [deviceVolume, setDeviceVolume] = useState(75);
+  const [deviceVolume, setDeviceVolume] = useState<Record<string, number>>({});
   const [selectedAnnouncement, setSelectedAnnouncement] = useState('');
   const [zoneSettingsOpen, setZoneSettingsOpen] = useState<Record<string, boolean>>({});
-  const [zoneSettings, setZoneSettings] = useState<Record<string, {
-    channelPlaylistId: string;
-    defaultVolume: number;
-    quietHoursStart: string;
-    quietHoursEnd: string;
-  }>>(({
-    'Ground Floor': {
-      channelPlaylistId: 'channel1',
-      defaultVolume: 75,
-      quietHoursStart: '22:00',
-      quietHoursEnd: '07:00',
-    },
-    'First Floor': {
-      channelPlaylistId: 'channel2',
-      defaultVolume: 70,
-      quietHoursStart: '22:00',
-      quietHoursEnd: '07:00',
-    },
-    'Outdoor': {
-      channelPlaylistId: 'none',
-      defaultVolume: 80,
-      quietHoursStart: '23:00',
-      quietHoursEnd: '06:00',
-    },
-  }));
+  const [isCreateZoneOpen, setIsCreateZoneOpen] = useState(false);
+  const [newZoneName, setNewZoneName] = useState('');
+  const [newZoneDescription, setNewZoneDescription] = useState('');
 
-  const clientId = user?.role === 'admin' ? null : user?.clientId;
-  const filteredDevices = clientId ? devices.filter(d => d.clientId === clientId) : devices;
-  const availableAnnouncements = clientId 
-    ? mockAnnouncementAudio.filter(a => a.clientId === clientId && a.enabled) 
-    : mockAnnouncementAudio.filter(a => a.enabled);
-  
-  const availableChannelPlaylists = clientId
-    ? mockChannelPlaylists.filter(cp => cp.clientId === clientId)
-    : mockChannelPlaylists;
+  // Load zones, devices, and announcements
+  useEffect(() => {
+    loadData();
+    // Refresh every 30 seconds
+    const interval = setInterval(loadData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [zonesData, devicesData, announcementsData] = await Promise.all([
+        zonesAPI.getZones(),
+        zonesAPI.getDevices(),
+        announcementsAPI.list(),
+      ]);
+      
+      setZones(zonesData);
+      setDevices(devicesData.map((d: any) => ({
+        ...d,
+        status: d.is_online ? 'online' : 'offline',
+      })));
+      setAvailableAnnouncements(announcementsData.filter((a: any) => a.enabled));
+      
+      // Initialize device volumes
+      const volumes: Record<string, number> = {};
+      devicesData.forEach((d: any) => {
+        volumes[d.id] = d.volume || 70;
+      });
+      setDeviceVolume(volumes);
+    } catch (error: any) {
+      console.error('Failed to load zones data:', error);
+      toast.error('Failed to load zones and devices');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Group devices by zone
-  const zones = filteredDevices.reduce((acc, device) => {
-    const zone = device.zone || 'Unassigned';
-    if (!acc[zone]) acc[zone] = [];
-    acc[zone].push(device);
-    return acc;
-  }, {} as Record<string, typeof devices>);
+  const zonesWithDevices = zones.map(zone => ({
+    ...zone,
+    devices: devices.filter(d => d.zone?.id === zone.id),
+  }));
 
   const handlePlayToDevice = (deviceId: string) => {
     if (!selectedAnnouncement) {
@@ -79,9 +107,16 @@ export function Zones() {
     toast.success(`Playing "${announcement?.title}" on ${device?.name}`);
   };
 
-  const handleSetVolume = (deviceId: string, volume: number) => {
-    const device = devices.find(d => d.id === deviceId);
-    toast.success(`Volume set to ${volume}% on ${device?.name}`);
+  const handleSetVolume = async (deviceId: string, volume: number) => {
+    try {
+      await zonesAPI.setDeviceVolume(deviceId, volume);
+      setDeviceVolume(prev => ({ ...prev, [deviceId]: volume }));
+      const device = devices.find(d => d.id === deviceId);
+      toast.success(`Volume set to ${volume}% on ${device?.name}`);
+    } catch (error: any) {
+      console.error('Failed to set device volume:', error);
+      toast.error('Failed to set device volume');
+    }
   };
 
   const handlePingDevice = (deviceId: string) => {
@@ -112,10 +147,52 @@ export function Zones() {
     }));
   };
 
-  const handleSaveZoneSettings = (zoneName: string) => {
-    toast.success(`Settings saved for ${zoneName}`);
-    handleCloseZoneSettings(zoneName);
+  const handleCreateZone = async () => {
+    if (!newZoneName.trim()) {
+      toast.error('Zone name is required');
+      return;
+    }
+    
+    try {
+      await zonesAPI.createZone({
+        name: newZoneName.trim(),
+        description: newZoneDescription.trim() || undefined,
+      });
+      toast.success('Zone created successfully');
+      setIsCreateZoneOpen(false);
+      setNewZoneName('');
+      setNewZoneDescription('');
+      loadData();
+    } catch (error: any) {
+      console.error('Failed to create zone:', error);
+      toast.error('Failed to create zone');
+    }
   };
+
+  const handleSaveZoneSettings = async (zoneId: string, zoneName: string) => {
+    try {
+      const zone = zones.find(z => z.id === zoneId);
+      if (zone) {
+        await zonesAPI.updateZone(zoneId, {
+          default_volume: zone.default_volume,
+        });
+        toast.success(`Settings saved for ${zoneName}`);
+        handleCloseZoneSettings(zoneName);
+        loadData();
+      }
+    } catch (error: any) {
+      console.error('Failed to save zone settings:', error);
+      toast.error('Failed to save zone settings');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-[#1db954]" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-24 md:pb-6">
@@ -125,7 +202,7 @@ export function Zones() {
           <p className="text-slate-600">Manage zones and devices across your business</p>
         </div>
         <div className="flex gap-2">
-          <Dialog>
+          <Dialog open={isCreateZoneOpen} onOpenChange={setIsCreateZoneOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
@@ -142,15 +219,21 @@ export function Zones() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label>Zone Name</Label>
-                  <Input placeholder="e.g., Kitchen, Outdoor Patio" />
+                  <Input 
+                    placeholder="e.g., Kitchen, Outdoor Patio" 
+                    value={newZoneName}
+                    onChange={(e) => setNewZoneName(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Description (Optional)</Label>
-                  <Input placeholder="Describe this zone..." />
+                  <Input 
+                    placeholder="Describe this zone..." 
+                    value={newZoneDescription}
+                    onChange={(e) => setNewZoneDescription(e.target.value)}
+                  />
                 </div>
-                <Button className="w-full" onClick={() => {
-                  toast.success('Zone created successfully');
-                }}>
+                <Button className="w-full" onClick={handleCreateZone}>
                   Create Zone
                 </Button>
               </div>
@@ -166,7 +249,7 @@ export function Zones() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-400">Total Zones</p>
-                <p className="text-3xl font-bold mt-2">{Object.keys(zones).length}</p>
+                <p className="text-3xl font-bold mt-2">{zones.length}</p>
               </div>
               <div className="p-3 rounded-lg bg-gradient-to-br from-[#1db954]/20 to-[#1ed760]/10">
                 <Grid3x3 className="h-6 w-6 text-blue-600" />
@@ -181,7 +264,7 @@ export function Zones() {
               <div>
                 <p className="text-sm text-gray-400">Online Devices</p>
                 <p className="text-3xl font-bold mt-2">
-                  {filteredDevices.filter(d => d.status === 'online').length}
+                  {devices.filter(d => d.status === 'online').length}
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-green-100">
@@ -197,7 +280,7 @@ export function Zones() {
               <div>
                 <p className="text-sm text-gray-400">Offline Devices</p>
                 <p className="text-3xl font-bold mt-2">
-                  {filteredDevices.filter(d => d.status === 'offline').length}
+                  {devices.filter(d => d.status === 'offline').length}
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-white/10">
@@ -209,25 +292,38 @@ export function Zones() {
       </div>
 
       {/* Zones List */}
-      {Object.entries(zones).map(([zoneName, zoneDevices]) => (
-        <Card key={zoneName}>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>{zoneName}</CardTitle>
-                <CardDescription>
-                  {zoneDevices.filter(d => d.status === 'online').length}/{zoneDevices.length} devices online
-                </CardDescription>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => handleOpenZoneSettings(zoneName)}>
-                <Settings className="h-4 w-4 mr-2" />
-                Zone Settings
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {zoneDevices.map((device) => (
+      {zonesWithDevices.length === 0 ? (
+        <Card>
+          <CardContent className="pt-6 text-center py-12">
+            <p className="text-gray-400">No zones found. Create your first zone to get started.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        zonesWithDevices.map((zone) => {
+          const zoneDevices = zone.devices;
+          return (
+            <Card key={zone.id}>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>{zone.name}</CardTitle>
+                    <CardDescription>
+                      {zoneDevices.filter(d => d.status === 'online').length}/{zoneDevices.length} devices online
+                      {zone.description && ` • ${zone.description}`}
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => handleOpenZoneSettings(zone.name)}>
+                    <Settings className="h-4 w-4 mr-2" />
+                    Zone Settings
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {zoneDevices.length === 0 ? (
+                    <p className="text-sm text-gray-400 py-4 text-center">No devices in this zone</p>
+                  ) : (
+                    zoneDevices.map((device) => (
                 <Dialog key={device.id}>
                   <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg hover:bg-white/10 transition-colors">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -276,17 +372,16 @@ export function Zones() {
                         <div className="flex items-center gap-3">
                           <Volume2 className="h-4 w-4 text-gray-400 shrink-0" />
                           <Slider
-                            value={[deviceVolume]}
+                            value={[deviceVolume[device.id] || device.volume || 70]}
                             max={100}
                             step={1}
                             onValueChange={(value) => {
-                              setDeviceVolume(value[0]);
                               handleSetVolume(device.id, value[0]);
                             }}
                             className="flex-1"
                           />
                           <span className="text-sm text-gray-400 w-10 text-right">
-                            {deviceVolume}%
+                            {deviceVolume[device.id] || device.volume || 70}%
                           </span>
                         </div>
                       </div>
@@ -336,11 +431,13 @@ export function Zones() {
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span className="text-gray-400">Zone</span>
-                          <span className="font-medium">{device.zone}</span>
+                          <span className="font-medium">{device.zone?.name || 'Unassigned'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-400">Last Seen</span>
-                          <span className="font-medium">{formatRelativeTime(device.lastSeen)}</span>
+                          <span className="font-medium">
+                            {device.last_seen ? formatRelativeTime(new Date(device.last_seen)) : 'Never'}
+                          </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-400">Device ID</span>
@@ -348,37 +445,25 @@ export function Zones() {
                         </div>
                       </div>
                     </div>
-                  </DialogContent>
-                </Dialog>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+                    </DialogContent>
+                  </Dialog>
+                ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })
+      )}
 
       {/* Zone Settings Dialogs */}
-      {Object.entries(zones).map(([zoneName, zoneDevices]) => {
-        const currentSettings = zoneSettings[zoneName] || {
-          channelPlaylistId: 'none',
-          defaultVolume: 75,
-          quietHoursStart: '22:00',
-          quietHoursEnd: '07:00',
-        };
+      {zonesWithDevices.map((zone) => {
+        const zoneName = zone.name;
+        const zoneDevices = zone.devices;
         
-        const assignedPlaylist = currentSettings.channelPlaylistId !== 'none' 
-          ? availableChannelPlaylists.find(cp => cp.id === currentSettings.channelPlaylistId)
-          : undefined;
-
-        // Get active schedules for this zone
-        const zoneSchedules = mockSchedules.filter(schedule => 
-          schedule.targetDevices?.some(deviceId => 
-            zoneDevices.some(d => d.id === deviceId)
-          )
-        );
-
         return (
           <Dialog 
-            key={`settings-${zoneName}`}
+            key={`settings-${zone.id}`}
             open={zoneSettingsOpen[zoneName] || false}
             onOpenChange={(open) => {
               if (!open) handleCloseZoneSettings(zoneName);
@@ -393,156 +478,35 @@ export function Zones() {
               </DialogHeader>
 
               <div className="space-y-6">
-                {/* Channel Playlist Assignment */}
-                <div className="space-y-3">
-                  <Label>Channel Playlist</Label>
-                  <Select 
-                    value={currentSettings.channelPlaylistId}
-                    onValueChange={(value) => {
-                      setZoneSettings(prev => ({
-                        ...prev,
-                        [zoneName]: {
-                          ...currentSettings,
-                          channelPlaylistId: value,
-                        },
-                      }));
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a channel playlist" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {availableChannelPlaylists.map(playlist => (
-                        <SelectItem key={playlist.id} value={playlist.id}>
-                          {playlist.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {assignedPlaylist && (
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
-                      <div className="flex items-start gap-2">
-                        <Music className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-blue-900">{assignedPlaylist.name}</p>
-                          <p className="text-xs text-blue-700">{assignedPlaylist.description}</p>
-                        </div>
-                        <Badge variant="outline" className="shrink-0">
-                          {assignedPlaylist.items.length} items
-                        </Badge>
-                      </div>
-                      <div className="flex gap-4 text-xs text-blue-700">
-                        <span>Music: every {assignedPlaylist.defaultMusicInterval} min</span>
-                        <span>Announcements: every {assignedPlaylist.defaultAnnouncementInterval} min</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
                 {/* Default Volume */}
                 <div className="space-y-3">
                   <Label>Default Volume</Label>
                   <div className="flex items-center gap-3">
                     <Volume2 className="h-4 w-4 text-gray-400 shrink-0" />
                     <Slider
-                      value={[currentSettings.defaultVolume]}
+                      value={[zone.default_volume]}
                       max={100}
                       step={1}
-                      onValueChange={(value) => {
-                        setZoneSettings(prev => ({
-                          ...prev,
-                          [zoneName]: {
-                            ...currentSettings,
-                            defaultVolume: value[0],
-                          },
-                        }));
+                      onValueChange={async (value) => {
+                        try {
+                          await zonesAPI.updateZone(zone.id, {
+                            default_volume: value[0],
+                          });
+                          loadData();
+                        } catch (error: any) {
+                          console.error('Failed to update zone volume:', error);
+                          toast.error('Failed to update zone volume');
+                        }
                       }}
                       className="flex-1"
                     />
                     <span className="text-sm text-gray-400 w-10 text-right">
-                      {currentSettings.defaultVolume}%
+                      {zone.default_volume}%
                     </span>
                   </div>
                   <p className="text-xs text-gray-400">
                     This volume will be applied to all devices in this zone
                   </p>
-                </div>
-
-                {/* Quiet Hours */}
-                <div className="space-y-3">
-                  <Label>Quiet Hours</Label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label className="text-xs text-gray-400">Start Time</Label>
-                      <div className="flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-slate-400 shrink-0" />
-                        <Input
-                          type="time"
-                          value={currentSettings.quietHoursStart}
-                          onChange={(e) => {
-                            setZoneSettings(prev => ({
-                              ...prev,
-                              [zoneName]: {
-                                ...currentSettings,
-                                quietHoursStart: e.target.value,
-                              },
-                            }));
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-gray-400">End Time</Label>
-                      <div className="flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-slate-400 shrink-0" />
-                        <Input
-                          type="time"
-                          value={currentSettings.quietHoursEnd}
-                          onChange={(e) => {
-                            setZoneSettings(prev => ({
-                              ...prev,
-                              [zoneName]: {
-                                ...currentSettings,
-                                quietHoursEnd: e.target.value,
-                              },
-                            }));
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400">
-                    Playback will automatically pause during quiet hours
-                  </p>
-                </div>
-
-                {/* Active Schedules */}
-                <div className="space-y-3">
-                  <Label>Active Schedules ({zoneSchedules.length})</Label>
-                  {zoneSchedules.length > 0 ? (
-                    <div className="space-y-2">
-                      {zoneSchedules.map(schedule => (
-                        <div key={schedule.id} className="p-3 bg-white/5 border border-white/10 rounded-lg">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm font-medium">{schedule.name}</p>
-                              <p className="text-xs text-gray-400">
-                                {schedule.startTime} - {schedule.endTime}
-                              </p>
-                            </div>
-                            <Badge variant={schedule.enabled ? 'default' : 'secondary'}>
-                              {schedule.enabled ? 'Active' : 'Disabled'}
-                            </Badge>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-400 py-4 text-center bg-white/5 rounded-lg">
-                      No active schedules for this zone
-                    </p>
-                  )}
                 </div>
 
                 {/* Devices in Zone */}
@@ -572,7 +536,7 @@ export function Zones() {
                   <Button variant="outline" onClick={() => handleCloseZoneSettings(zoneName)}>
                     Cancel
                   </Button>
-                  <Button onClick={() => handleSaveZoneSettings(zoneName)}>
+                  <Button onClick={() => handleSaveZoneSettings(zone.id, zoneName)}>
                     Save Settings
                   </Button>
                 </div>

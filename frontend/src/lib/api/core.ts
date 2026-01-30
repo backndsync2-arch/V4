@@ -168,17 +168,32 @@ export const normalizeDevice = (raw: any): Device => {
 
 export const normalizeSchedule = (raw: any): Schedule => {
   const schedule = raw?.schedule ?? raw?.schedule_config ?? raw?.scheduleConfig ?? {};
+  
+  // Handle zones - can be array of IDs or array of objects with zones_data
+  let zoneIds: string[] = [];
+  let zones: any[] = [];
+  
+  if (Array.isArray(raw?.zones)) {
+    zoneIds = raw.zones.map((z: any) => String(z?.id ?? z ?? ''));
+  } else if (Array.isArray(raw?.zone_ids)) {
+    zoneIds = raw.zone_ids.map((z: any) => String(z));
+  }
+  
+  if (Array.isArray(raw?.zones_data)) {
+    zones = raw.zones_data;
+  }
+  
   return {
     id: String(raw?.id ?? ''),
     name: String(raw?.name ?? ''),
     clientId: String(raw?.client_id ?? raw?.clientId ?? ''),
-    deviceIds: Array.isArray(raw?.devices)
-      ? raw.devices.map((d: any) => String(d))
-      : Array.isArray(raw?.device_ids)
-        ? raw.device_ids.map((d: any) => String(d))
-        : [],
+    deviceIds: [], // Devices removed - only zones are used now
+    zoneIds: zoneIds.length > 0 ? zoneIds : undefined,
+    zones: zones.length > 0 ? zones : undefined,
     enabled: Boolean(raw?.enabled ?? true),
     schedule: schedule as any,
+    lastExecutedAt: raw?.last_executed_at ? toDate(raw.last_executed_at) : undefined,
+    priority: raw?.priority ?? 0,
     createdAt: toDate(raw?.created_at ?? raw?.createdAt),
     createdBy: String(raw?.created_by_name ?? raw?.createdBy ?? ''),
     updatedAt: toDate(raw?.updated_at ?? raw?.updatedAt),

@@ -32,7 +32,7 @@ def check_schedules():
     active_schedules = Schedule.objects.filter(
         enabled=True,
         client__is_active=True
-    ).prefetch_related('zones', 'devices')
+    ).prefetch_related('zones')
     
     executed_count = 0
     
@@ -48,9 +48,16 @@ def check_schedules():
                 should_run = _check_interval_schedule(schedule, now, current_time)
             elif schedule_type == 'timeline':
                 should_run = _check_timeline_schedule(schedule, now, current_time, current_weekday)
+            elif schedule_type == 'datetime':
+                should_run = _check_datetime_schedule(schedule, now, current_time, current_weekday)
             
             if should_run:
-                execute_schedule.delay(str(schedule.id))
+                # Try to execute as Celery task, fallback to direct execution
+                try:
+                    execute_schedule.delay(str(schedule.id))
+                except Exception:
+                    # Celery not available, execute directly
+                    _execute_schedule_impl(str(schedule.id))
                 executed_count += 1
         
         except Exception as e:
@@ -62,6 +69,7 @@ def check_schedules():
 def _check_interval_schedule(schedule, now, current_time):
     """Check if interval schedule should run."""
     config = schedule.schedule_config
+    interval_minutes = config.get('intervalMinutes', 60)
     
     # Check quiet hours
     quiet_start = config.get('quietHoursStart')
@@ -80,10 +88,13 @@ def _check_interval_schedule(schedule, now, current_time):
             if current_time >= quiet_start_time or current_time <= quiet_end_time:
                 return False
     
-    # Check last execution time (avoid repeat)
-    # TODO: Track last execution time per schedule
-    # For now, allow execution
+    # Check if enough time has passed since last execution
+    if schedule.last_executed_at:
+        time_since_last = (now - schedule.last_executed_at).total_seconds() / 60
+        if time_since_last < interval_minutes:
+            return False
     
+    # If no last execution time, allow execution (first run)
     return True
 
 
@@ -110,8 +121,103 @@ def _check_timeline_schedule(schedule, now, current_time, current_weekday):
     return False
 
 
+def _check_datetime_schedule(schedule, now, current_time, current_weekday):
+    """Check if datetime schedule should run."""
+    from datetime import date as date_type
+    
+    config = schedule.schedule_config
+    date_time_slots = config.get('dateTimeSlots', [])
+    current_date = now.date()
+    current_weekday_python = now.weekday()  # 0=Monday, 6=Sunday
+    
+    for slot in date_time_slots:
+        slot_date_str = slot.get('date')
+        slot_time_str = slot.get('time')
+        repeat = slot.get('repeat', 'none')
+        repeat_days = slot.get('repeatDays', [])
+        end_date_str = slot.get('endDate')
+        
+        if not slot_date_str or not slot_time_str:
+            continue
+        
+        # Parse date
+        try:
+            slot_date = datetime.strptime(slot_date_str, '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            continue
+        
+        # Parse time (handle both 24h and 12h formats)
+        try:
+            if 'AM' in slot_time_str or 'PM' in slot_time_str:
+                # 12-hour format
+                time_part = slot_time_str.replace(' AM', '').replace(' PM', '')
+                period = 'PM' if 'PM' in slot_time_str else 'AM'
+                hour, minute = map(int, time_part.split(':'))
+                if period == 'PM' and hour != 12:
+                    hour += 12
+                elif period == 'AM' and hour == 12:
+                    hour = 0
+                slot_time = time(hour, minute)
+            else:
+                # 24-hour format
+                hour, minute = map(int, slot_time_str.split(':'))
+                slot_time = time(hour, minute)
+        except (ValueError, TypeError):
+            continue
+        
+        # Check if end date has passed
+        if end_date_str:
+            try:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+                if current_date > end_date:
+                    continue
+            except (ValueError, TypeError):
+                pass
+        
+        # Check if time matches (within 1 minute window)
+        time_diff = abs(
+            (current_time.hour * 60 + current_time.minute) - 
+            (slot_time.hour * 60 + slot_time.minute)
+        )
+        if time_diff > 1:
+            continue
+        
+        # Check date/repeat logic
+        if repeat == 'none':
+            # One-time schedule - check if date matches
+            if current_date == slot_date:
+                return True
+        elif repeat == 'daily':
+            # Daily - check if date is on or after slot date
+            if current_date >= slot_date:
+                return True
+        elif repeat == 'weekly':
+            # Weekly - check if weekday matches and date is on or after slot date
+            if current_date >= slot_date:
+                # Frontend sends JS weekday (0=Sun, 6=Sat)
+                # Python uses (0=Mon, 6=Sun)
+                # Convert Python weekday to JS weekday for comparison
+                js_weekday = (current_weekday_python + 1) % 7  # Convert Mon=0 to Sun=1, then mod 7
+                if repeat_days and js_weekday in repeat_days:
+                    return True
+        elif repeat == 'monthly':
+            # Monthly - check if day of month matches and date is on or after slot date
+            if current_date >= slot_date and current_date.day == slot_date.day:
+                return True
+        elif repeat == 'yearly':
+            # Yearly - check if month and day match and date is on or after slot date
+            if current_date >= slot_date and current_date.month == slot_date.month and current_date.day == slot_date.day:
+                return True
+    
+    return False
+
+
 @shared_task
 def execute_schedule(schedule_id):
+    """Execute a schedule (can be called directly or via Celery)."""
+    _execute_schedule_impl(schedule_id)
+
+def _execute_schedule_impl(schedule_id):
     """
     Execute a schedule (play music or announcement).
     Sends real-time notification when executed.
@@ -130,10 +236,6 @@ def execute_schedule(schedule_id):
 
         # Get target zones
         zones = list(schedule.zones.all())
-        if not zones:
-            # If no zones, get zones from devices
-            devices = schedule.devices.all()
-            zones = list(set([device.zone for device in devices if device.zone]))
 
         if not zones:
             logger.warning(f"Schedule {schedule_id} has no target zones")
@@ -191,6 +293,54 @@ def execute_schedule(schedule_id):
                             except Exception as e:
                                 logger.error(f"Failed to play announcement on zone {zone.id}: {e}")
 
+        elif schedule_type == 'datetime':
+            # Play announcements at specific date/time
+            date_time_slots = config.get('dateTimeSlots', [])
+            current_time = timezone.now().time()
+            current_date = timezone.now().date()
+
+            for slot in date_time_slots:
+                announcement_id = slot.get('announcementId')
+                slot_date_str = slot.get('date')
+                slot_time_str = slot.get('time')
+                
+                if not announcement_id or not slot_date_str or not slot_time_str:
+                    continue
+                
+                # Parse time
+                try:
+                    if 'AM' in slot_time_str or 'PM' in slot_time_str:
+                        time_part = slot_time_str.replace(' AM', '').replace(' PM', '')
+                        period = 'PM' if 'PM' in slot_time_str else 'AM'
+                        hour, minute = map(int, time_part.split(':'))
+                        if period == 'PM' and hour != 12:
+                            hour += 12
+                        elif period == 'AM' and hour == 12:
+                            hour = 0
+                        slot_time = time(hour, minute)
+                    else:
+                        hour, minute = map(int, slot_time_str.split(':'))
+                        slot_time = time(hour, minute)
+                except (ValueError, TypeError):
+                    continue
+                
+                # Check if time matches (within 1 minute)
+                time_diff = abs(
+                    (current_time.hour * 60 + current_time.minute) - 
+                    (slot_time.hour * 60 + slot_time.minute)
+                )
+                
+                if time_diff <= 1:
+                    # Time matches, play announcement
+                    for zone in zones:
+                        try:
+                            PlaybackEngine.handle_announcement(
+                                str(zone.id),
+                                str(announcement_id)
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to play announcement on zone {zone.id}: {e}")
+
         # Send WebSocket notification for schedule execution
         try:
             event_data = {
@@ -214,6 +364,10 @@ def execute_schedule(schedule_id):
         except Exception as e:
             logger.error(f"Failed to send schedule execution notification for {schedule.name}: {e}")
 
+        # Update last execution time
+        schedule.last_executed_at = timezone.now()
+        schedule.save(update_fields=['last_executed_at'])
+        
         logger.info(f"Executed schedule {schedule_id} on {len(zones)} zones")
 
     except Schedule.DoesNotExist:

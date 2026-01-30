@@ -17,13 +17,14 @@ export function MobileNav({ currentPage, onNavigate }: MobileNavProps) {
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-[#1a1a1a]/95 backdrop-blur-2xl border-t border-white/10 safe-area-bottom lg:hidden z-40 shadow-2xl shadow-black/50">
-      <nav className="grid grid-cols-5 h-20 pb-safe">
+    <div className="fixed bottom-0 left-0 right-0 bg-[#1a1a1a]/95 backdrop-blur-2xl border-t border-white/10 safe-area-bottom lg:hidden z-[100] shadow-2xl shadow-black/50 pointer-events-auto">
+      <nav className="grid grid-cols-5 h-20 pb-safe pointer-events-auto">
         {navItems.map((item) => (
           <button
             key={item.id}
             type="button"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               onNavigate(item.id);
             }}
             className={cn(

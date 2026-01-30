@@ -5,12 +5,13 @@
  */
 
 import type { Client, User } from '../types';
-import { apiFetch } from './core';
+import { apiFetch, unwrapList } from './core';
 
 export const adminAPI = {
   // Get all clients
   getClients: async (): Promise<Client[]> => {
-    return apiFetch('/admin/clients/');
+    const res = await apiFetch('/admin/clients/');
+    return unwrapList(res);
   },
 
   // Create client
@@ -40,7 +41,8 @@ export const adminAPI = {
 
   // Get all users
   getUsers: async (): Promise<User[]> => {
-    return apiFetch('/admin/users/');
+    const res = await apiFetch('/admin/users/');
+    return unwrapList(res);
   },
 
   // Create user
@@ -50,10 +52,29 @@ export const adminAPI = {
     name: string;
     role: string;
     client_id?: string;
+    floor_id?: string;
   }): Promise<User> => {
+    // UserCreateSerializer requires password_confirm
+    // Remove undefined/null values to avoid sending them
+    const payload: any = {
+      email: data.email,
+      name: data.name,
+      password: data.password,
+      password_confirm: data.password, // Confirm password matches
+      role: data.role,
+    };
+    
+    // Only include client_id and floor_id if they are provided
+    if (data.client_id) {
+      payload.client_id = data.client_id;
+    }
+    if (data.floor_id) {
+      payload.floor_id = data.floor_id;
+    }
+    
     return apiFetch('/admin/users/', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
   },
 

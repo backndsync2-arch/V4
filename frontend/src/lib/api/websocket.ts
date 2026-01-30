@@ -24,6 +24,23 @@ export class WebSocketClient {
     // Don't attempt connection if backend URL is not configured
     if (!WS_BASE_URL) return;
 
+    // If already connected to the same endpoint, don't reconnect
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      // Check if we're already connected to the right endpoint
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const token = getAccessToken();
+      const expectedUrl = zoneId && uuidRegex.test(zoneId)
+        ? `${WS_BASE_URL}/playback/${zoneId}/?token=${token}`
+        : `${WS_BASE_URL}/events/?token=${token}`;
+      
+      // If URL matches, we're already connected - don't reconnect
+      if (this.ws.url === expectedUrl) {
+        return;
+      }
+      // Otherwise, disconnect first before reconnecting to different endpoint
+      this.disconnect();
+    }
+
     if (this.isConnecting) {
       return;
     }
@@ -70,22 +87,28 @@ export class WebSocketClient {
       };
 
       this.ws.onerror = (error) => {
-        // Only log once per connection attempt to reduce console noise
-        if (!this.hasLoggedConnectionFailure) {
-        console.warn('WebSocket connection failed - backend may be offline');
-          this.hasLoggedConnectionFailure = true;
-        }
+        // Suppress error logging - the onclose handler will log if needed
+        // This prevents duplicate error messages in console
         this.isConnecting = false;
         this.setConnectionStatus('disconnected');
       };
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event) => {
         const wasConnected = this.connectionStatus === 'connected';
         this.isConnecting = false;
         this.setConnectionStatus('disconnected');
+        
+        // Only log if we were previously connected, or if this is the first failure
         if (wasConnected) {
           console.log('WebSocket disconnected');
+        } else if (!this.hasLoggedConnectionFailure && this.reconnectAttempts === 0) {
+          // First connection attempt failed - log once
+          console.warn('WebSocket connection failed - backend WebSocket server may not be running');
+          console.warn('Note: To enable WebSocket support, run backend with: daphne -b 0.0.0.0 -p 8000 sync2gear_backend.config.asgi:application');
+          console.warn('Manual playback via API will still work without WebSocket.');
+          this.hasLoggedConnectionFailure = true;
         }
+        
         this.attemptReconnect(zoneId);
       };
     } catch (error) {
@@ -103,14 +126,15 @@ export class WebSocketClient {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       setTimeout(() => {
-        // Only log reconnect attempts, not every single one
-        if (this.reconnectAttempts === 1) {
-          console.log(`WebSocket reconnecting... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-        }
+        // Silently reconnect - don't log every attempt
         this.connect(zoneId);
       }, this.reconnectDelay);
     } else {
-      console.log('WebSocket: Max reconnection attempts reached. Running in offline mode.');
+      // Only log once when max attempts reached
+      if (this.connectionStatus !== 'offline') {
+        console.log('WebSocket: Max reconnection attempts reached. Running in offline mode.');
+        console.log('Scheduled announcements require WebSocket. Manual playback via API still works.');
+      }
       this.setConnectionStatus('offline');
       this.shouldConnect = false;
     }
@@ -141,8 +165,24 @@ export class WebSocketClient {
   disconnect() {
     this.shouldConnect = false;
     if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+      // Only close if WebSocket is in a state that can be closed
+      // CONNECTING (0) state will throw an error if we try to close
+      if (this.ws.readyState === WebSocket.CONNECTING) {
+        // Wait a bit for connection to establish, then close
+        setTimeout(() => {
+          if (this.ws && this.ws.readyState !== WebSocket.CONNECTING) {
+            this.ws.close();
+            this.ws = null;
+          }
+        }, 100);
+      } else if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CLOSING) {
+        // Safe to close if OPEN or already CLOSING
+        this.ws.close();
+        this.ws = null;
+      } else {
+        // Already closed, just clear reference
+        this.ws = null;
+      }
     }
     this.reconnectAttempts = 0;
     this.setConnectionStatus('disconnected');

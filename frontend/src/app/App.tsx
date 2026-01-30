@@ -13,6 +13,7 @@ import { Dashboard } from '@/app/components/Dashboard';
 import { MusicLibrary } from '@/app/components/MusicLibrary';
 import { AnnouncementsFinal } from '@/app/components/AnnouncementsFinal';
 import { Scheduler } from '@/app/components/Scheduler';
+import { SimpleScheduler } from '@/app/components/SimpleScheduler';
 import { Zones } from '@/app/components/Zones';
 import { Users } from '@/app/components/Users';
 import { Admin } from '@/app/components/Admin';
@@ -141,7 +142,14 @@ function AppContent() {
 
   // Landing page (public)
   if (location.pathname === '/' && !user) {
-    return <LandingPage />;
+    return (
+      <LandingPage 
+        onNavigateToLogin={() => navigate('/login')}
+        onNavigateToTerms={() => setShowTerms(true)}
+        onNavigateToPrivacy={() => setShowPrivacy(true)}
+        onNavigateToCancellation={() => setShowCancellation(true)}
+      />
+    );
   }
 
   // Login page (public)
@@ -172,7 +180,7 @@ function AppContent() {
             } />
             <Route path="/scheduler" element={
               <ProtectedRoute>
-                <Scheduler />
+                <SimpleScheduler />
               </ProtectedRoute>
             } />
             <Route path="/zones" element={

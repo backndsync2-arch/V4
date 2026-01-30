@@ -47,6 +47,7 @@ interface PlaybackContextType {
   stopPreview: () => void;
   enableBackgroundPlayback: () => Promise<void>;
   setSelectedPlaylists: (playlistIds: string[]) => void;
+  stopAnnouncement: () => void;
 }
 
 const PlaybackContext = createContext<PlaybackContextType | undefined>(undefined);
@@ -208,6 +209,20 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     };
   }, []); // Empty dependency array - only run once
 
+  // Track active announcement audio elements (Map<announcementId, AudioElement>)
+  const activeAnnouncementAudio = useRef<Map<string, HTMLAudioElement>>(new Map());
+
+  // Function to stop currently playing announcement
+  const stopAnnouncement = useCallback(() => {
+    activeAnnouncementAudio.current.forEach((audio, announcementId) => {
+      audio.pause();
+      audio.currentTime = 0;
+      activeAnnouncementAudio.current.delete(announcementId);
+    });
+    setNowPlaying(null);
+    toast.info('Announcement stopped');
+  }, []);
+
   // Handle WebSocket connection separately
   useEffect(() => {
     // Only connect if we have a valid zone ID (UUID format)
@@ -219,7 +234,138 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       wsClient.connect();
     }
     
-    const handlePlaybackUpdate = (data: any) => {
+    const handlePlaybackUpdate = (message: any) => {
+      // WebSocket message structure: { type: 'playback_update', data: {...} }
+      const data = message.data || message;
+      
+      // Check if this message is for the active zone
+      const messageZoneId = data.zone_id || data.zoneId;
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      
+      // If we have an active target (zone), only process messages for that zone
+      if (activeTarget && uuidRegex.test(activeTarget) && messageZoneId) {
+        const zoneMatches = String(messageZoneId).toLowerCase() === String(activeTarget).toLowerCase();
+        if (!zoneMatches) {
+          console.log('[Playback] Ignoring message for different zone:', {
+            message_zone: messageZoneId,
+            active_zone: activeTarget
+          });
+          return;
+        }
+      }
+      
+      console.log('[Playback] WebSocket update received:', {
+        message_type: message.type,
+        has_announcement: !!data.current_announcement_data,
+        is_playing: data.is_playing,
+        announcement: data.current_announcement_data,
+        zone_id: messageZoneId,
+        active_target: activeTarget,
+        zone_matches: activeTarget ? String(messageZoneId).toLowerCase() === String(activeTarget).toLowerCase() : true
+      });
+      
+      // Handle announcement playback
+      if (data.current_announcement_data && data.is_playing) {
+        const announcement = data.current_announcement_data;
+        console.log('[Playback] Processing announcement:', announcement);
+        
+        // Backend sends 'file_url', but also check 'url' for compatibility
+        const announcementUrl = announcement.file_url || announcement.url || announcement.file;
+        const announcementId = announcement.id;
+        
+        if (!announcementUrl) {
+          console.error('[Playback] Announcement has no URL:', announcement);
+          toast.error(`Announcement "${announcement.title || 'Unknown'}" has no audio file`);
+          return;
+        }
+        
+        // Make URL absolute if it's relative
+        const absoluteUrl = announcementUrl.startsWith('http') 
+          ? announcementUrl 
+          : `${window.location.origin}${announcementUrl}`;
+        
+        
+        // Stop any existing announcement for this zone
+        const existingAudio = activeAnnouncementAudio.current.get(announcementId);
+        if (existingAudio) {
+          existingAudio.pause();
+          existingAudio.currentTime = 0;
+          activeAnnouncementAudio.current.delete(announcementId);
+        }
+        
+        if (absoluteUrl) {
+          // Ensure AudioContext is ready before playing
+          const playAnnouncement = async () => {
+            try {
+              // Ensure AudioContext is created and resumed
+              backgroundAudio.createAudioContext();
+              await backgroundAudio.resumeAudioContext();
+            } catch (err) {
+              console.warn('Could not resume AudioContext for scheduled announcement:', err);
+            }
+            
+            // Play announcement audio
+            const audio = new Audio(absoluteUrl);
+            activeAnnouncementAudio.current.set(announcementId, audio);
+            
+            // Set volume
+            audio.volume = 1.0;
+            
+            // Update now playing to show announcement
+            setNowPlaying({
+              type: 'announcement',
+              title: announcement.title || 'Announcement',
+              playlist: undefined,
+              duration: announcement.duration || 0,
+              elapsed: 0,
+              isPlaying: true,
+            });
+            
+            // Load and play
+            audio.load();
+            
+            // Set up event handlers before playing
+            audio.onended = () => {
+              activeAnnouncementAudio.current.delete(announcementId);
+              if (data.current_track_data) {
+                setNowPlaying({
+                  type: 'music',
+                  title: data.current_track_data.title || 'Music',
+                  playlist: undefined,
+                  duration: data.current_track_data.duration || 0,
+                  elapsed: data.position || 0,
+                  isPlaying: data.is_playing,
+                });
+              } else {
+                setNowPlaying(null);
+              }
+            };
+            
+            audio.onerror = (e) => {
+              console.error('[Playback] Audio error:', e, absoluteUrl);
+              activeAnnouncementAudio.current.delete(announcementId);
+              toast.error(`Failed to load announcement: ${announcement.title || 'Unknown'}`);
+            };
+            
+            audio.play().then(() => {
+              toast.success(`🔊 Playing: ${announcement.title || 'Announcement'}`);
+            }).catch((error) => {
+              console.error('[Playback] Failed to play announcement:', error);
+              activeAnnouncementAudio.current.delete(announcementId);
+              // Show toast if autoplay is blocked
+              if (error.name === 'NotAllowedError' || error.message?.includes('user gesture')) {
+                toast.error('Please click "Start Playback" first to allow audio playback');
+              } else {
+                toast.error('Failed to play announcement: ' + (error.message || 'Unknown error'));
+              }
+            });
+          };
+          
+          // Play immediately (user has already interacted if playback is running)
+          playAnnouncement();
+        }
+      }
+      
       if (data.now_playing) {
         setNowPlaying({
           type: data.now_playing.type || 'music',
@@ -235,11 +381,24 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    // Listen for playback updates
     wsClient.on('playback_update', handlePlaybackUpdate);
+    
+    // Also listen for initial playback state
+    const handlePlaybackState = (message: any) => {
+      const data = message.data || message;
+      console.log('[Playback] Initial state received:', data);
+      handlePlaybackUpdate(message); // Use same handler
+    };
+    wsClient.on('playback_state', handlePlaybackState);
 
     return () => {
+      // Only remove event listeners, don't disconnect WebSocket
+      // The WebSocket connection is shared and should persist
       wsClient.off('playback_update', handlePlaybackUpdate);
-      wsClient.disconnect();
+      wsClient.off('playback_state', handlePlaybackState);
+      // Don't disconnect here - let the WebSocket client manage its own lifecycle
+      // Disconnecting here causes "closed before connection established" errors
     };
   }, [activeTarget]);
 
@@ -289,6 +448,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     selectedPlaylists,
     availablePlaylists,
     setSelectedPlaylists,
+    stopAnnouncement,
   };
 
   return (

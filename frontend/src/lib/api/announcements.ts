@@ -81,6 +81,14 @@ export const announcementsAPI = {
     });
   },
 
+  // Play instant announcement on zones
+  playInstantAnnouncementOnZones: async (id: string, zoneIds: string[]): Promise<void> => {
+    return apiFetch(`/announcements/${id}/play_instant/`, {
+      method: 'POST',
+      body: JSON.stringify({ zone_ids: zoneIds }),
+    });
+  },
+
   // Generate AI text
   generateAIText: async (data: {
     topic: string;

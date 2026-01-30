@@ -14,19 +14,20 @@ class AuditLogSerializer(serializers.ModelSerializer):
     
     user_name = serializers.CharField(source='user.name', read_only=True)
     user_email = serializers.CharField(source='user.email', read_only=True)
+    user_role = serializers.CharField(source='user.role', read_only=True)
     client_name = serializers.CharField(source='client.name', read_only=True)
     
     class Meta:
         model = AuditLog
         fields = [
-            'id', 'user', 'user_name', 'user_email',
+            'id', 'user', 'user_name', 'user_email', 'user_role',
             'action', 'resource_type', 'resource_id',
             'client', 'client_name', 'details',
             'ip_address', 'user_agent',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'user_name', 'user_email', 'client_name',
+            'id', 'user_name', 'user_email', 'user_role', 'client_name',
             'created_at', 'updated_at'
         ]
 

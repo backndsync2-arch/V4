@@ -14,8 +14,11 @@ export function MobileMenu({ currentPage, onNavigate }: MobileMenuProps) {
   const { user, signOut } = useAuth();
   const [isOpen, setIsOpen] = React.useState(false);
 
+  // Mobile menu items - same visibility rules as desktop navbar
   const menuItems = [
-    { id: 'users', label: 'Team Members', icon: UsersRound },
+    // Team Members: visible to admin, staff, and client roles (not floor_user)
+    ...(user && user.role !== 'floor_user' ? [{ id: 'users', label: 'Team Members', icon: UsersRound }] : []),
+    // Admin panel: only for sync2gear admins
     ...(user?.role === 'admin' ? [{ id: 'admin', label: 'Admin Dashboard', icon: Users }] : []),
     { id: 'profile', label: 'My Profile', icon: User },
   ];

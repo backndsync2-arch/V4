@@ -187,6 +187,7 @@ def _generate_elevenlabs_tts(text, voice_id):
 def calculate_audio_duration(self, announcement_id):
     """Calculate duration of uploaded audio file."""
     from .models import Announcement
+    from io import BytesIO
     
     try:
         announcement = Announcement.objects.get(id=announcement_id)
@@ -194,13 +195,52 @@ def calculate_audio_duration(self, announcement_id):
         if not announcement.file:
             return
         
+        duration_calculated = False
+        
+        # Try mutagen first (path-based)
         try:
-            audio = MutagenFile(announcement.file.path)
-            if audio and hasattr(audio, 'info'):
-                announcement.duration = int(audio.info.length)
-                announcement.save(update_fields=['duration'])
-        except Exception as e:
-            logger.warning(f"Could not calculate duration: {e}")
+            if hasattr(announcement.file, 'path'):
+                audio = MutagenFile(announcement.file.path)
+                if audio and hasattr(audio, 'info') and hasattr(audio.info, 'length'):
+                    announcement.duration = int(audio.info.length)
+                    announcement.save(update_fields=['duration'])
+                    logger.info(f"Duration calculated (mutagen path) for {announcement_id}: {announcement.duration}s")
+                    duration_calculated = True
+        except Exception as mutagen_path_error:
+            logger.debug(f"Mutagen path-based failed for {announcement_id}: {mutagen_path_error}")
+        
+        # Try mutagen with file content (better for webm)
+        if not duration_calculated:
+            try:
+                announcement.file.open('rb')
+                file_content = announcement.file.read()
+                announcement.file.close()
+                audio = MutagenFile(BytesIO(file_content))
+                if audio and hasattr(audio, 'info') and hasattr(audio.info, 'length'):
+                    announcement.duration = int(audio.info.length)
+                    announcement.save(update_fields=['duration'])
+                    logger.info(f"Duration calculated (mutagen content) for {announcement_id}: {announcement.duration}s")
+                    duration_calculated = True
+            except Exception as mutagen_content_error:
+                logger.debug(f"Mutagen content-based failed for {announcement_id}: {mutagen_content_error}")
+        
+        # Try pydub as fallback (supports webm better)
+        if not duration_calculated:
+            try:
+                from pydub import AudioSegment
+                if hasattr(announcement.file, 'path'):
+                    audio_segment = AudioSegment.from_file(announcement.file.path)
+                    announcement.duration = int(len(audio_segment) / 1000.0)  # pydub returns milliseconds
+                    announcement.save(update_fields=['duration'])
+                    logger.info(f"Duration calculated (pydub) for {announcement_id}: {announcement.duration}s")
+                    duration_calculated = True
+            except ImportError:
+                logger.debug("pydub not available for duration calculation")
+            except Exception as pydub_error:
+                logger.warning(f"Pydub duration calculation failed for {announcement_id}: {pydub_error}")
+        
+        if not duration_calculated:
+            logger.warning(f"Could not calculate duration for announcement {announcement_id} using any method")
     
     except Announcement.DoesNotExist:
         logger.error(f"Announcement {announcement_id} not found")

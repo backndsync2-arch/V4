@@ -12,7 +12,6 @@ import { Layout } from '@/app/components/Layout';
 import { Dashboard } from '@/app/components/Dashboard';
 import { MusicLibrary } from '@/app/components/MusicLibrary';
 import { AnnouncementsFinal } from '@/app/components/AnnouncementsFinal';
-import { Scheduler } from '@/app/components/Scheduler';
 import { SimpleScheduler } from '@/app/components/SimpleScheduler';
 import { Zones } from '@/app/components/Zones';
 import { Users } from '@/app/components/Users';
@@ -56,16 +55,18 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 // Admin Route Component
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, impersonatingClient } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (user && user.role !== 'admin') {
+    // Redirect if not admin OR if impersonating (admin should see client view when impersonating)
+    if (user && (user.role !== 'admin' || impersonatingClient)) {
       navigate('/dashboard', { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, impersonatingClient, navigate]);
 
-  if (user?.role !== 'admin') {
+  // Don't show admin panel when impersonating
+  if (user?.role !== 'admin' || impersonatingClient) {
     return null;
   }
 

@@ -20,14 +20,19 @@ logger = logging.getLogger(__name__)
 @api_view(['GET'])
 @permission_classes([IsSameClient])
 def get_active_schedules(request):
-    """Get all active schedules for the user's client."""
-    schedules = Schedule.objects.filter(
+    """Get all active schedules for the user's client, optionally filtered by zone."""
+    queryset = Schedule.objects.filter(
         client=request.user.client,
         enabled=True
     ).prefetch_related('zones')
     
+    # Filter by zone if zone_id query parameter is provided
+    zone_id = request.query_params.get('zone_id')
+    if zone_id:
+        queryset = queryset.filter(zones__id=zone_id).distinct()
+    
     result = []
-    for schedule in schedules:
+    for schedule in queryset:
         config = schedule.schedule_config
         announcement_ids = config.get('announcementIds', [])
         zone_ids = [str(z.id) for z in schedule.zones.all()]

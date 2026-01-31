@@ -4,11 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
 import { Dialog, DialogTrigger } from '@/app/components/ui/dialog';
-import { RefreshCw, Play, Plus } from 'lucide-react';
+import { RefreshCw, Play, Plus, Edit, Trash2, MoreVertical } from 'lucide-react';
 import { toast } from 'sonner';
 import { API_BASE_URL, getAccessToken } from '@/lib/api/core';
 import { announcementsAPI, schedulerAPI, zonesAPI, musicAPI } from '@/lib/api';
 import { ScheduleFormDialog } from './scheduler/ScheduleFormDialog';
+import { DeleteScheduleDialog } from './scheduler/DeleteScheduleDialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/app/components/ui/dropdown-menu';
 import type { Schedule } from '@/lib/types';
 import type { Zone } from '@/lib/api';
 import { usePlayback } from '@/lib/playback';
@@ -32,6 +34,10 @@ export function SimpleScheduler() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [folders, setFolders] = useState<any[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<SimpleSchedule | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteScheduleId, setDeleteScheduleId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const executedRef = useRef<Set<string>>(new Set());
@@ -338,7 +344,12 @@ export function SimpleScheduler() {
     setIsLoading(true);
     try {
       const token = getAccessToken();
-      const response = await fetch(`${API_BASE_URL}/schedules/simple/active/`, {
+      // Add zone filter if activeTarget is set
+      const url = activeTarget 
+        ? `${API_BASE_URL}/schedules/simple/active/?zone_id=${activeTarget}`
+        : `${API_BASE_URL}/schedules/simple/active/`;
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -375,12 +386,12 @@ export function SimpleScheduler() {
     } finally {
       setIsLoading(false);
     }
-  }, [user, executeSchedules]);
+  }, [user, executeSchedules, activeTarget]);
 
-  // Load on mount
+  // Load on mount and when zone changes
   useEffect(() => {
     loadSchedules();
-  }, [user, loadSchedules]);
+  }, [user, activeTarget, loadSchedules]);
 
   // Poll for schedule execution every 10 seconds
   useEffect(() => {
@@ -478,6 +489,52 @@ export function SimpleScheduler() {
     }
   };
 
+  const handleEditSchedule = (schedule: SimpleSchedule) => {
+    setEditingSchedule(schedule);
+    setIsEditOpen(true);
+  };
+
+  const handleUpdateSchedule = async (scheduleData: any) => {
+    if (!editingSchedule) return;
+    
+    setIsSaving(true);
+    try {
+      await schedulerAPI.updateSchedule(editingSchedule.id, scheduleData);
+      toast.success(`Updated schedule: ${scheduleData.name}`);
+      setIsEditOpen(false);
+      setEditingSchedule(null);
+      await loadSchedules();
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.data?.message || error?.data?.error || 'Failed to update schedule';
+      toast.error(String(errorMessage));
+      console.error('Update schedule error:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteClick = (scheduleId: string) => {
+    setDeleteScheduleId(scheduleId);
+    setIsDeleting(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteScheduleId) return;
+    
+    const schedule = schedules.find(s => s.id === deleteScheduleId);
+    
+    try {
+      await schedulerAPI.deleteSchedule(deleteScheduleId);
+      setSchedules(schedules.filter(s => s.id !== deleteScheduleId));
+      setIsDeleting(false);
+      setDeleteScheduleId(null);
+      toast.success(`Deleted ${schedule?.name}`);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete schedule');
+      console.error('Delete schedule error:', error);
+    }
+  };
+
   const clientId = user?.role === 'admin' ? null : user?.clientId;
   
   // Filter zones - if active zone is selected, only show that zone
@@ -521,6 +578,14 @@ export function SimpleScheduler() {
   
   const availableZones = filteredZones;
 
+  // Filter schedules by active zone
+  const filteredSchedules = activeTarget
+    ? schedules.filter((schedule) => {
+        const zoneIds = schedule.zoneIds || [];
+        return zoneIds.includes(String(activeTarget));
+      })
+    : schedules;
+
   return (
     <div className="space-y-6 pb-32 md:pb-8">
       
@@ -528,6 +593,11 @@ export function SimpleScheduler() {
         <div>
           <h2 className="text-2xl font-bold text-white mb-1">Scheduler</h2>
           <p className="text-gray-400">Create and manage automated announcement schedules</p>
+          {activeTarget && (
+            <p className="text-sm text-[#1db954] mt-1">
+              Filtered by active zone
+            </p>
+          )}
           <p className="text-sm text-[#1db954] mt-1">
             Schedules run automatically via Celery Beat (cron job) on AWS
           </p>
@@ -572,8 +642,57 @@ export function SimpleScheduler() {
         </div>
       </div>
 
+      {/* Edit Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <ScheduleFormDialog
+          open={isEditOpen}
+          onOpenChange={(open) => {
+            setIsEditOpen(open);
+            if (!open) setEditingSchedule(null);
+          }}
+          editingSchedule={editingSchedule ? {
+            id: editingSchedule.id,
+            name: editingSchedule.name,
+            schedule: {
+              type: 'interval' as const,
+              intervalMinutes: editingSchedule.intervalMinutes,
+              announcementIds: editingSchedule.announcementIds,
+              avoidRepeat: false,
+            },
+            zoneIds: editingSchedule.zoneIds,
+            zones: zones.filter(z => editingSchedule.zoneIds.includes(z.id)),
+            enabled: true,
+            clientId: user?.clientId || '',
+            deviceIds: [],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            createdBy: user?.name || '',
+          } : null}
+          availableAudio={availableAnnouncements}
+          availableZones={availableZones}
+          activeTarget={activeTarget}
+          onSave={handleUpdateSchedule}
+          isLoading={isSaving}
+        />
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      {deleteScheduleId && (
+        <DeleteScheduleDialog
+          open={isDeleting}
+          onOpenChange={(open) => {
+            setIsDeleting(open);
+            if (!open) {
+              setDeleteScheduleId(null);
+            }
+          }}
+          scheduleName={schedules.find(s => s.id === deleteScheduleId)?.name || 'this schedule'}
+          onConfirm={handleDeleteConfirm}
+        />
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {schedules.map((schedule) => {
+        {filteredSchedules.map((schedule) => {
           const announcement = announcements.find((a: any) => 
             schedule.announcementIds.includes(a.id)
           );
@@ -588,7 +707,37 @@ export function SimpleScheduler() {
           return (
             <Card key={schedule.id}>
               <CardHeader>
-                <CardTitle>{schedule.name}</CardTitle>
+                <div className="flex items-start justify-between">
+                  <CardTitle className="flex-1">{schedule.name}</CardTitle>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        className="h-9 w-9 p-0 border-white/20 hover:bg-white/10 hover:border-white/30"
+                        aria-label="More options"
+                      >
+                        <MoreVertical className="h-5 w-5 text-gray-300 hover:text-white" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="bg-[#1a1a1a] border-white/10 min-w-[150px]">
+                      <DropdownMenuItem 
+                        onClick={() => handleEditSchedule(schedule)}
+                        className="text-white hover:bg-white/10 cursor-pointer focus:bg-white/10"
+                      >
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit Schedule
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => handleDeleteClick(schedule.id)} 
+                        className="text-red-400 hover:bg-red-600/20 hover:text-red-300 cursor-pointer focus:bg-red-600/20 focus:text-red-300"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete Schedule
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
@@ -631,11 +780,15 @@ export function SimpleScheduler() {
         })}
       </div>
 
-      {schedules.length === 0 && (
+      {filteredSchedules.length === 0 && (
         <Card>
           <CardContent className="text-center py-12">
-            <p className="text-slate-500">No active schedules</p>
-            <p className="text-sm text-slate-400 mt-2">Create a schedule in the Scheduler page</p>
+            <p className="text-slate-500">
+              {activeTarget ? 'No schedules for selected zone' : 'No active schedules'}
+            </p>
+            <p className="text-sm text-slate-400 mt-2">
+              {activeTarget ? 'Create a schedule for this zone' : 'Create a schedule in the Scheduler page'}
+            </p>
           </CardContent>
         </Card>
       )}

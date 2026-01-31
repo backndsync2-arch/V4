@@ -16,6 +16,7 @@ from .serializers import (
 )
 from apps.common.permissions import IsSameClient
 from apps.common.exceptions import NotFoundError, ValidationError
+from apps.common.utils import log_audit_event, get_effective_client
 from apps.playback.engine import PlaybackEngine
 import logging
 
@@ -39,10 +40,20 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter announcements by client."""
         user = self.request.user
-        if not user or not user.is_authenticated or not hasattr(user, 'client'):
+        if not user or not user.is_authenticated:
             return Announcement.objects.none()
         
-        queryset = Announcement.objects.filter(client=user.client)
+        # Use effective client (handles impersonation)
+        effective_client = get_effective_client(self.request)
+        
+        # Admin not impersonating: show all announcements
+        if user.role == 'admin' and not effective_client:
+            queryset = Announcement.objects.all()
+        # Admin impersonating or other users: filter by effective client
+        elif effective_client:
+            queryset = Announcement.objects.filter(client=effective_client)
+        else:
+            return Announcement.objects.none()
         
         # Filter by folder if provided
         folder_id = self.request.query_params.get('folder')
@@ -109,8 +120,13 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         """Create announcement (client set in serializer)."""
+        effective_client = get_effective_client(self.request)
+        if not effective_client:
+            from apps.common.exceptions import ValidationError
+            raise ValidationError("No client associated with this user")
+        
         serializer.save(
-            client=self.request.user.client,
+            client=effective_client,
             created_by=self.request.user
         )
 
@@ -119,13 +135,72 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
         Create an uploaded announcement and return the full read serializer payload
         (including id + file_url), not the write serializer fields.
         """
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        announcement = serializer.save(client=request.user.client, created_by=request.user)
+        # Check if this is a file upload (has 'file' in request.FILES)
+        if 'file' in request.FILES:
+            from .serializers import AnnouncementUploadSerializer
+            serializer = AnnouncementUploadSerializer(data=request.data, context={'request': request})
+            serializer.is_valid(raise_exception=True)
+            announcement = serializer.save()
+            
+            # Log upload
+            from apps.common.utils import log_audit_event
+            log_audit_event(
+                request=request,
+                action='upload',
+                resource_type='announcement',
+                resource_id=str(announcement.id),
+                details={
+                    'title': announcement.title,
+                    'file_name': announcement.file.name if announcement.file else None,
+                    'file_size': announcement.file_size,
+                    'folder_id': str(announcement.folder.id) if announcement.folder else None,
+                },
+                user=request.user,
+                status_code=status.HTTP_201_CREATED
+            )
+        else:
+            # Regular create (TTS or other)
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            effective_client = get_effective_client(request)
+            if not effective_client:
+                from apps.common.exceptions import ValidationError
+                raise ValidationError("No client associated with this user")
+            
+            announcement = serializer.save(client=effective_client, created_by=request.user)
 
         read_serializer = AnnouncementSerializer(announcement, context={'request': request})
         headers = self.get_success_headers(read_serializer.data)
         return Response(read_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+    
+    @action(detail=False, methods=['post'])
+    def upload(self, request):
+        """Upload announcement audio file."""
+        from .serializers import AnnouncementUploadSerializer
+        from apps.common.utils import log_audit_event
+        
+        serializer = AnnouncementUploadSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        announcement = serializer.save()
+        
+        # Log upload
+        log_audit_event(
+            request=request,
+            action='upload',
+            resource_type='announcement',
+            resource_id=str(announcement.id),
+            details={
+                'title': announcement.title,
+                'file_name': announcement.file.name if announcement.file else None,
+                'file_size': announcement.file_size,
+                'folder_id': str(announcement.folder.id) if announcement.folder else None,
+            },
+            user=request.user,
+            status_code=status.HTTP_201_CREATED
+        )
+        
+        read_serializer = AnnouncementSerializer(announcement, context={'request': request})
+        return Response(read_serializer.data, status=status.HTTP_201_CREATED)
     
     @action(detail=False, methods=['post'])
     def tts(self, request):
@@ -147,7 +222,7 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
             is_tts=True,
             enabled=True,
             folder_id=serializer.validated_data.get('folder_id'),
-            client=request.user.client,
+            client=get_effective_client(request),
             created_by=request.user,
             file_size=0,  # Will be set after TTS generation
             duration=0,  # Will be set after TTS generation
@@ -637,19 +712,66 @@ Make each template unique and practical for real-world use in a {context}.
     
     @action(detail=False, methods=['get'])
     def tts_voices(self, request):
-        """Get available TTS voices (OpenAI voices since we have the API key)."""
+        """Get available TTS voices with professional images and balanced gender representation."""
         import os
-        # Use OpenAI voices since we have the API key
-        # Prioritize UK English voices for announcements
-        # Note: OpenAI TTS voices don't have explicit accent control, but 'fable' has a British-sounding accent
-        # We prioritize fable as the default UK English voice
+        # Professional business voices with real images
+        # Balanced: 3 male, 3 female voices (alternating for better UX)
+        # Images are matched to voice genders: male voices = male images, female voices = female images
         voices = [
-            {'id': 'fable', 'name': 'Fable (Male, UK English)', 'gender': 'male', 'accent': 'UK'},
-            {'id': 'alloy', 'name': 'Alloy (Neutral, UK English)', 'gender': 'neutral', 'accent': 'UK'},
-            {'id': 'echo', 'name': 'Echo (Male, UK English)', 'gender': 'male', 'accent': 'UK'},
-            {'id': 'onyx', 'name': 'Onyx (Male, UK English)', 'gender': 'male', 'accent': 'UK'},
-            {'id': 'nova', 'name': 'Nova (Female, UK English)', 'gender': 'female', 'accent': 'UK'},
-            {'id': 'shimmer', 'name': 'Shimmer (Female, UK English)', 'gender': 'female', 'accent': 'UK'},
+            # Male Voice 1 - Echo (Professional Male)
+            {
+                'id': 'echo',
+                'name': 'Echo',
+                'gender': 'male',
+                'accent': 'US',
+                'description': 'Professional male voice, clear and authoritative',
+                'image_url': 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop&crop=face'
+            },
+            # Female Voice 1 - Nova (Professional Female)
+            {
+                'id': 'nova',
+                'name': 'Nova',
+                'gender': 'female',
+                'accent': 'US',
+                'description': 'Professional female voice, clear and articulate',
+                'image_url': 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&h=400&fit=crop&crop=face'
+            },
+            # Male Voice 2 - Fable (British Male)
+            {
+                'id': 'fable',
+                'name': 'Fable',
+                'gender': 'male',
+                'accent': 'UK',
+                'description': 'British male voice, warm and engaging',
+                'image_url': 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop&crop=face'
+            },
+            # Female Voice 2 - Shimmer (Friendly Female)
+            {
+                'id': 'shimmer',
+                'name': 'Shimmer',
+                'gender': 'female',
+                'accent': 'US',
+                'description': 'Warm female voice, friendly and approachable',
+                'image_url': 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&h=400&fit=crop&crop=face'
+            },
+            # Male Voice 3 - Onyx (Deep Male)
+            {
+                'id': 'onyx',
+                'name': 'Onyx',
+                'gender': 'male',
+                'accent': 'US',
+                'description': 'Deep male voice, confident and professional',
+                'image_url': 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=400&fit=crop&crop=face'
+            },
+            # Female Voice 3 - Alloy (Versatile Female)
+            {
+                'id': 'alloy',
+                'name': 'Alloy',
+                'gender': 'female',
+                'accent': 'US',
+                'description': 'Neutral female voice, versatile and professional',
+                'image_url': 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&h=400&fit=crop&crop=face'
+            },
         ]
         return Response({'voices': voices}, status=status.HTTP_200_OK)
     
@@ -657,37 +779,81 @@ Make each template unique and practical for real-world use in a {context}.
     def preview_voice(self, request):
         """Preview a TTS voice with sample text."""
         import os
+        import uuid
         
         text = request.data.get('text', 'Hello, this is a voice preview. How does this sound?')
-        voice = request.data.get('voice', 'alloy')
+        voice_id = request.data.get('voice', 'alloy')
         
         try:
-            from .tasks import _generate_openai_tts
+            from .tasks import _generate_openai_tts, _generate_google_tts
             from django.core.files.base import ContentFile
             from django.core.files.storage import default_storage
-            import tempfile
-            import uuid
             
-            # Generate TTS audio
-            audio_content, audio_format = _generate_openai_tts(text, voice)
+            # Map voice IDs to provider-specific voice names
+            # OpenAI voices: alloy, echo, fable, onyx, nova, shimmer
+            # Google voices: en-GB-Neural2-A (Fable), en-US-Neural2-C (Alloy), etc.
+            voice_mapping = {
+                'alloy': ('alloy', 'openai'),
+                'echo': ('echo', 'openai'),
+                'fable': ('fable', 'openai'),
+                'onyx': ('onyx', 'openai'),
+                'nova': ('nova', 'openai'),
+                'shimmer': ('shimmer', 'openai'),
+            }
+            
+            # Ensure voice ID is lowercase for mapping
+            voice_id_lower = voice_id.lower()
+            
+            # Get provider and voice name
+            provider_voice, provider = voice_mapping.get(voice_id_lower, ('alloy', 'openai'))
+            
+            audio_content = None
+            audio_format = 'mp3'
+            
+            # Try OpenAI first (most common)
+            if provider == 'openai':
+                try:
+                    audio_content, audio_format = _generate_openai_tts(text, provider_voice)
+                    logger.info(f"Successfully generated preview using OpenAI voice: {provider_voice}")
+                except Exception as openai_error:
+                    logger.warning(f"OpenAI TTS preview failed: {openai_error}, trying fallback...")
+                    # Fallback to Google if OpenAI fails
+                    try:
+                        # Map to Google voice (use a default UK voice for fable, US for others)
+                        google_voice = 'en-GB-Neural2-A' if provider_voice == 'fable' else 'en-US-Neural2-C'
+                        audio_content, audio_format = _generate_google_tts(text, google_voice)
+                        logger.info(f"Successfully generated preview using Google TTS fallback")
+                    except Exception as google_error:
+                        logger.error(f"Google TTS fallback also failed: {google_error}")
+                        raise Exception(f"Both OpenAI and Google TTS failed. OpenAI error: {str(openai_error)}")
+            
+            if not audio_content:
+                raise Exception("Failed to generate audio content")
             
             # Save to temporary file
             temp_filename = f"preview_{uuid.uuid4()}.{audio_format}"
             temp_path = default_storage.save(f'temp/{temp_filename}', ContentFile(audio_content))
             
             # Get URL for the file
-            request_obj = request
-            preview_url = request_obj.build_absolute_uri(default_storage.url(temp_path))
+            preview_url = request.build_absolute_uri(default_storage.url(temp_path))
             
             return Response({
                 'preview_url': preview_url,
-                'voice': voice,
+                'voice': voice_id,
                 'text': text
             }, status=status.HTTP_200_OK)
+            
         except Exception as e:
-            logger.error(f"Voice preview error: {e}")
+            logger.error(f"Voice preview error: {e}", exc_info=True)
+            error_message = str(e)
+            # Provide user-friendly error message
+            if 'OPENAI_API_KEY' in error_message or 'API key' in error_message.lower():
+                error_message = "OpenAI API key not configured. Please configure it in Admin → AI Configuration."
+            elif 'Failed to generate' in error_message:
+                error_message = "Failed to generate voice preview. Please check your TTS provider configuration."
+            
             return Response(
-                {'error': f'Failed to generate voice preview: {str(e)}'},
+                {'error': error_message},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
@@ -1006,7 +1172,12 @@ Make each template unique and practical for real-world use in a {context}.
                     hardware_ids.append(str(device_id))
             
             # Build query to find devices by either UUID id or hardware device_id
-            device_query = Device.objects.filter(client=request.user.client)
+            effective_client = get_effective_client(request)
+            if not effective_client:
+                from apps.common.exceptions import ValidationError
+                raise ValidationError("No client associated with this user")
+            
+            device_query = Device.objects.filter(client=effective_client)
             
             if valid_uuids or hardware_ids:
                 from django.db.models import Q
@@ -1044,6 +1215,22 @@ Make each template unique and practical for real-world use in a {context}.
                 PlaybackEngine.handle_announcement(zone_id, str(announcement.id))
             except Exception as e:
                 logger.error(f"Failed to play announcement on zone {zone_id}: {e}")
+        
+        # Log instant play action
+        log_audit_event(
+            request=request,
+            action='play_instant',
+            resource_type='announcement',
+            resource_id=str(announcement.id),
+            details={
+                'title': announcement.title,
+                'zone_ids': zone_ids,
+                'device_ids': device_ids if 'device_ids' in request.data else [],
+                'zone_count': len(zone_ids),
+            },
+            user=request.user,
+            status_code=status.HTTP_200_OK
+        )
         
         return Response({
             'message': f'Playing announcement on {len(zone_ids)} zone(s)',

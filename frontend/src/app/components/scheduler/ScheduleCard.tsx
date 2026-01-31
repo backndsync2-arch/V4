@@ -50,23 +50,54 @@ export function ScheduleCard({
                 : `${schedule.schedule.dateTimeSlots?.length || 0} date/time slot(s)`}
             </CardDescription>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm">
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onEdit(schedule)}>
-                <Edit className="h-4 w-4 mr-2" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onDelete(schedule.id)} className="text-red-600">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => onEdit(schedule)}
+              className="gap-2"
+            >
+              <Edit className="h-4 w-4" />
+              Edit
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => onDelete(schedule.id)}
+              className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  className="h-9 w-9 p-0 border-white/20 hover:bg-white/10 hover:border-white/30"
+                  aria-label="More options"
+                >
+                  <MoreVertical className="h-5 w-5 text-gray-300 hover:text-white" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-[#1a1a1a] border-white/10 min-w-[150px]">
+                <DropdownMenuItem 
+                  onClick={() => onEdit(schedule)}
+                  className="text-white hover:bg-white/10 cursor-pointer focus:bg-white/10"
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit Schedule
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => onDelete(schedule.id)} 
+                  className="text-red-400 hover:bg-red-600/20 hover:text-red-300 cursor-pointer focus:bg-red-600/20 focus:text-red-300"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Schedule
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </CardHeader>
       <CardContent>

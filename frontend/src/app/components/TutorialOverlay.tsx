@@ -342,7 +342,8 @@ export function TutorialOverlay({ onComplete }: TutorialOverlayProps) {
     if (currentStep < totalSteps - 1) {
       setCurrentStep(currentStep + 1);
     } else {
-      setShowWelcome(false);
+      // On last step, show completion screen
+      setCurrentStep(totalSteps);
     }
   };
 
@@ -370,17 +371,17 @@ export function TutorialOverlay({ onComplete }: TutorialOverlayProps) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="w-[92vw] max-w-xl lg:max-w-2xl max-h-[85vh] overflow-y-auto p-4 sm:p-6">
+      <DialogContent className="w-[92vw] max-w-xl lg:max-w-2xl max-h-[85vh] overflow-y-auto p-4 sm:p-6 bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] border-white/10">
         {showWelcome ? (
           <>
             <DialogHeader>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-4">
-                <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg shrink-0">
+                <div className="p-3 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-xl shadow-lg shadow-[#1db954]/30 shrink-0">
                   <Sparkles className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
                 </div>
                 <div>
-                  <DialogTitle className="text-lg sm:text-xl">{tutorial.welcome.title}</DialogTitle>
-                  <DialogDescription className="mt-1 text-sm">
+                  <DialogTitle className="text-lg sm:text-xl text-white">{tutorial.welcome.title}</DialogTitle>
+                  <DialogDescription className="mt-1 text-sm text-gray-400">
                     {tutorial.welcome.description}
                   </DialogDescription>
                 </div>
@@ -390,39 +391,39 @@ export function TutorialOverlay({ onComplete }: TutorialOverlayProps) {
             <div className="space-y-6">
               {/* Features */}
               <div>
-                <h3 className="font-semibold text-base sm:text-lg mb-3">What You'll Learn:</h3>
+                <h3 className="font-semibold text-base sm:text-lg mb-3 text-white">What You'll Learn:</h3>
                 <div className="grid gap-3">
                   {tutorial.welcome.features.map((feature, idx) => (
-                    <div key={idx} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
-                      <CheckCircle2 className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
-                      <span className="text-sm text-slate-700 leading-relaxed">{feature}</span>
+                    <div key={idx} className="flex items-start gap-3 p-3 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors">
+                      <CheckCircle2 className="h-5 w-5 text-[#1db954] mt-0.5 shrink-0" />
+                      <span className="text-sm text-gray-300 leading-relaxed">{feature}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
               {/* Tutorial stats */}
-              <div className="p-4 bg-slate-100 rounded-lg grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="p-4 bg-white/5 border border-white/10 rounded-lg grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Tutorial Length</p>
-                  <p className="text-xs text-slate-500 mt-1">{totalSteps} interactive steps</p>
+                  <p className="text-sm font-medium text-gray-300">Tutorial Length</p>
+                  <p className="text-xs text-gray-400 mt-1">{totalSteps} interactive steps</p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Time Required</p>
-                  <p className="text-xs text-slate-500 mt-1">~{totalSteps * 2} minutes</p>
+                  <p className="text-sm font-medium text-gray-300">Time Required</p>
+                  <p className="text-xs text-gray-400 mt-1">~{totalSteps * 2} minutes</p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Difficulty</p>
-                  <p className="text-xs text-slate-500 mt-1">Beginner-friendly</p>
+                  <p className="text-sm font-medium text-gray-300">Difficulty</p>
+                  <p className="text-xs text-gray-400 mt-1">Beginner-friendly</p>
                 </div>
               </div>
             </div>
 
             <DialogFooter className="flex flex-col-reverse sm:flex-row justify-between gap-2 sm:gap-0">
-              <Button variant="ghost" onClick={handleSkip} className="w-full sm:w-auto text-gray-400 hover:text-white">
+              <Button variant="ghost" onClick={handleSkip} className="w-full sm:w-auto text-gray-400 hover:text-white hover:bg-white/10">
                 Skip Tutorial
               </Button>
-              <Button onClick={() => setShowWelcome(false)} className="w-full sm:w-auto bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white">
+              <Button onClick={() => setShowWelcome(false)} className="w-full sm:w-auto bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white shadow-lg shadow-[#1db954]/30">
                 Start Tutorial
                 <ChevronRight className="h-4 w-4 ml-2" />
               </Button>
@@ -433,27 +434,27 @@ export function TutorialOverlay({ onComplete }: TutorialOverlayProps) {
             <DialogHeader>
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Badge variant="secondary">
+                  <Badge variant="secondary" className="bg-white/10 text-gray-300 border-white/20">
                     Step {currentStep + 1} of {totalSteps}
                   </Badge>
-                  <Button variant="ghost" size="sm" onClick={handleSkip}>
+                  <Button variant="ghost" size="sm" onClick={handleSkip} className="text-gray-400 hover:text-white hover:bg-white/10">
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
-                <Progress value={progress} className="h-2" />
+                <Progress value={progress} className="h-2 bg-white/10" />
               </div>
 
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 pt-4">
-                <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg shrink-0">
+                <div className="p-3 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-xl shadow-lg shadow-[#1db954]/30 shrink-0">
                   {React.createElement(tutorial.steps[currentStep].icon, {
                     className: "h-5 w-5 sm:h-6 sm:w-6 text-white"
                   })}
                 </div>
                 <div>
-                  <DialogTitle className="text-base sm:text-lg">
+                  <DialogTitle className="text-base sm:text-lg text-white">
                     {tutorial.steps[currentStep].title}
                   </DialogTitle>
-                  <DialogDescription className="mt-1 text-sm">
+                  <DialogDescription className="mt-1 text-sm text-gray-400">
                     {tutorial.steps[currentStep].description}
                   </DialogDescription>
                 </div>
@@ -463,12 +464,12 @@ export function TutorialOverlay({ onComplete }: TutorialOverlayProps) {
             <div className="space-y-4 py-3">
               {/* Details */}
               <div>
-                <h4 className="font-semibold mb-3 text-sm sm:text-base">Key Features:</h4>
+                <h4 className="font-semibold mb-3 text-sm sm:text-base text-white">Key Features:</h4>
                 <div className="space-y-2">
                   {tutorial.steps[currentStep].details.map((detail, idx) => (
                     <div key={idx} className="flex items-start gap-3">
-                      <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
-                      <span className="text-sm text-slate-700 leading-relaxed">{detail}</span>
+                      <CheckCircle2 className="h-5 w-5 text-[#1db954] mt-0.5 shrink-0" />
+                      <span className="text-sm text-gray-300 leading-relaxed">{detail}</span>
                     </div>
                   ))}
                 </div>
@@ -476,15 +477,15 @@ export function TutorialOverlay({ onComplete }: TutorialOverlayProps) {
 
               {/* Tips */}
               {tutorial.steps[currentStep].tips && (
-                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                  <h4 className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
+                <div className="p-4 bg-[#1db954]/10 border border-[#1db954]/30 rounded-lg">
+                  <h4 className="font-semibold text-[#1db954] mb-2 flex items-center gap-2">
                     <Sparkles className="h-4 w-4" />
                     Pro Tips:
                   </h4>
                   <ul className="space-y-2">
                     {tutorial.steps[currentStep].tips.map((tip, idx) => (
-                      <li key={idx} className="text-sm text-amber-900 flex items-start gap-2">
-                        <span className="text-amber-600">•</span>
+                      <li key={idx} className="text-sm text-gray-300 flex items-start gap-2">
+                        <span className="text-[#1db954]">•</span>
                         <span>{tip}</span>
                       </li>
                     ))}
@@ -498,13 +499,16 @@ export function TutorialOverlay({ onComplete }: TutorialOverlayProps) {
                 variant="outline"
                 onClick={handlePrev}
                 disabled={currentStep === 0}
-                className="w-full sm:w-auto"
+                className="w-full sm:w-auto border-white/10 text-gray-300 hover:text-white hover:bg-white/10"
               >
                 <ChevronLeft className="h-4 w-4 mr-2" />
                 Previous
               </Button>
-              <Button onClick={handleNext} className="w-full sm:w-auto">
-                {currentStep === totalSteps - 1 ? 'Finish Steps' : 'Next'}
+              <Button 
+                onClick={currentStep === totalSteps - 1 ? handleComplete : handleNext} 
+                className="w-full sm:w-auto bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white shadow-lg shadow-[#1db954]/30"
+              >
+                {currentStep === totalSteps - 1 ? 'Finish & Close' : 'Next'}
                 <ChevronRight className="h-4 w-4 ml-2" />
               </Button>
             </DialogFooter>
@@ -513,14 +517,14 @@ export function TutorialOverlay({ onComplete }: TutorialOverlayProps) {
           <>
             <DialogHeader>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-4">
-                <div className="p-3 bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg shrink-0">
+                <div className="p-3 bg-gradient-to-br from-[#1db954] to-[#1ed760] rounded-xl shadow-lg shadow-[#1db954]/30 shrink-0">
                   <CheckCircle2 className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
                 </div>
                 <div>
-                  <DialogTitle className="text-xl sm:text-2xl">
+                  <DialogTitle className="text-xl sm:text-2xl text-white">
                     {tutorial.completion.title}
                   </DialogTitle>
-                  <DialogDescription className="mt-1 text-sm sm:text-base">
+                  <DialogDescription className="mt-1 text-sm sm:text-base text-gray-400">
                     {tutorial.completion.message}
                   </DialogDescription>
                 </div>
@@ -529,30 +533,30 @@ export function TutorialOverlay({ onComplete }: TutorialOverlayProps) {
 
             <div className="space-y-6">
               <div>
-                <h3 className="font-semibold text-lg mb-3">Recommended Next Steps:</h3>
+                <h3 className="font-semibold text-lg mb-3 text-white">Recommended Next Steps:</h3>
                 <div className="space-y-2">
                   {tutorial.completion.nextSteps.map((step, idx) => (
-                    <div key={idx} className="flex items-start gap-3 p-3 bg-green-50 rounded-lg">
-                      <div className="flex items-center justify-center w-6 h-6 rounded-full bg-green-600 text-white text-sm font-bold shrink-0">
+                    <div key={idx} className="flex items-start gap-3 p-3 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors">
+                      <div className="flex items-center justify-center w-6 h-6 rounded-full bg-gradient-to-br from-[#1db954] to-[#1ed760] text-white text-sm font-bold shrink-0 shadow-lg shadow-[#1db954]/30">
                         {idx + 1}
                       </div>
-                      <span className="text-sm text-slate-700 mt-0.5">{step}</span>
+                      <span className="text-sm text-gray-300 mt-0.5">{step}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <h4 className="font-semibold text-blue-900 mb-2">Need Help?</h4>
-                <p className="text-sm text-blue-800 mb-3">
+              <div className="p-4 bg-[#1db954]/10 border border-[#1db954]/30 rounded-lg">
+                <h4 className="font-semibold text-[#1db954] mb-2">Need Help?</h4>
+                <p className="text-sm text-gray-300 mb-3">
                   You can restart this tutorial anytime from your Profile settings.
                   Our support team is also here to help!
                 </p>
                 <div className="flex flex-col sm:flex-row gap-2">
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="outline" className="text-xs bg-white/5 border-white/20 text-gray-300">
                     support@sync2gear.com
                   </Badge>
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="outline" className="text-xs bg-white/5 border-white/20 text-gray-300">
                     Live Chat Available
                   </Badge>
                 </div>
@@ -560,7 +564,7 @@ export function TutorialOverlay({ onComplete }: TutorialOverlayProps) {
             </div>
 
             <DialogFooter>
-              <Button onClick={handleComplete} className="w-full">
+              <Button onClick={handleComplete} className="w-full bg-gradient-to-r from-[#1db954] to-[#1ed760] hover:from-[#1ed760] hover:to-[#1db954] text-white shadow-lg shadow-[#1db954]/30">
                 <CheckCircle2 className="h-4 w-4 mr-2" />
                 Complete Tutorial
               </Button>

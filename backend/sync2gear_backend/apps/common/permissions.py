@@ -6,6 +6,7 @@ Copyright (c) 2025 sync2gear Ltd. All Rights Reserved.
 
 from rest_framework import permissions
 from apps.common.exceptions import PermissionDeniedError
+from apps.common.utils import get_effective_client
 
 
 class IsClientUser(permissions.BasePermission):
@@ -66,6 +67,7 @@ class IsSameClient(permissions.BasePermission):
     Permission class that restricts access to same client data.
     
     Assumes the object has a 'client' attribute.
+    Handles impersonation: admin impersonating a client can access that client's data.
     """
     def has_permission(self, request, view):
         """Check if user is authenticated before allowing access."""
@@ -75,12 +77,20 @@ class IsSameClient(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         
-        # Admin can access all clients
+        # Admin can access all clients (or impersonated client)
         if request.user.role == 'admin':
+            # If impersonating, only allow access to impersonated client's data
+            effective_client = get_effective_client(request)
+            if effective_client and hasattr(obj, 'client'):
+                return obj.client == effective_client
+            # If not impersonating, admin can access all
             return True
         
         # Others can only access their own client's data
         if hasattr(obj, 'client'):
+            effective_client = get_effective_client(request)
+            if effective_client:
+                return obj.client == effective_client
             return obj.client == request.user.client
         
         return False
@@ -125,5 +135,41 @@ class IsFloorUserOrAbove(permissions.BasePermission):
         # Client users can access their client's data
         if hasattr(obj, 'client'):
             return obj.client == request.user.client
+        
+        return False
+
+
+class IsUserManager(permissions.BasePermission):
+    """
+    Permission class for user management.
+    
+    Allows:
+    - admin: Can manage all users
+    - staff: Can manage all users (for support)
+    - client: Can manage users from their own client only
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Admin, staff, and client roles can manage users
+        return request.user.role in ['admin', 'staff', 'client']
+    
+    def has_object_permission(self, request, view, obj):
+        """Check if user can manage this specific user object."""
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Admin and staff can manage all users
+        if request.user.role in ['admin', 'staff']:
+            return True
+        
+        # Client users can only manage users from their own client
+        if request.user.role == 'client':
+            # Ensure the user being managed belongs to the same client
+            if hasattr(obj, 'client'):
+                return obj.client == request.user.client
+            # If object doesn't have client, deny access
+            return False
         
         return False

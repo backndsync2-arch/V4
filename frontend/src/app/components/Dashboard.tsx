@@ -1,21 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
-import { Music, Radio, Activity, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Music, Radio, Calendar } from 'lucide-react';
 import { Badge } from '@/app/components/ui/badge';
 import { formatRelativeTime } from '@/lib/utils';
 import { DashboardPlayback } from '@/app/components/DashboardPlayback';
-import { announcementsAPI, musicAPI, zonesAPI, wsClient } from '@/lib/api';
+import { announcementsAPI, musicAPI } from '@/lib/api';
 import { API_BASE_URL, getAccessToken } from '@/lib/api/core';
 import { usePlayback } from '@/lib/playback';
 import { toast } from 'sonner';
-import { Calendar } from 'lucide-react';
 
 export function Dashboard() {
   const { user } = useAuth();
   const { activeTarget } = usePlayback();
-  const [devices, setDevices] = useState<any[]>([]);
-  const [recentEvents, setRecentEvents] = useState<any[]>([]);
   const [musicFiles, setMusicFiles] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [announcementFolders, setAnnouncementFolders] = useState<any[]>([]);
@@ -59,20 +56,10 @@ export function Dashboard() {
   const clientId = user?.role === 'admin' ? null : user?.clientId;
   
   // Filter by client
-  let clientFilteredDevices = clientId ? devices.filter(d => d.clientId === clientId) : devices;
   let clientFilteredMusic = clientId ? musicFiles.filter(m => m.clientId === clientId) : musicFiles;
   let clientFilteredAnnouncements = clientId ? announcements.filter(a => a.clientId === clientId) : announcements;
   
   // Filter by active zone if one is selected
-  const filteredDevices = activeTarget 
-    ? clientFilteredDevices.filter((d: any) => {
-        return d.zoneId === activeTarget || 
-               d.zone === activeTarget || 
-               (d.zone && typeof d.zone === 'object' && d.zone.id === activeTarget) ||
-               (d.zone && typeof d.zone === 'object' && d.zone.name === activeTarget);
-      })
-    : clientFilteredDevices;
-  
   const filteredMusic = activeTarget
     ? clientFilteredMusic.filter((m: any) => m.zoneId === activeTarget || m.zone === activeTarget)
     : clientFilteredMusic;
@@ -92,12 +79,25 @@ export function Dashboard() {
       })
     : clientFilteredAnnouncements;
 
+  // Filter schedules by active zone
+  const filteredSchedules = activeTarget
+    ? schedules.filter((schedule: any) => {
+        const zoneIds = schedule.zoneIds || [];
+        return zoneIds.includes(String(activeTarget));
+      })
+    : schedules;
+
   // Load schedules
   const loadSchedules = async () => {
     if (!user) return;
     try {
       const token = getAccessToken();
-      const response = await fetch(`${API_BASE_URL}/schedules/simple/active/`, {
+      // Add zone filter if activeTarget is set
+      const url = activeTarget 
+        ? `${API_BASE_URL}/schedules/simple/active/?zone_id=${activeTarget}`
+        : `${API_BASE_URL}/schedules/simple/active/`;
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -163,16 +163,14 @@ export function Dashboard() {
     let mounted = true;
     const load = async (silent = false) => {
       try {
-        const [music, anns, devs, folders] = await Promise.all([
+        const [music, anns, folders] = await Promise.all([
           musicAPI.getMusicFiles(),
           announcementsAPI.getAnnouncements(),
-          zonesAPI.getDevices(),
           musicAPI.getFolders('announcements', activeTarget || undefined),
         ]);
         if (!mounted) return;
         setMusicFiles(music);
         setAnnouncements(anns);
-        setDevices(devs);
         setAnnouncementFolders(folders);
       } catch (e: any) {
         console.error('Dashboard load failed:', e);
@@ -193,29 +191,6 @@ export function Dashboard() {
     };
   }, [activeTarget, user]);
 
-  // WebSocket for device events only
-  useEffect(() => {
-    const onDeviceEvent = (data: any) => {
-      setRecentEvents((prev) => {
-        const next = [{ ...data, _ts: new Date() }, ...prev];
-        return next.slice(0, 10);
-      });
-    };
-
-    try {
-      wsClient.connect();
-      wsClient.on('device_status_change', onDeviceEvent);
-      wsClient.on('device_heartbeat', onDeviceEvent);
-    } catch (error) {
-      // WebSocket not available - that's OK
-    }
-
-    return () => {
-      wsClient.off('device_status_change', onDeviceEvent);
-      wsClient.off('device_heartbeat', onDeviceEvent);
-    };
-  }, []);
-
   const stats = [
     {
       title: 'Music Tracks',
@@ -232,11 +207,11 @@ export function Dashboard() {
       bgColor: 'bg-green-100',
     },
     {
-      title: 'Online Devices',
-      value: `${filteredDevices.filter((d: any) => d.status === 'online').length}/${filteredDevices.length}`,
-      icon: Activity,
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-100',
+      title: 'Active Schedules',
+      value: filteredSchedules.length,
+      icon: Calendar,
+      color: 'text-purple-600',
+      bgColor: 'bg-purple-100',
     },
   ];
 
@@ -265,18 +240,20 @@ export function Dashboard() {
       <DashboardPlayback />
 
       {/* Active Schedules */}
-      {schedules.length > 0 && (
+      {filteredSchedules.length > 0 && (
         <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
           <CardHeader className="pb-4">
             <div className="flex items-center gap-2">
               <Calendar className="h-5 w-5 text-[#1db954]" />
               <CardTitle className="text-xl font-bold text-white">Active Schedules</CardTitle>
             </div>
-            <CardDescription className="text-gray-400">Upcoming scheduled announcements</CardDescription>
+            <CardDescription className="text-gray-400">
+              {activeTarget ? 'Schedules for selected zone' : 'Upcoming scheduled announcements'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {schedules.map((schedule) => {
+              {filteredSchedules.map((schedule) => {
                 const scheduledAnnouncements = (schedule.announcementIds || [])
                   .map((annId: string) => announcements.find(a => a.id === annId))
                   .filter(Boolean);
@@ -351,46 +328,6 @@ export function Dashboard() {
         </Card>
       )}
 
-      {/* Recent Device Events */}
-      <Card className="border-white/10 shadow-lg bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] backdrop-blur-sm">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-xl font-bold text-white">Recent Activity</CardTitle>
-          <CardDescription className="text-gray-400">Live device status updates</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {recentEvents.length === 0 ? (
-              <p className="text-gray-400 text-sm text-center py-8">No activity yet.</p>
-            ) : (
-              recentEvents.map((event: any, idx: number) => (
-                <div key={event.id ?? `${event.type}-${idx}`} className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200">
-                  <div className="flex items-center gap-3">
-                    {event.type === 'device_status_change' ? (
-                      event.is_online ? <CheckCircle2 className="h-5 w-5 text-[#1db954]" /> : <XCircle className="h-5 w-5 text-gray-500" />
-                    ) : (
-                      <Clock className="h-5 w-5 text-[#1db954]" />
-                    )}
-                    <div>
-                      <p className="font-semibold text-white">
-                        {event.type === 'device_status_change'
-                          ? `Device ${event.is_online ? 'online' : 'offline'}`
-                          : 'Device heartbeat'}
-                      </p>
-                      <p className="text-sm text-gray-400">{event.device_name || event.device_id || event.deviceId || '—'}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <Badge variant="secondary" className="shadow-sm bg-white/10 text-gray-300 border-white/20">{event.type}</Badge>
-                    <p className="text-xs text-gray-400 mt-1.5">
-                      {formatRelativeTime(event._ts ?? new Date())}
-                    </p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

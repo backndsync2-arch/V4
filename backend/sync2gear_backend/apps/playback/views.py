@@ -13,6 +13,7 @@ from .serializers import PlaybackStateSerializer, PlayEventSerializer
 from .engine import PlaybackEngine
 from apps.common.permissions import IsSameClient
 from apps.common.exceptions import ValidationError, NotFoundError
+from apps.common.utils import log_audit_event, get_effective_client
 from apps.zones.models import Zone
 import logging
 
@@ -29,9 +30,21 @@ class PlaybackStateViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         """Filter playback states by client."""
         user = self.request.user
-        return PlaybackState.objects.filter(
-            zone__client=user.client
-        ).select_related('zone', 'current_track', 'current_announcement')
+        if not user or not user.is_authenticated:
+            return PlaybackState.objects.none()
+        
+        effective_client = get_effective_client(self.request)
+        
+        # Admin not impersonating: show all playback states
+        if user.role == 'admin' and not effective_client:
+            return PlaybackState.objects.all().select_related('zone', 'current_track', 'current_announcement')
+        # Admin impersonating or other users: filter by effective client
+        elif effective_client:
+            return PlaybackState.objects.filter(
+                zone__client=effective_client
+            ).select_related('zone', 'current_track', 'current_announcement')
+        else:
+            return PlaybackState.objects.none()
     
     @action(detail=False, methods=['get'])
     def by_zone(self, request):
@@ -41,8 +54,12 @@ class PlaybackStateViewSet(viewsets.ReadOnlyModelViewSet):
         if not zone_id:
             raise ValidationError("zone_id is required")
         
+        effective_client = get_effective_client(request)
+        if not effective_client:
+            raise ValidationError("No client associated with this user")
+        
         try:
-            zone = Zone.objects.get(id=zone_id, client=request.user.client)
+            zone = Zone.objects.get(id=zone_id, client=effective_client)
         except Zone.DoesNotExist:
             raise NotFoundError("Zone", zone_id)
         
@@ -75,9 +92,13 @@ class PlaybackControlViewSet(viewsets.ViewSet):
         if not playlist_ids and not music_file_ids:
             raise ValidationError("playlist_ids or music_file_ids are required")
         
-        # Handle "all-zones" - start playback on all zones for user's client
+        # Handle "all-zones" - start playback on all zones for effective client
+        effective_client = get_effective_client(request)
+        if not effective_client:
+            raise ValidationError("No client associated with this user")
+        
         if zone_id == 'all-zones':
-            zones = Zone.objects.filter(client=request.user.client)
+            zones = Zone.objects.filter(client=effective_client)
             started_count = 0
             for zone in zones:
                 try:
@@ -94,8 +115,12 @@ class PlaybackControlViewSet(viewsets.ViewSet):
             })
         
         # Validate zone belongs to user's client
+        effective_client = get_effective_client(request)
+        if not effective_client:
+            raise ValidationError("No client associated with this user")
+        
         try:
-            zone = Zone.objects.get(id=zone_id, client=request.user.client)
+            zone = Zone.objects.get(id=zone_id, client=effective_client)
         except Zone.DoesNotExist:
             raise NotFoundError("Zone", zone_id)
         
@@ -104,6 +129,21 @@ class PlaybackControlViewSet(viewsets.ViewSet):
             PlaybackEngine.start_music_files(zone_id, music_file_ids, shuffle)
         else:
             PlaybackEngine.start_playlist(zone_id, playlist_ids, shuffle)
+        
+        # Log playback start
+        log_audit_event(
+            request=request,
+            action='play',
+            resource_type='playback',
+            details={
+                'zone_id': zone_id,
+                'playlist_ids': playlist_ids,
+                'music_file_ids': music_file_ids,
+                'shuffle': shuffle,
+            },
+            user=request.user,
+            status_code=status.HTTP_200_OK
+        )
         
         return Response({
             'message': 'Playback started',
@@ -120,14 +160,21 @@ class PlaybackControlViewSet(viewsets.ViewSet):
         
         # Handle "all-zones" - pause all zones for user's client
         if zone_id == 'all-zones':
-            zones = Zone.objects.filter(client=request.user.client)
+            effective_client = get_effective_client(request)
+            if not effective_client:
+                raise ValidationError("No client associated with this user")
+            zones = Zone.objects.filter(client=effective_client)
             for zone in zones:
                 PlaybackEngine.pause(str(zone.id))
             return Response({'message': f'Playback paused on {zones.count()} zones'})
         
         # Validate zone belongs to user's client
+        effective_client = get_effective_client(request)
+        if not effective_client:
+            raise ValidationError("No client associated with this user")
+        
         try:
-            zone = Zone.objects.get(id=zone_id, client=request.user.client)
+            zone = Zone.objects.get(id=zone_id, client=effective_client)
         except Zone.DoesNotExist:
             raise NotFoundError("Zone", zone_id)
         
@@ -145,14 +192,21 @@ class PlaybackControlViewSet(viewsets.ViewSet):
         
         # Handle "all-zones" - resume all zones for user's client
         if zone_id == 'all-zones':
-            zones = Zone.objects.filter(client=request.user.client)
+            effective_client = get_effective_client(request)
+            if not effective_client:
+                raise ValidationError("No client associated with this user")
+            zones = Zone.objects.filter(client=effective_client)
             for zone in zones:
                 PlaybackEngine.resume(str(zone.id))
             return Response({'message': f'Playback resumed on {zones.count()} zones'})
         
         # Validate zone belongs to user's client
+        effective_client = get_effective_client(request)
+        if not effective_client:
+            raise ValidationError("No client associated with this user")
+        
         try:
-            zone = Zone.objects.get(id=zone_id, client=request.user.client)
+            zone = Zone.objects.get(id=zone_id, client=effective_client)
         except Zone.DoesNotExist:
             raise NotFoundError("Zone", zone_id)
         
@@ -170,14 +224,21 @@ class PlaybackControlViewSet(viewsets.ViewSet):
         
         # Handle "all-zones" - next track on all zones for user's client
         if zone_id == 'all-zones':
-            zones = Zone.objects.filter(client=request.user.client)
+            effective_client = get_effective_client(request)
+            if not effective_client:
+                raise ValidationError("No client associated with this user")
+            zones = Zone.objects.filter(client=effective_client)
             for zone in zones:
                 PlaybackEngine.next_track(str(zone.id))
             return Response({'message': f'Next track on {zones.count()} zones'})
         
         # Validate zone belongs to user's client
+        effective_client = get_effective_client(request)
+        if not effective_client:
+            raise ValidationError("No client associated with this user")
+        
         try:
-            zone = Zone.objects.get(id=zone_id, client=request.user.client)
+            zone = Zone.objects.get(id=zone_id, client=effective_client)
         except Zone.DoesNotExist:
             raise NotFoundError("Zone", zone_id)
         
@@ -195,14 +256,21 @@ class PlaybackControlViewSet(viewsets.ViewSet):
         
         # Handle "all-zones" - previous track on all zones for user's client
         if zone_id == 'all-zones':
-            zones = Zone.objects.filter(client=request.user.client)
+            effective_client = get_effective_client(request)
+            if not effective_client:
+                raise ValidationError("No client associated with this user")
+            zones = Zone.objects.filter(client=effective_client)
             for zone in zones:
                 PlaybackEngine.previous_track(str(zone.id))
             return Response({'message': f'Previous track on {zones.count()} zones'})
         
         # Validate zone belongs to user's client
+        effective_client = get_effective_client(request)
+        if not effective_client:
+            raise ValidationError("No client associated with this user")
+        
         try:
-            zone = Zone.objects.get(id=zone_id, client=request.user.client)
+            zone = Zone.objects.get(id=zone_id, client=effective_client)
         except Zone.DoesNotExist:
             raise NotFoundError("Zone", zone_id)
         
@@ -224,18 +292,38 @@ class PlaybackControlViewSet(viewsets.ViewSet):
         
         # Handle "all-zones" - set volume on all zones for user's client
         if zone_id == 'all-zones':
-            zones = Zone.objects.filter(client=request.user.client)
+            effective_client = get_effective_client(request)
+            if not effective_client:
+                raise ValidationError("No client associated with this user")
+            zones = Zone.objects.filter(client=effective_client)
             for zone in zones:
                 PlaybackEngine.set_volume(str(zone.id), volume)
             return Response({'message': f'Volume set on {zones.count()} zones', 'volume': volume})
         
         # Validate zone belongs to user's client
+        effective_client = get_effective_client(request)
+        if not effective_client:
+            raise ValidationError("No client associated with this user")
+        
         try:
-            zone = Zone.objects.get(id=zone_id, client=request.user.client)
+            zone = Zone.objects.get(id=zone_id, client=effective_client)
         except Zone.DoesNotExist:
             raise NotFoundError("Zone", zone_id)
         
         PlaybackEngine.set_volume(zone_id, volume)
+        
+        # Log volume change
+        log_audit_event(
+            request=request,
+            action='volume_change',
+            resource_type='playback',
+            details={
+                'zone_id': zone_id,
+                'volume': volume,
+            },
+            user=request.user,
+            status_code=status.HTTP_200_OK
+        )
         
         return Response({'message': 'Volume set', 'volume': volume})
     
@@ -266,10 +354,19 @@ class PlayEventViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         """Filter play events by client."""
         user = self.request.user
-        if not user or not user.is_authenticated or not hasattr(user, 'client'):
+        if not user or not user.is_authenticated:
             return PlayEvent.objects.none()
         
-        queryset = PlayEvent.objects.filter(client=user.client)
+        effective_client = get_effective_client(self.request)
+        
+        # Admin not impersonating: show all play events
+        if user.role == 'admin' and not effective_client:
+            queryset = PlayEvent.objects.all()
+        # Admin impersonating or other users: filter by effective client
+        elif effective_client:
+            queryset = PlayEvent.objects.filter(client=effective_client)
+        else:
+            return PlayEvent.objects.none()
         
         # Filter by device if provided
         device_id = self.request.query_params.get('device')

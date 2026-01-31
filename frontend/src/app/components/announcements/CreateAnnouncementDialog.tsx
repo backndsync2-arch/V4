@@ -7,7 +7,7 @@ import { Textarea } from '@/app/components/ui/textarea';
 import { Label } from '@/app/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 import { Badge } from '@/app/components/ui/badge';
-import { FileText, Sparkles, Upload, Mic, Play, Pause, Plus } from 'lucide-react';
+import { FileText, Sparkles, Upload, Mic, Play, Pause, Plus, Volume2, StopCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { announcementsAPI } from '@/lib/api';
 import { Folder, TTSVoice, GeneratedScript } from './announcements.types';
@@ -47,6 +47,8 @@ interface CreateAnnouncementDialogProps {
   onGenerateAI: () => void;
   onCreateBulk: () => void;
   onUpload: () => void;
+  onClose?: () => void;
+  onAnnouncementsCreated?: () => void;
   newFolderName?: string;
   onNewFolderNameChange?: (name: string) => void;
   onCreateFolder?: () => Promise<Folder | null>;
@@ -89,6 +91,8 @@ export function CreateAnnouncementDialog({
   onGenerateAI,
   onCreateBulk,
   onUpload,
+  onClose,
+  onAnnouncementsCreated,
   newFolderName = '',
   onNewFolderNameChange,
   onCreateFolder,
@@ -97,6 +101,201 @@ export function CreateAnnouncementDialog({
 }: CreateAnnouncementDialogProps) {
   const [showCreateFolderInput, setShowCreateFolderInput] = React.useState(false);
   const [newFolderNameLocal, setNewFolderNameLocal] = React.useState('');
+  const [isRecording, setIsRecording] = React.useState(false);
+  const [recordingTime, setRecordingTime] = React.useState(0);
+  const [recordedAudio, setRecordedAudio] = React.useState<Blob | null>(null);
+  const [recordedAudioUrl, setRecordedAudioUrl] = React.useState<string | null>(null);
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const chunksRef = React.useRef<Blob[]>([]);
+  const timerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const handleVoiceClick = async (voiceId: string) => {
+    // Select the voice
+    onVoiceChange(voiceId);
+    
+    // If already previewing this voice, stop it
+    if (previewingVoice === voiceId && previewAudio) {
+      previewAudio.pause();
+      onStopPreview();
+      return;
+    }
+    
+    // Stop any currently playing preview
+    if (previewAudio) {
+      previewAudio.pause();
+      onStopPreview();
+    }
+    
+    // Start preview for the clicked voice
+    // The onPreviewVoice handler will manage the API call and audio playback
+    onPreviewVoice(voiceId);
+  };
+
+  const handleStartRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Detect supported MIME type
+      let mimeType = 'audio/webm';
+      const supportedTypes = [
+        'audio/webm',
+        'audio/webm;codecs=opus',
+        'audio/ogg;codecs=opus',
+        'audio/mp4',
+        'audio/wav'
+      ];
+      
+      for (const type of supportedTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          mimeType = type;
+          break;
+        }
+      }
+      
+      const options: MediaRecorderOptions = { mimeType };
+      const mediaRecorder = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = mediaRecorder;
+      chunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          chunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onerror = (event) => {
+        console.error('MediaRecorder error:', event);
+        toast.error('Recording error occurred');
+        handleStopRecording();
+      };
+
+      mediaRecorder.onstop = () => {
+        if (chunksRef.current.length === 0) {
+          toast.error('No audio data recorded');
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+        
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        setRecordedAudio(blob);
+        const url = URL.createObjectURL(blob);
+        setRecordedAudioUrl(url);
+        stream.getTracks().forEach(track => track.stop());
+        toast.success('Recording completed');
+      };
+
+      // Start recording with timeslice to ensure data is captured
+      mediaRecorder.start(1000); // Collect data every second
+      setIsRecording(true);
+      setRecordingTime(0);
+      
+      // Start timer
+      timerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } catch (error: any) {
+      toast.error('Failed to start recording: ' + (error.message || 'Microphone access denied'));
+      console.error('Recording error:', error);
+      setIsRecording(false);
+    }
+  };
+
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      try {
+        if (mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.stop();
+        }
+      } catch (error) {
+        console.error('Error stopping recorder:', error);
+      }
+      setIsRecording(false);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+  };
+
+  const handleClearRecording = () => {
+    setRecordedAudio(null);
+    if (recordedAudioUrl) {
+      URL.revokeObjectURL(recordedAudioUrl);
+      setRecordedAudioUrl(null);
+    }
+    setRecordingTime(0);
+  };
+
+  const handleSaveRecording = async () => {
+    if (!recordedAudio || !newTitle.trim()) {
+      toast.error('Please provide a title and ensure recording is complete');
+      return;
+    }
+
+    try {
+      // Determine file extension based on blob type
+      let extension = 'webm';
+      let mimeType = recordedAudio.type || 'audio/webm';
+      
+      if (mimeType.includes('ogg')) {
+        extension = 'ogg';
+      } else if (mimeType.includes('mp4')) {
+        extension = 'm4a';
+        mimeType = 'audio/mp4';
+      } else if (mimeType.includes('wav')) {
+        extension = 'wav';
+      }
+      
+      // Convert blob to file
+      const audioFile = new File([recordedAudio], `${newTitle}.${extension}`, { type: mimeType });
+      
+      // Upload directly
+      await announcementsAPI.uploadAnnouncement(
+        audioFile,
+        {
+          title: newTitle.trim(),
+          folder_id: newCategory || undefined,
+          zone_id: activeTarget || undefined,
+          is_recording: true,
+        },
+        () => {}
+      );
+      
+      toast.success(`Recording saved: ${newTitle}`);
+      
+      // Reload announcements if callback provided
+      if (onAnnouncementsCreated) {
+        await onAnnouncementsCreated();
+      }
+      
+      // Clear recording and reset form
+      handleClearRecording();
+      onTitleChange('');
+      onCategoryChange('');
+      
+      if (onClose) {
+        onClose();
+      }
+    } catch (error: any) {
+      toast.error('Failed to save recording: ' + (error.message || 'Unknown error'));
+      console.error('Save recording error:', error);
+    }
+  };
+
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+      if (recordedAudioUrl) {
+        URL.revokeObjectURL(recordedAudioUrl);
+      }
+      if (mediaRecorderRef.current && isRecording) {
+        mediaRecorderRef.current.stop();
+      }
+    };
+  }, []);
 
   const handleFolderSelectChange = (value: string) => {
     if (value === '__create_new__') {
@@ -217,42 +416,66 @@ export function CreateAnnouncementDialog({
           </div>
           <div className="space-y-2">
             <Label>Voice</Label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-3">
               {ttsVoices.map(voice => {
-                const getAvatarUrl = (voiceId: string) => {
-                  const avatars: Record<string, string> = {
-                    'fable': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Fable&backgroundColor=b6e3f4',
-                    'alloy': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alloy&backgroundColor=c7d2fe',
-                    'echo': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Echo&backgroundColor=ffd5db',
-                    'onyx': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Onyx&backgroundColor=ffdfbf',
-                    'nova': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Nova&backgroundColor=d1fae5',
-                    'shimmer': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Shimmer&backgroundColor=fce7f3',
+                // Use professional image from API or fallback to Unsplash
+                const getAvatarUrl = (voice: any) => {
+                  if (voice.image_url) {
+                    return voice.image_url;
+                  }
+                  // Fallback professional images - matched to voice genders
+                  // Male voices: echo, fable, onyx
+                  // Female voices: nova, shimmer, alloy
+                  const fallbackImages: Record<string, string> = {
+                    // Male voices - professional male headshots
+                    'echo': 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop&crop=face',
+                    'fable': 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop&crop=face',
+                    'onyx': 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=400&fit=crop&crop=face',
+                    // Female voices - professional female headshots
+                    'nova': 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&h=400&fit=crop&crop=face',
+                    'shimmer': 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&h=400&fit=crop&crop=face',
+                    'alloy': 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&h=400&fit=crop&crop=face',
                   };
-                  return avatars[voiceId] || avatars['alloy'];
+                  return fallbackImages[voice.id] || fallbackImages['alloy'];
                 };
+                const isPreviewing = previewingVoice === voice.id;
+                const isSelected = selectedVoice === voice.id;
+                
                 return (
                   <button
                     key={voice.id}
                     type="button"
-                    onClick={() => onVoiceChange(voice.id)}
+                    onClick={() => handleVoiceClick(voice.id)}
                     className={`group relative flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all ${
-                      selectedVoice === voice.id
+                      isSelected
                         ? 'border-[#1db954] bg-[#1db954]/10'
                         : 'border-white/10 hover:border-white/30 bg-white/5'
-                    }`}
+                    } ${isPreviewing ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-[#1a1a1a]' : ''}`}
                   >
-                    <div className="relative w-16 h-16 rounded-full overflow-hidden bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a]">
+                    <div className="relative w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] ring-2 ring-white/10">
                       <img 
-                        src={getAvatarUrl(voice.id)}
+                        src={getAvatarUrl(voice)}
                         alt={voice.name}
                         className="w-full h-full object-cover"
+                        loading="lazy"
                       />
-                      {selectedVoice === voice.id && (
+                      {isSelected && (
                         <div className="absolute inset-0 bg-[#1db954]/20" />
                       )}
+                      {isPreviewing && (
+                        <div className="absolute inset-0 bg-blue-500/30 flex items-center justify-center">
+                          <Volume2 className="h-6 w-6 text-white animate-pulse" />
+                        </div>
+                      )}
                     </div>
-                    <span className="text-xs font-medium text-white text-center">{voice.name.split('(')[0].trim()}</span>
-                    <span className="text-xs text-gray-400">{voice.accent || 'UK'}</span>
+                    <span className="text-xs font-medium text-white text-center">{voice.name}</span>
+                    <span className="text-xs text-gray-400 capitalize">{voice.gender || 'neutral'}</span>
+                    {voice.description && (
+                      <span className="text-xs text-gray-500 text-center px-1 line-clamp-2">{voice.description}</span>
+                    )}
+                    {isPreviewing && (
+                      <span className="text-xs text-blue-400 font-medium">Playing...</span>
+                    )}
                   </button>
                 );
               })}
@@ -263,7 +486,7 @@ export function CreateAnnouncementDialog({
                 variant="outline"
                 size="sm"
                 onClick={handlePreviewVoice}
-                disabled={previewingVoice === selectedVoice}
+                disabled={!selectedVoice || previewingVoice === selectedVoice}
               >
                 {previewingVoice === selectedVoice ? (
                   <>
@@ -273,11 +496,11 @@ export function CreateAnnouncementDialog({
                 ) : (
                   <>
                     <Play className="h-3 w-3 mr-1" />
-                    Preview Voice
+                    Preview Selected
                   </>
                 )}
               </Button>
-              <p className="text-xs text-gray-400">Test the voice before creating</p>
+              <p className="text-xs text-gray-400">💡 Click any voice to preview instantly</p>
             </div>
           </div>
           <div className="space-y-2">
@@ -403,45 +626,83 @@ export function CreateAnnouncementDialog({
 
               <div className="space-y-2">
                 <Label>Voice</Label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-3">
                   {ttsVoices.map(voice => {
-                    const getAvatarUrl = (voiceId: string) => {
-                      const avatars: Record<string, string> = {
-                        'fable': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Fable&backgroundColor=b6e3f4',
-                        'alloy': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alloy&backgroundColor=c7d2fe',
-                        'echo': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Echo&backgroundColor=ffd5db',
-                        'onyx': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Onyx&backgroundColor=ffdfbf',
-                        'nova': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Nova&backgroundColor=d1fae5',
-                        'shimmer': 'https://api.dicebear.com/7.x/avataaars/svg?seed=Shimmer&backgroundColor=fce7f3',
+                    // Use professional image from API or fallback
+                    const getAvatarUrl = (voice: any) => {
+                      if (voice.image_url) {
+                        return voice.image_url;
+                      }
+                      const fallbackImages: Record<string, string> = {
+                        'echo': 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop&crop=face',
+                        'fable': 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop&crop=face',
+                        'onyx': 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=400&fit=crop&crop=face',
+                        'nova': 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&h=400&fit=crop&crop=face',
+                        'shimmer': 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&h=400&fit=crop&crop=face',
+                        'alloy': 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&h=400&fit=crop&crop=face',
                       };
-                      return avatars[voiceId] || avatars['alloy'];
+                      return fallbackImages[voice.id] || fallbackImages['alloy'];
                     };
+                    const isPreviewing = previewingVoice === voice.id;
+                    const isSelected = selectedVoice === voice.id;
+                    
                     return (
                       <button
                         key={voice.id}
                         type="button"
-                        onClick={() => onVoiceChange(voice.id)}
+                        onClick={() => handleVoiceClick(voice.id)}
                         className={`group relative flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all ${
-                          selectedVoice === voice.id
+                          isSelected
                             ? 'border-[#1db954] bg-[#1db954]/10'
                             : 'border-white/10 hover:border-white/30 bg-white/5'
-                        }`}
+                        } ${isPreviewing ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-[#1a1a1a]' : ''}`}
                       >
-                        <div className="relative w-16 h-16 rounded-full overflow-hidden bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a]">
+                        <div className="relative w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] ring-2 ring-white/10">
                           <img 
-                            src={getAvatarUrl(voice.id)}
+                            src={getAvatarUrl(voice)}
                             alt={voice.name}
                             className="w-full h-full object-cover"
+                            loading="lazy"
                           />
-                          {selectedVoice === voice.id && (
+                          {isSelected && (
                             <div className="absolute inset-0 bg-[#1db954]/20" />
                           )}
+                          {isPreviewing && (
+                            <div className="absolute inset-0 bg-blue-500/30 flex items-center justify-center">
+                              <Volume2 className="h-6 w-6 text-white animate-pulse" />
+                            </div>
+                          )}
                         </div>
-                        <span className="text-xs font-medium text-white text-center">{voice.name.split('(')[0].trim()}</span>
-                        <span className="text-xs text-gray-400">{voice.accent || 'UK'}</span>
+                        <span className="text-xs font-medium text-white text-center">{voice.name}</span>
+                        <span className="text-xs text-gray-400 capitalize">{voice.gender || 'neutral'}</span>
+                        {isPreviewing && (
+                          <span className="text-xs text-blue-400 font-medium">Playing...</span>
+                        )}
                       </button>
                     );
                   })}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePreviewVoice}
+                    disabled={!selectedVoice || previewingVoice === selectedVoice}
+                  >
+                    {previewingVoice === selectedVoice ? (
+                      <>
+                        <Pause className="h-3 w-3 mr-1" />
+                        Stop Preview
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-3 w-3 mr-1" />
+                        Preview Selected
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-xs text-gray-400">Click any voice to preview instantly</p>
                 </div>
               </div>
 
@@ -609,13 +870,145 @@ export function CreateAnnouncementDialog({
         </TabsContent>
 
         <TabsContent value="record" className="space-y-4">
-          <div className="text-center py-8 border-2 border-dashed border-white/10 rounded-lg">
-            <Mic className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-            <p className="text-gray-400 mb-4">Click to start recording</p>
-            <Button variant="outline" size="lg" className="rounded-full">
-              <Mic className="h-5 w-5 mr-2" />
-              Start Recording
-            </Button>
+          <div className="space-y-2">
+            <Label>Title</Label>
+            <Input
+              placeholder="Announcement title"
+              value={newTitle}
+              onChange={(e) => onTitleChange(e.target.value)}
+            />
+          </div>
+          <div className="text-center py-8 border-2 border-dashed border-white/10 rounded-lg space-y-4">
+            <Mic className={`h-12 w-12 mx-auto mb-4 ${isRecording ? 'text-red-500 animate-pulse' : 'text-gray-400'}`} />
+            <div className="space-y-2">
+              {isRecording ? (
+                <>
+                  <p className="text-red-400 font-medium">Recording in progress...</p>
+                  <p className="text-sm text-gray-400">{recordingTime}s</p>
+                  <Button 
+                    variant="destructive" 
+                    size="lg" 
+                    className="rounded-full"
+                    onClick={handleStopRecording}
+                  >
+                    <Mic className="h-5 w-5 mr-2" />
+                    Stop Recording
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="text-gray-400 mb-4">Click to start recording</p>
+                  <Button 
+                    variant="outline" 
+                    size="lg" 
+                    className="rounded-full"
+                    onClick={handleStartRecording}
+                    disabled={!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia}
+                  >
+                    <Mic className="h-5 w-5 mr-2" />
+                    Start Recording
+                  </Button>
+                  {(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) && (
+                    <p className="text-xs text-red-400 mt-2">Recording not supported in this browser</p>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          {recordedAudio && (
+            <div className="space-y-2 p-4 bg-white/5 rounded-lg">
+              <Label>Recorded Audio</Label>
+              {recordedAudioUrl ? (
+                <audio 
+                  src={recordedAudioUrl} 
+                  controls 
+                  className="w-full"
+                  onError={(e) => {
+                    console.error('Audio playback error:', e);
+                    toast.error('Failed to play recorded audio. The file may still be saved.');
+                  }}
+                  onLoadedMetadata={() => {
+                    console.log('Audio loaded successfully');
+                  }}
+                />
+              ) : (
+                <div className="p-4 text-center text-red-400">
+                  Error: Audio URL not available
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleClearRecording}>
+                  Clear
+                </Button>
+                <Button 
+                  size="sm" 
+                  onClick={handleSaveRecording}
+                  disabled={!newTitle.trim() || isCreating || !recordedAudio}
+                >
+                  {isCreating ? 'Saving...' : 'Save Recording'}
+                </Button>
+              </div>
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label>Folder</Label>
+            {!showCreateFolderInput ? (
+              <Select value={newCategory} onValueChange={handleFolderSelectChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select folder..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {folders.map(folder => (
+                    <SelectItem key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="__create_new__" className="text-[#1db954]">
+                    <Plus className="h-4 w-4 inline mr-2" />
+                    Create New Folder
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Folder name"
+                    value={newFolderNameLocal}
+                    onChange={(e) => setNewFolderNameLocal(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleCreateFolderInline();
+                      } else if (e.key === 'Escape') {
+                        setShowCreateFolderInput(false);
+                        setNewFolderNameLocal('');
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowCreateFolderInput(false);
+                      setNewFolderNameLocal('');
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleCreateFolderInline}
+                  disabled={!newFolderNameLocal.trim() || isCreatingFolder}
+                  className="w-full"
+                >
+                  {isCreatingFolder ? 'Creating...' : 'Create Folder'}
+                </Button>
+              </div>
+            )}
           </div>
         </TabsContent>
       </Tabs>

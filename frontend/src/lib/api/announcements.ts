@@ -32,7 +32,7 @@ export const announcementsAPI = {
   // Upload announcement audio
   uploadAnnouncement: async (
     file: File,
-    data: { title: string; folder_id?: string; zone_id?: string },
+    data: { title: string; folder_id?: string; zone_id?: string; is_recording?: boolean },
     onProgress?: (progress: number) => void
   ): Promise<AnnouncementAudio> => {
     const res = await uploadFile('/announcements/upload/', file, data, onProgress);

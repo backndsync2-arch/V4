@@ -5,15 +5,22 @@ Copyright (c) 2025 sync2gear Ltd. All Rights Reserved.
 """
 
 from rest_framework import serializers
-from rest_framework import serializers
 # ArrayField not available in SQLite - using JSONField in models instead
 from .models import Schedule, ChannelPlaylist, ChannelPlaylistItem
 from apps.zones.serializers import ZoneSerializer
+from apps.common.utils import get_effective_client
 
 
 class ScheduleSerializer(serializers.ModelSerializer):
     """Serializer for Schedule model."""
     
+    from apps.zones.models import Zone
+    zones = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Zone.objects.all(),
+        required=False,
+        allow_empty=True
+    )
     zones_data = ZoneSerializer(source='zones', many=True, read_only=True)
     schedule_type = serializers.CharField(read_only=True)
     created_by_name = serializers.CharField(source='created_by.name', read_only=True)
@@ -26,6 +33,17 @@ class ScheduleSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'schedule_type', 'created_by_name', 'created_at', 'updated_at']
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Filter queryset for zones field based on effective client (handles impersonation)
+        from apps.zones.models import Zone
+        if self.context.get('request'):
+            effective_client = get_effective_client(self.context['request'])
+            if effective_client:
+                self.fields['zones'].queryset = Zone.objects.filter(client=effective_client)
+            else:
+                self.fields['zones'].queryset = Zone.objects.none()
 
 
 class ScheduleCreateSerializer(serializers.ModelSerializer):
@@ -46,12 +64,12 @@ class ScheduleCreateSerializer(serializers.ModelSerializer):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Filter queryset for zones field based on user's client
+        # Filter queryset for zones field based on effective client (handles impersonation)
         from apps.zones.models import Zone
         if self.context.get('request'):
-            user = self.context['request'].user
-            if hasattr(user, 'client'):
-                self.fields['zones'].queryset = Zone.objects.filter(client=user.client)
+            effective_client = get_effective_client(self.context['request'])
+            if effective_client:
+                self.fields['zones'].queryset = Zone.objects.filter(client=effective_client)
             else:
                 self.fields['zones'].queryset = Zone.objects.none()
     

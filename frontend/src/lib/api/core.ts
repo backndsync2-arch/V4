@@ -229,6 +229,12 @@ export async function apiFetch(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  // Add impersonation header if admin is impersonating a client
+  const impersonatingClientId = localStorage.getItem('sync2gear_impersonating');
+  if (impersonatingClientId && !endpoint.includes('/auth/')) {
+    headers['X-Impersonate-Client'] = impersonatingClientId;
+  }
+
   let response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...options,
     headers,
@@ -374,6 +380,11 @@ export async function uploadFile(
     if (token) {
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     }
+    // Add impersonation header if admin is impersonating a client
+    const impersonatingClientId = localStorage.getItem('sync2gear_impersonating');
+    if (impersonatingClientId && !endpoint.includes('/auth/')) {
+      xhr.setRequestHeader('X-Impersonate-Client', impersonatingClientId);
+    }
     xhr.send(formData);
   });
 }
@@ -400,6 +411,11 @@ export async function uploadMultipleFiles(
   const token = getAccessToken();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+  // Add impersonation header if admin is impersonating a client
+  const impersonatingClientId = localStorage.getItem('sync2gear_impersonating');
+  if (impersonatingClientId && !endpoint.includes('/auth/')) {
+    headers['X-Impersonate-Client'] = impersonatingClientId;
   }
   const response = await fetch(`${API_BASE_URL}${endpoint}`, { method: 'POST', headers, body: formData });
   const data = response.status !== 204 ? await response.json() : null;

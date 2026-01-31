@@ -185,6 +185,7 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
+    'x-impersonate-client',  # Custom header for admin impersonation
 ]
 
 # Channels (WebSocket)

@@ -53,6 +53,7 @@ export const adminAPI = {
     role: string;
     client_id?: string;
     floor_id?: string;
+    send_email?: boolean;
   }): Promise<User> => {
     // UserCreateSerializer requires password_confirm
     // Remove undefined/null values to avoid sending them
@@ -70,6 +71,10 @@ export const adminAPI = {
     }
     if (data.floor_id) {
       payload.floor_id = data.floor_id;
+    }
+    // Include send_email flag if provided
+    if (data.send_email !== undefined) {
+      payload.send_email = data.send_email;
     }
     
     return apiFetch('/admin/users/', {
@@ -122,8 +127,30 @@ export const adminAPI = {
     if (params?.date_to) queryParams.append('date_to', params.date_to);
     
     const query = queryParams.toString();
-    const url = `/admin/audit-logs/${query ? `?${query}` : ''}`;
+    const url = query ? `/admin/audit-logs/?${query}` : '/admin/audit-logs/';
     return apiFetch(url);
+  },
+
+  // Impersonate client (admin only)
+  impersonateClient: async (clientId: string): Promise<{
+    client_id: string;
+    client_name: string;
+    message: string;
+    impersonation_active: boolean;
+  }> => {
+    return apiFetch(`/admin/clients/${clientId}/impersonate/`, {
+      method: 'POST',
+    });
+  },
+
+  // Stop impersonating client (admin only)
+  stopImpersonate: async (): Promise<{
+    message: string;
+    impersonation_active: boolean;
+  }> => {
+    return apiFetch('/admin/clients/stop_impersonate/', {
+      method: 'POST',
+    });
   },
 };
 

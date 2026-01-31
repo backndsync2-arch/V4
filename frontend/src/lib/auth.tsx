@@ -96,16 +96,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const impersonateClient = (clientId: string) => {
+  const impersonateClient = async (clientId: string, clientName?: string) => {
     if (user?.role === 'admin') {
-      setImpersonatingClient(clientId);
-      localStorage.setItem('sync2gear_impersonating', clientId);
+      try {
+        // Call backend endpoint to start impersonation
+        const { adminAPI } = await import('./api');
+        await adminAPI.impersonateClient(clientId);
+        
+        setImpersonatingClient(clientId);
+        localStorage.setItem('sync2gear_impersonating', clientId);
+      } catch (error: any) {
+        console.error('Failed to start impersonation:', error);
+        throw new Error(error?.message || 'Failed to start impersonation');
+      }
     }
   };
 
-  const stopImpersonating = () => {
-    setImpersonatingClient(null);
-    localStorage.removeItem('sync2gear_impersonating');
+  const stopImpersonating = async () => {
+    try {
+      // Call backend endpoint to stop impersonation
+      const { adminAPI } = await import('./api');
+      await adminAPI.stopImpersonate();
+    } catch (error) {
+      console.error('Failed to stop impersonation:', error);
+      // Continue anyway to clear frontend state
+    } finally {
+      setImpersonatingClient(null);
+      localStorage.removeItem('sync2gear_impersonating');
+    }
   };
 
   return (

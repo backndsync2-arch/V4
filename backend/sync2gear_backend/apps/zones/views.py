@@ -13,6 +13,7 @@ from .models import Floor, Zone, Device
 from .serializers import FloorSerializer, ZoneSerializer, DeviceSerializer
 from apps.common.permissions import IsSameClient
 from apps.common.exceptions import ValidationError, NotFoundError
+from apps.common.utils import get_effective_client
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,10 +33,20 @@ class FloorViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter floors by client."""
         user = self.request.user
-        if not user or not user.is_authenticated or not hasattr(user, 'client'):
+        if not user or not user.is_authenticated:
             return Floor.objects.none()
         
-        queryset = Floor.objects.filter(client=user.client)
+        # Use effective client (handles impersonation)
+        effective_client = get_effective_client(self.request)
+        
+        # Admin not impersonating: show all floors
+        if user.role == 'admin' and not effective_client:
+            queryset = Floor.objects.all()
+        # Admin impersonating or other users: filter by effective client
+        elif effective_client:
+            queryset = Floor.objects.filter(client=effective_client)
+        else:
+            return Floor.objects.none()
         
         # Floor users can only see their assigned floor
         if user.role == 'floor_user' and user.floor_id:
@@ -77,10 +88,20 @@ class ZoneViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter zones by client."""
         user = self.request.user
-        if not user or not user.is_authenticated or not hasattr(user, 'client'):
+        if not user or not user.is_authenticated:
             return Zone.objects.none()
         
-        queryset = Zone.objects.filter(client=user.client)
+        # Use effective client (handles impersonation)
+        effective_client = get_effective_client(self.request)
+        
+        # Admin not impersonating: show all zones
+        if user.role == 'admin' and not effective_client:
+            queryset = Zone.objects.all()
+        # Admin impersonating or other users: filter by effective client
+        elif effective_client:
+            queryset = Zone.objects.filter(client=effective_client)
+        else:
+            return Zone.objects.none()
         
         # Filter by floor if provided
         floor_id = self.request.query_params.get('floor')
@@ -95,7 +116,12 @@ class ZoneViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         """Create zone with client."""
-        serializer.save(client=self.request.user.client)
+        effective_client = get_effective_client(self.request)
+        if not effective_client:
+            from apps.common.exceptions import ValidationError
+            raise ValidationError("No client associated with this user")
+        
+        serializer.save(client=effective_client)
 
 
 class DeviceViewSet(viewsets.ModelViewSet):
@@ -112,10 +138,20 @@ class DeviceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter devices by client."""
         user = self.request.user
-        if not user or not user.is_authenticated or not hasattr(user, 'client'):
+        if not user or not user.is_authenticated:
             return Device.objects.none()
         
-        queryset = Device.objects.filter(client=user.client)
+        # Use effective client (handles impersonation)
+        effective_client = get_effective_client(self.request)
+        
+        # Admin not impersonating: show all devices
+        if user.role == 'admin' and not effective_client:
+            queryset = Device.objects.all()
+        # Admin impersonating or other users: filter by effective client
+        elif effective_client:
+            queryset = Device.objects.filter(client=effective_client)
+        else:
+            return Device.objects.none()
         
         # Filter by zone if provided
         zone_id = self.request.query_params.get('zone')
@@ -135,7 +171,12 @@ class DeviceViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         """Create device with client."""
-        serializer.save(client=self.request.user.client)
+        effective_client = get_effective_client(self.request)
+        if not effective_client:
+            from apps.common.exceptions import ValidationError
+            raise ValidationError("No client associated with this user")
+        
+        serializer.save(client=effective_client)
     
     @action(detail=False, methods=['post'])
     def register(self, request):

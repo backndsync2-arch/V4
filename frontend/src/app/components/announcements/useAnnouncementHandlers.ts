@@ -187,7 +187,7 @@ export function useAnnouncementHandlers({
     }
   };
 
-  const handleUploadAnnouncement = async () => {
+  const handleUploadAnnouncement = async (isRecording: boolean = false) => {
     if (!uploadFile) {
       toast.error('Please select an audio file to upload');
       return;
@@ -205,6 +205,7 @@ export function useAnnouncementHandlers({
           title, 
           folder_id: newCategory || undefined,
           zone_id: activeTarget || undefined,
+          is_recording: isRecording,
         },
         () => {}
       );
@@ -423,29 +424,77 @@ export function useAnnouncementHandlers({
       return;
     }
     
+    console.log('Starting voice preview for:', voice);
     setPreviewingVoice(voice);
     try {
+      const previewText = newText.trim() || 'Hello, this is a voice preview. How does this sound?';
+      console.log('Calling previewVoice API with:', { text: previewText, voice });
+      
       const preview = await announcementsAPI.previewVoice({
-        text: newText.trim() || 'Hello, this is a voice preview. How does this sound?',
+        text: previewText,
         voice: voice,
       });
       
+      console.log('Preview API response:', preview);
+      
+      // Check if we got an error response
+      if (preview.error) {
+        console.error('API returned error:', preview.error);
+        throw new Error(preview.error);
+      }
+      
+      if (!preview.preview_url) {
+        console.error('No preview_url in response:', preview);
+        throw new Error('No preview URL returned from server');
+      }
+      
+      console.log('Creating audio element with URL:', preview.preview_url);
       const audio = new Audio(preview.preview_url);
       setPreviewAudio(audio);
-      await audio.play();
+      
+      // Add error handlers before playing
+      audio.addEventListener('error', (e) => {
+        console.error('Audio playback error:', e, audio.error);
+        toast.error('Failed to play audio. Please check your browser audio settings.');
+        setPreviewingVoice(null);
+        setPreviewAudio(null);
+      });
       
       audio.addEventListener('ended', () => {
+        console.log('Audio playback ended');
         setPreviewingVoice(null);
         setPreviewAudio(null);
       });
       
-      audio.addEventListener('error', () => {
-        toast.error('Failed to play voice preview');
+      audio.addEventListener('loadstart', () => {
+        console.log('Audio loading started');
+      });
+      
+      audio.addEventListener('canplay', () => {
+        console.log('Audio can play');
+      });
+      
+      // Try to play the audio
+      try {
+        console.log('Attempting to play audio...');
+        await audio.play();
+        console.log('Audio playing successfully');
+      } catch (playError: any) {
+        console.error('Audio play error:', playError);
+        // Check if it's an autoplay policy issue
+        if (playError.name === 'NotAllowedError') {
+          toast.error('Please click the play button to start audio (browser autoplay restriction)');
+        } else {
+          toast.error(`Failed to play audio: ${playError.message}`);
+        }
         setPreviewingVoice(null);
         setPreviewAudio(null);
-      });
+      }
     } catch (error: any) {
-      toast.error(error.message || 'Failed to preview voice');
+      console.error('Preview voice error:', error);
+      const errorMessage = error?.error || error?.message || 'Failed to preview voice';
+      console.error('Error message:', errorMessage);
+      toast.error(errorMessage);
       setPreviewingVoice(null);
       setPreviewAudio(null);
     }

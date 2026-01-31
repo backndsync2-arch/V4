@@ -34,29 +34,44 @@ export function useAnnouncementsData() {
         }
         
         // IMMEDIATELY recalculate duration for announcements with 0 duration that have audio files
+        // Only show toast once per session using sessionStorage
         const announcementsNeedingDuration = announcements.filter(a => 
           a.duration === 0 && a.url && a.url !== '' && a.url !== '#'
         );
         if (announcementsNeedingDuration.length > 0) {
-          console.log(`Found ${announcementsNeedingDuration.length} announcements with 0:00 duration, recalculating immediately...`);
-          const recalculationPromises = announcementsNeedingDuration.map(a => 
-            announcementsAPI.recalculateDuration(a.id).catch(err => {
-              console.warn(`Failed to recalculate duration for ${a.id}:`, err);
-              return null;
-            })
-          );
+          const processedKey = `duration_processed_${announcementsNeedingDuration.map(a => a.id).sort().join('_')}`;
+          const alreadyProcessed = sessionStorage.getItem(processedKey);
           
-          Promise.all(recalculationPromises).then(() => {
-            return new Promise(resolve => setTimeout(resolve, 500));
-          }).then(() => {
-            return announcementsAPI.getAnnouncements();
-          }).then(updated => {
-            setAudioFiles(updated);
-            console.log('Duration recalculation complete, announcements updated');
-            toast.success(`Updated duration for ${announcementsNeedingDuration.length} announcement${announcementsNeedingDuration.length > 1 ? 's' : ''}`);
-          }).catch(err => {
-            console.error('Failed to reload announcements after duration recalculation:', err);
-          });
+          if (!alreadyProcessed) {
+            console.log(`Found ${announcementsNeedingDuration.length} announcements with 0:00 duration, recalculating immediately...`);
+            const recalculationPromises = announcementsNeedingDuration.map(a => 
+              announcementsAPI.recalculateDuration(a.id).catch(err => {
+                console.warn(`Failed to recalculate duration for ${a.id}:`, err);
+                return null;
+              })
+            );
+            
+            Promise.all(recalculationPromises).then(() => {
+              return new Promise(resolve => setTimeout(resolve, 500));
+            }).then(() => {
+              return announcementsAPI.getAnnouncements();
+            }).then(updated => {
+              setAudioFiles(updated);
+              console.log('Duration recalculation complete, announcements updated');
+              // Mark as processed and show toast only once
+              sessionStorage.setItem(processedKey, 'true');
+              toast.success(`Updated duration for ${announcementsNeedingDuration.length} announcement${announcementsNeedingDuration.length > 1 ? 's' : ''}`);
+            }).catch(err => {
+              console.error('Failed to reload announcements after duration recalculation:', err);
+            });
+          } else {
+            // Silently update without showing toast if already processed
+            announcementsAPI.getAnnouncements().then(updated => {
+              setAudioFiles(updated);
+            }).catch(err => {
+              console.error('Failed to reload announcements:', err);
+            });
+          }
         }
         
         // Extract scripts from TTS announcements
@@ -105,6 +120,7 @@ export function useAnnouncementsData() {
     }
     
     // Periodic check for announcements with 0:00 duration (every 10 seconds)
+    // Silently recalculate without showing toasts
     const durationCheckInterval = setInterval(async () => {
       try {
         const announcements = await announcementsAPI.getAnnouncements();
@@ -113,21 +129,28 @@ export function useAnnouncementsData() {
         );
         
         if (needsRecalculation.length > 0) {
-          console.log(`Periodic check: Found ${needsRecalculation.length} announcements with 0:00, recalculating...`);
-          Promise.all(
-            needsRecalculation.map(a => 
-              announcementsAPI.recalculateDuration(a.id).catch(err => {
-                console.warn(`Failed to recalculate duration for ${a.id}:`, err);
-                return null;
-              })
-            )
-          ).then(() => {
-            return announcementsAPI.getAnnouncements();
-          }).then(updated => {
-            setAudioFiles(updated);
-          }).catch(err => {
-            console.error('Error in periodic duration check:', err);
-          });
+          const processedKey = `duration_processed_${needsRecalculation.map(a => a.id).sort().join('_')}`;
+          const alreadyProcessed = sessionStorage.getItem(processedKey);
+          
+          if (!alreadyProcessed) {
+            console.log(`Periodic check: Found ${needsRecalculation.length} announcements with 0:00, recalculating silently...`);
+            Promise.all(
+              needsRecalculation.map(a => 
+                announcementsAPI.recalculateDuration(a.id).catch(err => {
+                  console.warn(`Failed to recalculate duration for ${a.id}:`, err);
+                  return null;
+                })
+              )
+            ).then(() => {
+              return announcementsAPI.getAnnouncements();
+            }).then(updated => {
+              setAudioFiles(updated);
+              // Mark as processed to avoid showing toast
+              sessionStorage.setItem(processedKey, 'true');
+            }).catch(err => {
+              console.error('Error in periodic duration check:', err);
+            });
+          }
         }
       } catch (error) {
         console.error('Error in periodic duration check:', error);

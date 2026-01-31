@@ -21,6 +21,7 @@ from .serializers import (
 )
 from apps.common.exceptions import ValidationError, AuthenticationError
 from apps.common.permissions import IsSameClient
+from apps.common.utils import log_audit_event
 import logging
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,21 @@ class SignUpView(generics.CreateAPIView):
         # Generate tokens
         refresh = RefreshToken.for_user(user)
         
+        # Log registration
+        log_audit_event(
+            request=request,
+            action='register',
+            resource_type='user',
+            resource_id=str(user.id),
+            details={
+                'email': user.email,
+                'name': user.name,
+                'role': user.role,
+            },
+            user=user,
+            status_code=status.HTTP_201_CREATED
+        )
+        
         # Serialize user data
         user_serializer = UserSerializer(user)
         
@@ -72,6 +88,53 @@ class LoginView(TokenObtainPairView):
     """
     serializer_class = LoginSerializer
     permission_classes = [permissions.AllowAny]
+    
+    def post(self, request, *args, **kwargs):
+        """Handle login and log audit event."""
+        response = super().post(request, *args, **kwargs)
+        
+        # Log successful login
+        if response.status_code == 200:
+            try:
+                # Get user from serializer
+                serializer = self.get_serializer(data=request.data)
+                if serializer.is_valid():
+                    user = serializer.user
+                    log_audit_event(
+                        request=request,
+                        action='login',
+                        resource_type='user',
+                        resource_id=str(user.id),
+                        details={
+                            'email': user.email,
+                            'role': user.role,
+                            'success': True,
+                        },
+                        user=user,
+                        status_code=200
+                    )
+            except Exception as e:
+                logger.error(f"Failed to log login event: {e}")
+        else:
+            # Log failed login attempt
+            try:
+                email = request.data.get('email', 'unknown')
+                log_audit_event(
+                    request=request,
+                    action='login_failed',
+                    resource_type='user',
+                    details={
+                        'email': email,
+                        'success': False,
+                        'reason': 'Invalid credentials',
+                    },
+                    user=None,
+                    status_code=response.status_code
+                )
+            except Exception as e:
+                logger.error(f"Failed to log failed login: {e}")
+        
+        return response
 
 
 class LogoutView(generics.GenericAPIView):
@@ -89,6 +152,20 @@ class LogoutView(generics.GenericAPIView):
             if refresh_token:
                 token = RefreshToken(refresh_token)
                 token.blacklist()
+            
+            # Log logout
+            log_audit_event(
+                request=request,
+                action='logout',
+                resource_type='user',
+                resource_id=str(request.user.id),
+                details={
+                    'email': request.user.email,
+                },
+                user=request.user,
+                status_code=status.HTTP_200_OK
+            )
+            
             return Response({'message': 'Successfully logged out'}, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Logout error: {e}")
@@ -130,6 +207,19 @@ class ChangePasswordView(generics.GenericAPIView):
         user.set_password(serializer.validated_data['new_password'])
         user.save()
         
+        # Log password change
+        log_audit_event(
+            request=request,
+            action='password_change',
+            resource_type='user',
+            resource_id=str(user.id),
+            details={
+                'email': user.email,
+            },
+            user=user,
+            status_code=status.HTTP_200_OK
+        )
+        
         return Response({'message': 'Password changed successfully'}, status=status.HTTP_200_OK)
 
 
@@ -147,6 +237,19 @@ def password_reset_request(request):
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = token_generator.make_token(user)
 
+        # Log password reset request
+        log_audit_event(
+            request=request,
+            action='password_reset_request',
+            resource_type='user',
+            resource_id=str(user.id),
+            details={
+                'email': email,
+            },
+            user=user,
+            status_code=status.HTTP_200_OK
+        )
+
         response = {
             'message': 'Password reset email sent (if account exists)'
         }
@@ -156,7 +259,18 @@ def password_reset_request(request):
 
         return Response(response, status=status.HTTP_200_OK)
     except User.DoesNotExist:
-        # Don't reveal if email exists
+        # Don't reveal if email exists, but still log the attempt
+        log_audit_event(
+            request=request,
+            action='password_reset_request',
+            resource_type='user',
+            details={
+                'email': email,
+                'user_not_found': True,
+            },
+            user=None,
+            status_code=status.HTTP_200_OK
+        )
         return Response({
             'message': 'Password reset email sent (if account exists)'
         }, status=status.HTTP_200_OK)
@@ -192,6 +306,19 @@ def password_reset_confirm(request):
 
     user.set_password(password)
     user.save()
+
+    # Log password reset confirmation
+    log_audit_event(
+        request=request,
+        action='password_reset_confirm',
+        resource_type='user',
+        resource_id=str(user.id),
+        details={
+            'email': user.email,
+        },
+        user=user,
+        status_code=status.HTTP_200_OK
+    )
 
     return Response({'message': 'Password reset successfully'}, status=status.HTTP_200_OK)
 
@@ -232,6 +359,19 @@ class UserSettingsViewSet(generics.RetrieveUpdateAPIView):
         # Deep merge settings
         user.settings.update(settings_data)
         user.save(update_fields=['settings'])
+
+        # Log settings update
+        log_audit_event(
+            request=request,
+            action='update',
+            resource_type='user_settings',
+            resource_id=str(user.id),
+            details={
+                'updated_settings': list(settings_data.keys()),
+            },
+            user=user,
+            status_code=status.HTTP_200_OK
+        )
 
         serializer = self.get_serializer(user)
         return Response(serializer.data, status=status.HTTP_200_OK)

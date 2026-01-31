@@ -258,8 +258,8 @@ export function Announcements() {
               <Tabs defaultValue="ai" className="w-full">
                 <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="ai">
-                    <span className="hidden sm:inline">✨ AI Generate</span>
-                    <span className="sm:hidden">✨ AI</span>
+                    <span className="hidden sm:inline">🤖 AI Generate</span>
+                    <span className="sm:hidden">🤖 AI</span>
                   </TabsTrigger>
                   <TabsTrigger value="script">
                     <FileText className="h-4 w-4 mr-0 sm:mr-2" />
@@ -326,7 +326,7 @@ export function Announcements() {
                     className="w-full"
                     disabled={!newText.trim()}
                   >
-                    ✨ Generate with AI
+                    🤖 Generate with AI
                   </Button>
 
                   {/* Generated Results - shown after generation */}

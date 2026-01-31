@@ -327,7 +327,14 @@ export function Admin() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-slate-600">Manage clients and view system audit logs</p>
+          <h1 className="text-2xl font-bold text-slate-900 mb-1">Admin Panel</h1>
+          <p className="text-slate-600">
+            Manage <strong>Clients</strong> (businesses/organizations) and view system audit logs.
+            <br />
+            <span className="text-sm text-slate-500">
+              Note: To manage <strong>Users</strong> (people), use the "Team Members" page in the sidebar.
+            </span>
+          </p>
         </div>
         <div className="flex gap-2">
           <Button 
@@ -416,8 +423,8 @@ export function Admin() {
 
       <Tabs defaultValue="clients" className="w-full">
         <TabsList>
-          <TabsTrigger value="clients">Clients</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="clients">Clients (Businesses)</TabsTrigger>
+          <TabsTrigger value="users">Users (People)</TabsTrigger>
           <TabsTrigger value="ai-config">
             <Sparkles className="h-4 w-4 mr-2" />
             AI Configuration
@@ -429,8 +436,14 @@ export function Admin() {
         <TabsContent value="clients">
           <Card>
             <CardHeader>
-              <CardTitle>Clients</CardTitle>
-              <CardDescription>Manage all business clients</CardDescription>
+              <CardTitle>Clients (Businesses)</CardTitle>
+              <CardDescription>
+                Manage business organizations that subscribe to sync2gear.
+                <br />
+                <span className="text-sm text-slate-500">
+                  Each client can have multiple users (people) - manage users in the "Team Members" page.
+                </span>
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
@@ -465,7 +478,14 @@ export function Admin() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => impersonateClient(client.id, client.name)}>
+                            <DropdownMenuItem onClick={async () => {
+                              try {
+                                await impersonateClient(client.id, client.name);
+                                toast.success(`Now viewing as ${client.name}`);
+                              } catch (error: any) {
+                                toast.error(error?.message || 'Failed to start impersonation');
+                              }
+                            }}>
                               <Eye className="h-4 w-4 mr-2" />
                               Impersonate
                             </DropdownMenuItem>
@@ -498,8 +518,14 @@ export function Admin() {
         <TabsContent value="users">
           <Card>
             <CardHeader>
-              <CardTitle>Users</CardTitle>
-              <CardDescription>All users across all clients</CardDescription>
+              <CardTitle>Users (People)</CardTitle>
+              <CardDescription>
+                Quick view of all users across all clients. 
+                <br />
+                <span className="text-sm text-slate-500">
+                  For full user management, use the "Team Members" page in the sidebar.
+                </span>
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
@@ -558,7 +584,9 @@ export function Admin() {
             <CardHeader>
               <CardTitle className="text-white">Audit Logs</CardTitle>
               <CardDescription className="text-gray-400">
-                {user?.role === 'admin' ? 'System-wide activity log' : 'Your activity log'}
+                {user?.role === 'admin' 
+                  ? 'System-wide activity log (includes admin actions)' 
+                  : 'Your activity log'}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -688,7 +716,7 @@ export function Admin() {
                               </Badge>
                             </TableCell>
                             <TableCell className="text-gray-300">
-                              {log.client_name || log.client?.name || '—'}
+                              {log.client_name || log.client?.name || (userRole === 'admin' ? 'System' : '—')}
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="capitalize bg-white/10 text-white border-white/20">

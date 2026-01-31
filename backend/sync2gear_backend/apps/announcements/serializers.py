@@ -151,9 +151,12 @@ class BatchTTSCreateSerializer(serializers.Serializer):
 class AnnouncementUploadSerializer(serializers.ModelSerializer):
     """Serializer for uploading announcement audio file."""
     
+    zone_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
+    is_recording = serializers.BooleanField(required=False, default=False)
+    
     class Meta:
         model = Announcement
-        fields = ['file', 'title', 'folder_id', 'category']
+        fields = ['file', 'title', 'folder_id', 'category', 'zone_id', 'is_recording']
         extra_kwargs = {
             # Allow uploads with just a file; we derive a default title from the filename in create().
             'title': {'required': False, 'allow_blank': True},
@@ -164,11 +167,31 @@ class AnnouncementUploadSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         """Create announcement from uploaded file."""
         file = validated_data['file']
+        zone_id = validated_data.pop('zone_id', None)
+        is_recording = validated_data.pop('is_recording', False)
+        
         validated_data['file_size'] = file.size
+        validated_data['is_recording'] = is_recording
         
         # Set client and creator
         validated_data['client'] = self.context['request'].user.client
         validated_data['created_by'] = self.context['request'].user
+        
+        # If zone_id provided but no folder_id, try to find/create a folder for that zone
+        if zone_id and not validated_data.get('folder_id'):
+            from apps.music.models import Folder
+            try:
+                # Try to find an existing announcements folder for this zone
+                folder = Folder.objects.filter(
+                    client=self.context['request'].user.client,
+                    zone_id=zone_id,
+                    type='announcements'
+                ).first()
+                
+                if folder:
+                    validated_data['folder_id'] = folder.id
+            except Exception as e:
+                logger.warning(f"Could not find folder for zone {zone_id}: {e}")
         
         # Set default title if not provided
         if not validated_data.get('title'):
@@ -183,16 +206,54 @@ class AnnouncementUploadSerializer(serializers.ModelSerializer):
         # Try to calculate duration synchronously (for dev environments without Celery)
         try:
             from mutagen import File as MutagenFile
+            from io import BytesIO
             
+            duration_calculated = False
+            
+            # Try path-based first
             if announcement.file and hasattr(announcement.file, 'path'):
-                audio = MutagenFile(announcement.file.path)
-                
-                if audio and hasattr(audio, 'info') and hasattr(audio.info, 'length'):
-                    announcement.duration = int(audio.info.length)
-                    announcement.save(update_fields=['duration'])
-                    logger.info(f"Duration extracted synchronously for announcement {announcement.id}: {announcement.duration}s")
+                try:
+                    audio = MutagenFile(announcement.file.path)
+                    if audio and hasattr(audio, 'info') and hasattr(audio.info, 'length'):
+                        announcement.duration = int(audio.info.length)
+                        announcement.save(update_fields=['duration'])
+                        logger.info(f"Duration extracted synchronously (path) for announcement {announcement.id}: {announcement.duration}s")
+                        duration_calculated = True
+                except Exception as path_error:
+                    logger.debug(f"Path-based read failed for {announcement.id}: {path_error}")
+            
+            # If path-based failed, try reading file content (works better for webm)
+            if not duration_calculated and announcement.file:
+                try:
+                    announcement.file.open('rb')
+                    file_content = announcement.file.read()
+                    announcement.file.close()
+                    audio = MutagenFile(BytesIO(file_content))
+                    if audio and hasattr(audio, 'info') and hasattr(audio.info, 'length'):
+                        announcement.duration = int(audio.info.length)
+                        announcement.save(update_fields=['duration'])
+                        logger.info(f"Duration extracted synchronously (content) for announcement {announcement.id}: {announcement.duration}s")
+                        duration_calculated = True
+                except Exception as content_error:
+                    logger.debug(f"Content-based read failed for {announcement.id}: {content_error}")
+            
+            # If mutagen fails (e.g., webm not supported), try pydub as fallback
+            if not duration_calculated and announcement.file:
+                try:
+                    from pydub import AudioSegment
+                    if hasattr(announcement.file, 'path'):
+                        audio_segment = AudioSegment.from_file(announcement.file.path)
+                        announcement.duration = int(len(audio_segment) / 1000.0)  # pydub returns milliseconds
+                        announcement.save(update_fields=['duration'])
+                        logger.info(f"Duration extracted using pydub for announcement {announcement.id}: {announcement.duration}s")
+                        duration_calculated = True
+                except ImportError:
+                    logger.debug("pydub not available, skipping pydub duration calculation")
+                except Exception as pydub_error:
+                    logger.debug(f"pydub duration calculation failed for {announcement.id}: {pydub_error}")
+                    
         except Exception as e:
-            # If synchronous extraction fails, duration stays 0 and will be calculated async
+            # If all synchronous extraction fails, duration stays 0 and will be calculated async
             logger.warning(f"Could not extract duration synchronously for announcement {announcement.id}: {e}")
         
         # Trigger async duration calculation (will update duration if not already set)
@@ -208,8 +269,13 @@ class AnnouncementUploadSerializer(serializers.ModelSerializer):
     def validate_file(self, value):
         """Only allow audio uploads for announcements."""
         content_type = getattr(value, 'content_type', None) or ''
+        # Accept all audio types including webm, ogg, etc.
         if not content_type.startswith('audio/'):
-            raise serializers.ValidationError('Only audio files are allowed (e.g., MP3, WAV, M4A).')
+            # Also check filename extension as fallback
+            filename = getattr(value, 'name', '')
+            audio_extensions = ['.mp3', '.wav', '.m4a', '.mpeg', '.webm', '.ogg', '.opus', '.aac', '.flac']
+            if not any(filename.lower().endswith(ext) for ext in audio_extensions):
+                raise serializers.ValidationError('Only audio files are allowed (e.g., MP3, WAV, M4A, WEBM, OGG).')
         return value
 
 

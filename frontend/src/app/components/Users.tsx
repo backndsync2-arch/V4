@@ -25,9 +25,16 @@ interface User {
   client_id?: string;
 }
 
+interface Client {
+  id: string;
+  name: string;
+  email: string;
+}
+
 export function Users() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -41,16 +48,31 @@ export function Users() {
     role: 'client' as User['role'],
     password: '',
     autoGeneratePassword: true,
+    client_id: '',
   });
+  const [generatedPassword, setGeneratedPassword] = useState<string>('');
   const [resetPasswordForm, setResetPasswordForm] = useState({
     password: '',
     autoGenerate: true,
   });
 
-  // Load users from API
+  // Load users and clients from API
   useEffect(() => {
     loadUsers();
-  }, []);
+    if (currentUser?.role === 'admin') {
+      loadClients();
+    }
+  }, [currentUser]);
+  
+  const loadClients = async () => {
+    try {
+      const clientsData = await adminAPI.getClients();
+      setClients(clientsData);
+    } catch (error: any) {
+      console.error('Failed to load clients:', error);
+      toast.error('Failed to load clients');
+    }
+  };
 
   const loadUsers = async () => {
     try {
@@ -130,9 +152,15 @@ export function Users() {
       return;
     }
 
-    // Generate password if auto-generate is enabled
+    // For floor users, client_id is required
+    if (newUserForm.role === 'floor_user' && !newUserForm.client_id) {
+      toast.error('Please select a client for the floor user');
+      return;
+    }
+
+    // Generate password if auto-generate is enabled (use generated password if available)
     const finalPassword = newUserForm.autoGeneratePassword 
-      ? generatePassword() 
+      ? (generatedPassword || generatePassword())
       : newUserForm.password;
 
     if (!finalPassword) {
@@ -141,18 +169,24 @@ export function Users() {
     }
 
     try {
-      // Prepare user data - only include client_id if it exists and user is not admin
+      // Prepare user data
       const userData: any = {
         name: newUserForm.name.trim(),
         email: trimmedEmail,
         password: finalPassword,
         role: newUserForm.role,
+        send_email: newUserForm.autoGeneratePassword, // Send email when auto-generate is enabled
       };
       
-      // Only add client_id if user is not admin and has a clientId
-      if (currentUser?.role !== 'admin' && currentUser?.clientId) {
+      // Add client_id based on role and user type
+      if (newUserForm.role === 'floor_user' && newUserForm.client_id) {
+        // Floor user must have a client_id
+        userData.client_id = newUserForm.client_id;
+      } else if (currentUser?.role !== 'admin' && currentUser?.clientId) {
+        // Non-admin users can only create users for their own client
         userData.client_id = currentUser.clientId;
       }
+      // Admin users creating non-floor users don't need client_id
       
       console.log('Creating user with data:', { ...userData, password: '***' });
       
@@ -164,12 +198,14 @@ export function Users() {
         role: 'client',
         password: '',
         autoGeneratePassword: true,
+        client_id: '',
       });
+      setGeneratedPassword('');
       setIsAddDialogOpen(false);
       
       toast.success(`${newUser.name} created successfully`, {
         description: newUserForm.autoGeneratePassword 
-          ? `Password: ${finalPassword} (copied to clipboard)` 
+          ? `Password: ${finalPassword} (copied to clipboard). Email sent with credentials.` 
           : `Account created with custom password`,
         duration: 8000,
       });
@@ -439,9 +475,33 @@ export function Users() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <CardTitle>Team Members</CardTitle>
-              <CardDescription>Manage user access and permissions</CardDescription>
+              <CardDescription>
+                {currentUser?.role === 'admin' || currentUser?.role === 'staff' 
+                  ? 'Manage all users across all clients'
+                  : 'Manage users for your organization'
+                }
+              </CardDescription>
             </div>
-            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
+              setIsAddDialogOpen(open);
+              if (!open) {
+                // Reset form when dialog closes
+                setNewUserForm({ 
+                  name: '', 
+                  email: '', 
+                  role: 'client',
+                  password: '',
+                  autoGeneratePassword: true,
+                  client_id: '',
+                });
+                setGeneratedPassword('');
+              } else if (newUserForm.autoGeneratePassword && newUserForm.email && !generatedPassword) {
+                // Generate password when dialog opens if email is already filled
+                const pwd = generatePassword();
+                setGeneratedPassword(pwd);
+                setNewUserForm(prev => ({ ...prev, password: pwd }));
+              }
+            }}>
               <DialogTrigger asChild>
                 <Button className="w-full sm:w-auto">
                   <UserPlus className="h-4 w-4 mr-2" />
@@ -472,9 +532,16 @@ export function Users() {
                       type="email"
                       placeholder="john@example.com"
                       value={newUserForm.email}
-                      onChange={(e) =>
-                        setNewUserForm({ ...newUserForm, email: e.target.value })
-                      }
+                      onChange={(e) => {
+                        const email = e.target.value;
+                        setNewUserForm({ ...newUserForm, email });
+                        // Auto-generate password when email is entered and auto-generate is enabled
+                        if (newUserForm.autoGeneratePassword && email && !generatedPassword) {
+                          const pwd = generatePassword();
+                          setGeneratedPassword(pwd);
+                          setNewUserForm(prev => ({ ...prev, email, password: pwd }));
+                        }
+                      }}
                     />
                   </div>
                   <div className="space-y-2">
@@ -482,7 +549,7 @@ export function Users() {
                     <Select
                       value={newUserForm.role}
                       onValueChange={(value: User['role']) =>
-                        setNewUserForm({ ...newUserForm, role: value })
+                        setNewUserForm({ ...newUserForm, role: value, client_id: value === 'floor_user' ? '' : newUserForm.client_id })
                       }
                     >
                       <SelectTrigger>
@@ -500,7 +567,38 @@ export function Users() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-3 pt-2 border-t">
+                  
+                  {/* Client Selection for Floor Users (Admin only) */}
+                  {currentUser?.role === 'admin' && newUserForm.role === 'floor_user' && (
+                    <div className="space-y-2">
+                      <Label>Client <span className="text-red-500">*</span></Label>
+                      <Select
+                        value={newUserForm.client_id}
+                        onValueChange={(value) =>
+                          setNewUserForm({ ...newUserForm, client_id: value })
+                        }
+                      >
+                        <SelectTrigger className={!newUserForm.client_id ? 'border-red-500' : ''}>
+                          <SelectValue placeholder="Select a client" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {clients.length === 0 ? (
+                            <SelectItem value="" disabled>No clients available</SelectItem>
+                          ) : (
+                            clients.map((client) => (
+                              <SelectItem key={client.id} value={client.id}>
+                                {client.name} ({client.email})
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-gray-400">
+                        Floor users must be assigned to a client
+                      </p>
+                    </div>
+                  )}
+                    <div className="space-y-3 pt-2 border-t">
                     <div className="flex items-center justify-between">
                       <Label>Password</Label>
                       <div className="flex items-center gap-2">
@@ -508,13 +606,21 @@ export function Users() {
                           type="checkbox"
                           id="autoGenerate"
                           checked={newUserForm.autoGeneratePassword}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const autoGen = e.target.checked;
+                            let newPassword = '';
+                            if (autoGen) {
+                              newPassword = generatePassword();
+                              setGeneratedPassword(newPassword);
+                            } else {
+                              setGeneratedPassword('');
+                            }
                             setNewUserForm({ 
                               ...newUserForm, 
-                              autoGeneratePassword: e.target.checked,
-                              password: e.target.checked ? '' : newUserForm.password
-                            })
-                          }
+                              autoGeneratePassword: autoGen,
+                              password: autoGen ? newPassword : newUserForm.password
+                            });
+                          }}
                           className="rounded border-white/20"
                         />
                         <Label htmlFor="autoGenerate" className="text-sm font-normal cursor-pointer">
@@ -533,9 +639,81 @@ export function Users() {
                       />
                     )}
                     {newUserForm.autoGeneratePassword && (
-                      <p className="text-xs text-slate-500">
-                        A secure password will be generated and copied to your clipboard
-                      </p>
+                      <div className="space-y-3">
+                        <div className="p-4 bg-gradient-to-br from-[#1db954]/10 to-[#1ed760]/10 border border-[#1db954]/30 rounded-lg">
+                          <div className="space-y-3">
+                            <div>
+                              <Label className="text-xs text-gray-400 mb-1 block">Email Address</Label>
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  type="text"
+                                  value={newUserForm.email || 'Enter email above'}
+                                  readOnly
+                                  className="bg-white/5 border-white/20 font-mono text-sm"
+                                />
+                                {newUserForm.email && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(newUserForm.email);
+                                      toast.success('Email copied to clipboard');
+                                    }}
+                                    className="shrink-0"
+                                  >
+                                    <Copy className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <Label className="text-xs text-gray-400 mb-1 block">Generated Password</Label>
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  type="text"
+                                  value={generatedPassword || 'Click auto-generate to create password'}
+                                  readOnly
+                                  className="bg-white/5 border-white/20 font-mono text-sm"
+                                />
+                                {generatedPassword && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      copyToClipboard(generatedPassword);
+                                    }}
+                                    className="shrink-0"
+                                  >
+                                    <Copy className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                {generatedPassword && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      const newPwd = generatePassword();
+                                      setGeneratedPassword(newPwd);
+                                      setNewUserForm({ ...newUserForm, password: newPwd });
+                                    }}
+                                    className="shrink-0"
+                                    title="Generate new password"
+                                  >
+                                    <RefreshCw className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-xs text-[#1db954] mt-2 flex items-center gap-1">
+                              <Mail className="h-3 w-3" />
+                              Credentials will be sent via email after creation
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>

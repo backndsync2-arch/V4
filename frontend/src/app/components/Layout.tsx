@@ -20,15 +20,24 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
   const { track } = useLocalPlayer();
   const isMusicPlaying = !!track;
 
+  // Role-based navbar visibility:
+  // - All users see: Dashboard, Music, Announcements, Scheduler, Zones, Profile
+  // - admin, staff, client roles see: Team Members (filtered by permissions)
+  // - floor_user role: Cannot see Team Members (no user management access)
+  // - admin role only: Admin panel (client/business management)
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'music', label: 'Music Library', icon: Music },
     { id: 'announcements', label: 'Announcements', icon: Radio },
     { id: 'scheduler', label: 'Scheduler', icon: Calendar },
     { id: 'zones', label: 'Zones', icon: Grid3x3 },
-    // Hide Team Members for client users or when not logged in
-    ...(user && user.role !== 'client' ? [{ id: 'users', label: 'Team Members', icon: UsersRound }] : []),
-    ...(user?.role === 'admin' ? [{ id: 'admin', label: 'Admin', icon: Users }] : []),
+    // Team Members: visible to admin, staff, and client roles (not floor_user)
+    // - admin/staff: see all users
+    // - client: see only users from their own client
+    ...(user && user.role !== 'floor_user' ? [{ id: 'users', label: 'Team Members', icon: UsersRound }] : []),
+    // Admin panel: only for sync2gear admins (manages businesses/clients)
+    // Hide Admin panel when impersonating a client (admin should see client view)
+    ...(user?.role === 'admin' && !impersonatingClient ? [{ id: 'admin', label: 'Admin', icon: Users }] : []),
     ...(user ? [{ id: 'profile', label: 'Profile', icon: User }] : []),
   ];
 

@@ -1,19 +1,33 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
-import { mockClients } from '@/lib/mockData';
+import { adminAPI } from '@/lib/api';
 import { Button } from '@/app/components/ui/button';
 import { X, Eye } from 'lucide-react';
 
 export function ImpersonationBanner() {
   const { user, impersonatingClient, stopImpersonating } = useAuth();
+  const [clientName, setClientName] = useState<string>('');
+
+  useEffect(() => {
+    if (impersonatingClient && user?.role === 'admin') {
+      // Load client name from API
+      const loadClient = async () => {
+        try {
+          const clients = await adminAPI.getClients();
+          const client = clients.find((c: any) => c.id === impersonatingClient);
+          if (client) {
+            setClientName(client.name || client.business_name || 'Unknown Client');
+          }
+        } catch (error) {
+          console.error('Failed to load client name:', error);
+          setClientName('Client');
+        }
+      };
+      loadClient();
+    }
+  }, [impersonatingClient, user?.role]);
 
   if (!impersonatingClient || user?.role !== 'admin') {
-    return null;
-  }
-
-  const client = mockClients.find(c => c.id === impersonatingClient);
-
-  if (!client) {
     return null;
   }
 
@@ -27,7 +41,7 @@ export function ImpersonationBanner() {
           <div>
             <p className="font-semibold text-sm">Admin View Mode</p>
             <p className="text-xs opacity-90">
-              Viewing as: <span className="font-medium">{client.name}</span> ({client.businessName})
+              Viewing as: <span className="font-medium">{clientName || 'Loading...'}</span>
             </p>
           </div>
         </div>

@@ -78,6 +78,18 @@ class GenerateTemplatesView(APIView):
         viewset.kwargs = {}
         return viewset.generate_templates(request)
 
+class UploadAnnouncementView(APIView):
+    """View for upload endpoint."""
+    permission_classes = views.AnnouncementViewSet.permission_classes
+    
+    def post(self, request):
+        viewset = views.AnnouncementViewSet()
+        viewset.request = request
+        viewset.format_kwarg = None
+        viewset.action = 'upload'
+        viewset.kwargs = {}
+        return viewset.upload(request)
+
 urlpatterns = [
     # Custom paths with hyphens (matching frontend expectations) - must come BEFORE router.urls
     path('generate-ai-text/', GenerateAITextView.as_view(), name='generate_ai_text'),
@@ -85,6 +97,7 @@ urlpatterns = [
     path('batch-tts/', BatchTTSView.as_view(), name='batch_tts'),
     path('preview-voice/', PreviewVoiceView.as_view(), name='preview_voice'),
     path('tts-voices/', TTSVoicesView.as_view(), name='tts_voices'),
+    path('upload/', UploadAnnouncementView.as_view(), name='upload'),
     # Router URLs (includes automatic action URLs with underscores)
     path('', include(router.urls)),
 ]

@@ -71,6 +71,80 @@ class AuditLog(TimestampedModel):
         return f"{self.action} {self.resource_type} by {self.user}"
 
 
+class ImpersonationLog(TimestampedModel):
+    """
+    Audit log for admin impersonation sessions.
+    
+    Tracks when admins impersonate clients, what actions they perform,
+    and when the impersonation session ends.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Admin who initiated impersonation
+    admin_user = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='impersonation_sessions',
+        db_index=True
+    )
+    
+    # Client being impersonated
+    impersonated_client = models.ForeignKey(
+        'authentication.Client',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='impersonation_logs',
+        db_index=True
+    )
+    
+    # Session timing
+    started_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    ended_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    
+    # Request metadata
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    
+    # Actions performed during impersonation (JSON array)
+    # Each entry: {"method": "POST", "endpoint": "/api/v1/music/", "timestamp": "...", "summary": "..."}
+    actions_performed = JSONField(default=list, blank=True)
+    
+    class Meta:
+        db_table = 'impersonation_logs'
+        ordering = ['-started_at']
+        indexes = [
+            models.Index(fields=['admin_user', 'started_at']),
+            models.Index(fields=['impersonated_client', 'started_at']),
+            models.Index(fields=['started_at', 'ended_at']),
+        ]
+    
+    def __str__(self):
+        admin_email = self.admin_user.email if self.admin_user else "Unknown"
+        client_name = self.impersonated_client.name if self.impersonated_client else "Unknown"
+        return f"Impersonation: {admin_email} -> {client_name} ({self.started_at})"
+    
+    def is_active(self):
+        """Check if impersonation session is still active."""
+        return self.ended_at is None
+    
+    def add_action(self, method, endpoint, summary=None):
+        """Add an action to the actions_performed list."""
+        from django.utils import timezone
+        
+        if not self.actions_performed:
+            self.actions_performed = []
+        
+        action = {
+            'method': method,
+            'endpoint': endpoint,
+            'timestamp': timezone.now().isoformat(),
+            'summary': summary or f"{method} {endpoint}",
+        }
+        
+        self.actions_performed.append(action)
+        self.save(update_fields=['actions_performed'])
+
+
 class AIProvider(TimestampedModel):
     """
     AI service provider configuration.

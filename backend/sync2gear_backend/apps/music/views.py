@@ -12,7 +12,7 @@ from django.db.models import Q
 from django.db import transaction
 from .models import Folder, MusicFile
 from .serializers import FolderSerializer, MusicFileSerializer, MusicFileCreateSerializer
-from apps.common.permissions import IsSameClient, IsOwnerOrReadOnly
+from apps.common.permissions import IsSameClient, IsOwnerOrReadOnly, ClientScopedWriteMixin
 from apps.common.exceptions import NotFoundError, ValidationError
 from apps.common.utils import log_audit_event, get_effective_client
 import logging
@@ -20,7 +20,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class FolderViewSet(viewsets.ModelViewSet):
+class FolderViewSet(ClientScopedWriteMixin, viewsets.ModelViewSet):
     """
     ViewSet for Folder CRUD operations.
     
@@ -66,6 +66,9 @@ class FolderViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         """Create folder with client, zone, and creator."""
+        # Enforce write-path client scoping
+        self.enforce_write_scoping(serializer)
+        
         effective_client = get_effective_client(self.request)
         if not effective_client:
             from apps.common.exceptions import ValidationError
@@ -138,7 +141,7 @@ class FolderViewSet(viewsets.ModelViewSet):
         )
 
 
-class MusicFileViewSet(viewsets.ModelViewSet):
+class MusicFileViewSet(ClientScopedWriteMixin, viewsets.ModelViewSet):
     """
     ViewSet for MusicFile CRUD operations.
     
@@ -190,6 +193,9 @@ class MusicFileViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         """Create music file (client set in serializer)."""
+        # Enforce write-path client scoping
+        self.enforce_write_scoping(serializer)
+        
         effective_client = get_effective_client(self.request)
         if not effective_client:
             from apps.common.exceptions import ValidationError

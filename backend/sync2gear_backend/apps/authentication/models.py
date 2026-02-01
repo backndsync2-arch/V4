@@ -124,6 +124,58 @@ class Client(TimestampedModel):
         self.save(update_fields=['premium_features'])
 
 
+class UserInviteToken(TimestampedModel):
+    """
+    Single-use token for user password setup via email invite.
+    
+    When a user is created without a password, an invite token is generated
+    and sent via email. The user clicks the link, sets their password, and
+    the token is invalidated.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # User who needs to set password
+    user = models.OneToOneField(
+        'User',
+        on_delete=models.CASCADE,
+        related_name='invite_token',
+        db_index=True
+    )
+    
+    # Token (signed, single-use)
+    token = models.CharField(max_length=255, unique=True, db_index=True)
+    
+    # Expiry (24 hours from creation)
+    expires_at = models.DateTimeField(db_index=True)
+    
+    # Status
+    used = models.BooleanField(default=False, db_index=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        db_table = 'user_invite_tokens'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['token', 'used']),
+            models.Index(fields=['expires_at']),
+        ]
+    
+    def __str__(self):
+        return f"Invite token for {self.user.email}"
+    
+    def is_valid(self):
+        """Check if token is valid (not used and not expired)."""
+        from django.utils import timezone
+        return not self.used and timezone.now() < self.expires_at
+    
+    def mark_used(self):
+        """Mark token as used."""
+        from django.utils import timezone
+        self.used = True
+        self.used_at = timezone.now()
+        self.save(update_fields=['used', 'used_at'])
+
+
 class User(AbstractBaseUser, PermissionsMixin, TimestampedModel):
     """
     Custom user model for sync2gear.
@@ -205,6 +257,83 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampedModel):
             models.Index(fields=['client', 'role']),
             models.Index(fields=['role', 'is_active']),
         ]
+        constraints = [
+            # Database-level constraint to enforce valid role/client/floor combinations
+            # Only 4 valid states are allowed:
+            # 1. admin/staff: client IS NULL AND floor IS NULL
+            # 2. client: client IS NOT NULL AND floor IS NULL
+            # 3. floor_user: client IS NOT NULL AND floor IS NOT NULL
+            models.CheckConstraint(
+                check=(
+                    models.Q(role__in=['admin', 'staff'], client__isnull=True, floor__isnull=True) |
+                    models.Q(role='client', client__isnull=False, floor__isnull=True) |
+                    models.Q(role='floor_user', client__isnull=False, floor__isnull=False)
+                ),
+                name='valid_user_role_client_floor_combination'
+            ),
+        ]
+    
+    def clean(self):
+        """
+        Model-level validation to enforce valid role/client/floor combinations.
+        
+        This runs before save() and provides a safety net even if serializer
+        validation is bypassed (e.g., via shell, raw queries, or future code paths).
+        """
+        from django.core.exceptions import ValidationError
+        
+        role = self.role
+        client = self.client
+        floor = self.floor
+        
+        # Validate role is one of allowed values
+        allowed_roles = ['admin', 'staff', 'client', 'floor_user']
+        if role not in allowed_roles:
+            raise ValidationError({
+                'role': f"Role must be one of: {', '.join(allowed_roles)}"
+            })
+        
+        # Enforce valid state matrix
+        if role in ['admin', 'staff']:
+            if client is not None:
+                raise ValidationError({
+                    'client': f"client field must be null when role is '{role}'"
+                })
+            if floor is not None:
+                raise ValidationError({
+                    'floor': f"floor field must be null when role is '{role}'"
+                })
+        
+        elif role == 'client':
+            if client is None:
+                raise ValidationError({
+                    'client': "client field is required when role is 'client'"
+                })
+            if floor is not None:
+                raise ValidationError({
+                    'floor': "floor field must be null when role is 'client'"
+                })
+        
+        elif role == 'floor_user':
+            if client is None:
+                raise ValidationError({
+                    'client': "client field is required when role is 'floor_user'"
+                })
+            if floor is None:
+                raise ValidationError({
+                    'floor': "floor field is required when role is 'floor_user'"
+                })
+            
+            # Validate floor belongs to client
+            if floor and floor.client_id != client.id:
+                raise ValidationError({
+                    'floor': "floor does not belong to the specified client"
+                })
+    
+    def save(self, *args, **kwargs):
+        """Override save to call clean() before saving."""
+        self.full_clean()  # This calls clean() and validates all fields
+        super().save(*args, **kwargs)
     
     def __str__(self):
         return f"{self.name} ({self.email})"

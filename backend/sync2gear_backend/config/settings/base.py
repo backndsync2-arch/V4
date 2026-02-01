@@ -62,8 +62,12 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'apps.common.middleware.ImpersonationLogMiddleware',  # Impersonation logging (before audit log)
     'apps.common.middleware.AuditLogMiddleware',  # Custom audit logging
 ]
+
+# Impersonation session timeout (in hours)
+IMPERSONATION_SESSION_TIMEOUT_HOURS = 8
 
 ROOT_URLCONF = 'config.urls'
 

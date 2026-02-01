@@ -6,13 +6,15 @@ import { Label } from '@/app/components/ui/label';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 import { Badge } from '@/app/components/ui/badge';
-import { CreditCard, User, Building2, Mail, Phone } from 'lucide-react';
+import { CreditCard, User, Building2, Mail, Phone, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { adminAPI } from '@/lib/api';
+import type { Client } from '@/lib/types';
 
 interface CreateClientDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onClientCreated: (client: any) => void;
+  onClientCreated: (client: Client) => void;
 }
 
 export function CreateClientDialog({ open, onOpenChange, onClientCreated }: CreateClientDialogProps) {
@@ -25,12 +27,13 @@ export function CreateClientDialog({ open, onOpenChange, onClientCreated }: Crea
     trialDays: '14',
     subscriptionPrice: '49.99',
   });
+  const [isCreating, setIsCreating] = useState(false);
 
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     // Validation
     if (!formData.name.trim()) {
       toast.error('Please enter a contact name');
@@ -52,37 +55,73 @@ export function CreateClientDialog({ open, onOpenChange, onClientCreated }: Crea
     const trialDaysNum = parseInt(formData.trialDays) || 0;
     const priceNum = parseFloat(formData.subscriptionPrice) || 0;
 
-    const newClient = {
-      id: `client_${Date.now()}`,
-      name: formData.name,
-      businessName: formData.businessName,
-      email: formData.email,
-      telephone: formData.telephone,
-      description: formData.description,
-      status: trialDaysNum > 0 ? 'trial' : 'active',
-      trialDays: trialDaysNum,
-      trialEndsAt: trialDaysNum > 0 ? new Date(Date.now() + trialDaysNum * 24 * 60 * 60 * 1000) : undefined,
-      subscriptionPrice: priceNum,
-      subscriptionStatus: trialDaysNum > 0 ? 'active' : 'active',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    try {
+      setIsCreating(true);
 
-    onClientCreated(newClient);
-    
-    // Reset form
-    setFormData({
-      name: '',
-      businessName: '',
-      email: '',
-      telephone: '',
-      description: '',
-      trialDays: '14',
-      subscriptionPrice: '49.99',
-    });
-    
-    onOpenChange(false);
-    toast.success(`Client "${formData.name}" created successfully`);
+      // Map frontend format to backend format
+      const backendData: any = {
+        name: formData.businessName,
+        email: formData.email,
+        subscription_tier: 'basic',
+      };
+
+      const createdClient = await adminAPI.createClient(backendData);
+      
+      // Now update with all the additional fields
+      const { apiFetch } = await import('@/lib/api/core');
+      await apiFetch(`/admin/clients/${createdClient.id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          business_name: formData.businessName,
+          telephone: formData.telephone,
+          description: formData.description,
+          subscription_price: priceNum,
+          subscription_status: 'trial',
+          trial_days: trialDaysNum,
+          premium_features: {
+            multiFloor: false,
+            aiCredits: 100,
+            maxFloors: 1,
+          },
+          max_floors: 1,
+        }),
+      });
+
+      // Fetch the updated client to get all fields
+      const updatedClients = await adminAPI.getClients();
+      const updatedClient = updatedClients.find(c => c.id === createdClient.id);
+      
+      if (updatedClient) {
+        // Call the callback with the normalized client (already normalized by getClients)
+        onClientCreated(updatedClient);
+      } else {
+        // Fallback: normalize the created client
+        const { normalizeClient } = await import('@/lib/api/core');
+        const normalizedClient = normalizeClient(createdClient);
+        onClientCreated(normalizedClient);
+      }
+      
+      // Reset form
+      setFormData({
+        name: '',
+        businessName: '',
+        email: '',
+        telephone: '',
+        description: '',
+        trialDays: '14',
+        subscriptionPrice: '49.99',
+      });
+      
+      onOpenChange(false);
+      toast.success(`Client "${formData.businessName}" created successfully`);
+    } catch (error: any) {
+      console.error('Failed to create client:', error);
+      toast.error('Failed to create client', {
+        description: error?.message || 'Please try again later',
+      });
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -232,11 +271,18 @@ export function CreateClientDialog({ open, onOpenChange, onClientCreated }: Crea
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isCreating}>
             Cancel
           </Button>
-          <Button onClick={handleCreate}>
-            Create Client Account
+          <Button onClick={handleCreate} disabled={isCreating}>
+            {isCreating ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              'Create Client Account'
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

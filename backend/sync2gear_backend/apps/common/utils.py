@@ -40,20 +40,28 @@ def get_client_from_request(request) -> Optional[object]:
 
 def get_impersonated_client(request) -> Optional[object]:
     """
-    Get impersonated client from request header.
+    Get impersonated client from request header with hardened validation.
     
     Admin users can impersonate clients by sending X-Impersonate-Client header
     with the client ID. This allows admins to view/manage client accounts.
+    
+    This function now validates:
+    1. User is admin (returns None if not, middleware will reject with 403)
+    2. Client exists (returns None if not, middleware will reject with 404)
+    3. Session hasn't expired (checks timeout)
     
     Returns:
         Client object if impersonating, None otherwise
     """
     from apps.authentication.models import Client
+    from django.conf import settings
+    from datetime import timedelta
     
     # Only allow impersonation for admin users
     if not request.user or not request.user.is_authenticated:
         return None
     
+    # HARDENED: Reject non-admin users (middleware will return 403)
     if request.user.role != 'admin':
         return None
     
@@ -74,21 +82,44 @@ def get_impersonated_client(request) -> Optional[object]:
                 break
     
     if not impersonate_client_id:
-        logger.debug(f"No impersonation header found. Available META keys with 'x': {[k for k in request.META.keys() if 'x' in k.lower()][:10]}")
         return None
     
     # Clean up the client ID (remove any whitespace)
     impersonate_client_id = str(impersonate_client_id).strip()
     
-    logger.info(f"Admin {request.user.email} attempting to impersonate client: {impersonate_client_id}")
-    
+    # HARDENED: Validate client exists (middleware will return 404 if not)
     try:
         client = Client.objects.get(id=impersonate_client_id)
-        logger.info(f"Successfully found impersonated client: {client.name} (ID: {client.id})")
-        return client
     except (Client.DoesNotExist, ValueError, TypeError) as e:
         logger.warning(f"Failed to get impersonated client {impersonate_client_id}: {e}")
         return None
+    
+    # HARDENED: Check session expiry
+    from apps.admin_panel.models import ImpersonationLog
+    timeout_hours = getattr(settings, 'IMPERSONATION_SESSION_TIMEOUT_HOURS', 8)
+    timeout = timedelta(hours=timeout_hours)
+    
+    # Check for active session
+    active_session = ImpersonationLog.objects.filter(
+        admin_user=request.user,
+        impersonated_client=client,
+        ended_at__isnull=True
+    ).first()
+    
+    if active_session:
+        # Check if session expired
+        from django.utils import timezone
+        if timezone.now() - active_session.started_at > timeout:
+            # Session expired - end it
+            active_session.ended_at = timezone.now()
+            active_session.save(update_fields=['ended_at'])
+            logger.info(
+                f"Impersonation session expired for admin {request.user.email} -> client {client.name}"
+            )
+            return None
+    
+    logger.debug(f"Admin {request.user.email} impersonating client: {client.name} (ID: {client.id})")
+    return client
 
 
 def get_effective_client(request) -> Optional[object]:

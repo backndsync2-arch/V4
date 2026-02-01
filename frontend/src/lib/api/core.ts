@@ -11,6 +11,7 @@ import type {
   AnnouncementAudio,
   Schedule,
   Device,
+  Client,
 } from '../types';
 
 // API Configuration
@@ -96,6 +97,34 @@ export const normalizeUser = (raw: any): User => {
     floorId: raw?.floor?.id ?? raw?.floor_id ?? raw?.floorId,
     createdAt: toDate(raw?.created_at ?? raw?.createdAt),
     lastSeen: toDate(raw?.last_seen ?? raw?.lastSeen ?? raw?.updated_at),
+  };
+};
+
+export const normalizeClient = (raw: any): Client => {
+  const premiumFeatures = raw?.premium_features || {};
+  return {
+    id: String(raw?.id ?? ''),
+    name: String(raw?.name ?? ''),
+    businessName: String(raw?.business_name ?? raw?.name ?? ''),
+    email: String(raw?.email ?? ''),
+    telephone: String(raw?.telephone ?? ''),
+    description: String(raw?.description ?? ''),
+    status: raw?.is_active === false 
+      ? 'suspended' 
+      : (raw?.subscription_status === 'trial' ? 'trial' : 'active'),
+    trialDays: Number(raw?.trial_days ?? 0),
+    trialEndsAt: raw?.trial_ends_at ? toDate(raw.trial_ends_at) : undefined,
+    subscriptionPrice: Number(raw?.subscription_price ?? 49.99),
+    subscriptionStatus: String(raw?.subscription_status ?? 'active'),
+    stripeCustomerId: raw?.stripe_customer_id,
+    stripeSubscriptionId: raw?.stripe_subscription_id,
+    premiumFeatures: {
+      multiFloor: Boolean(premiumFeatures.multiFloor ?? false),
+      aiCredits: Number(premiumFeatures.aiCredits ?? 0),
+      maxFloors: Number(premiumFeatures.maxFloors ?? raw?.max_floors ?? 1),
+    },
+    createdAt: toDate(raw?.created_at ?? raw?.createdAt),
+    updatedAt: toDate(raw?.updated_at ?? raw?.updatedAt),
   };
 };
 

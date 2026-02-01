@@ -5,13 +5,13 @@
  */
 
 import type { Client, User } from '../types';
-import { apiFetch, unwrapList } from './core';
+import { apiFetch, unwrapList, normalizeClient, normalizeUser } from './core';
 
 export const adminAPI = {
   // Get all clients
   getClients: async (): Promise<Client[]> => {
     const res = await apiFetch('/admin/clients/');
-    return unwrapList(res);
+    return unwrapList(res).map(normalizeClient);
   },
 
   // Create client
@@ -42,40 +42,51 @@ export const adminAPI = {
   // Get all users
   getUsers: async (): Promise<User[]> => {
     const res = await apiFetch('/admin/users/');
-    return unwrapList(res);
+    return unwrapList(res).map(normalizeUser);
   },
 
-  // Create user
+  // Create user (no password - uses invite token system)
   createUser: async (data: {
     email: string;
-    password: string;
     name: string;
     role: string;
     client_id?: string;
     floor_id?: string;
-    send_email?: boolean;
   }): Promise<User> => {
-    // UserCreateSerializer requires password_confirm
-    // Remove undefined/null values to avoid sending them
+    // Backend no longer accepts passwords - users are created inactive
+    // and must set password via invite email
     const payload: any = {
       email: data.email,
       name: data.name,
-      password: data.password,
-      password_confirm: data.password, // Confirm password matches
       role: data.role,
     };
     
-    // Only include client_id and floor_id if they are provided
-    if (data.client_id) {
-      payload.client_id = data.client_id;
+    // CRITICAL: For client role, client_id is REQUIRED by backend validation
+    // Always include it if provided, and log if missing for client role
+    if (data.role === 'client') {
+      if (data.client_id !== undefined && data.client_id !== null && data.client_id !== '') {
+        payload.client_id = String(data.client_id).trim();
+        console.log('[API] ✓ Adding client_id to payload for client role:', payload.client_id);
+      } else {
+        // This should never happen if frontend validation worked
+        console.error('[API] ❌ CRITICAL: client role but client_id is missing!', {
+          client_id: data.client_id,
+          client_id_type: typeof data.client_id,
+          full_data: data
+        });
+        // Still try to send it - backend will give proper error
+      }
+    } else if (data.client_id !== undefined && data.client_id !== null && data.client_id !== '') {
+      // For other roles, include if provided
+      payload.client_id = String(data.client_id).trim();
+      console.log('[API] Adding client_id to payload:', payload.client_id);
     }
-    if (data.floor_id) {
-      payload.floor_id = data.floor_id;
+    
+    if (data.floor_id !== undefined && data.floor_id !== null && data.floor_id !== '') {
+      payload.floor_id = String(data.floor_id).trim();
     }
-    // Include send_email flag if provided
-    if (data.send_email !== undefined) {
-      payload.send_email = data.send_email;
-    }
+    
+    console.log('[API] Final payload being sent:', JSON.stringify(payload, null, 2));
     
     return apiFetch('/admin/users/', {
       method: 'POST',

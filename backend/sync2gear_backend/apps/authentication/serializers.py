@@ -53,29 +53,198 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating new users."""
+    """
+    Serializer for creating new users with comprehensive validation.
     
-    password = serializers.CharField(write_only=True, validators=[validate_password])
-    password_confirm = serializers.CharField(write_only=True)
+    NOTE: Passwords are NOT accepted in user creation. Users are created inactive
+    and must set their password via the invite email link.
+    """
+    
+    # Explicitly define client_id and floor_id as UUIDFields to ensure proper parsing
+    client_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    floor_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     
     class Meta:
         model = User
         fields = [
-            'email', 'name', 'password', 'password_confirm',
+            'email', 'name',
             'client_id', 'floor_id', 'role', 'phone', 'timezone'
         ]
     
+    def validate_role(self, value):
+        """Validate role is one of the 4 allowed values."""
+        allowed_roles = ['admin', 'staff', 'client', 'floor_user']
+        if value not in allowed_roles:
+            raise serializers.ValidationError(
+                f"Role must be one of: {', '.join(allowed_roles)}"
+            )
+        return value
+    
     def validate(self, attrs):
-        """Validate password confirmation."""
-        if attrs['password'] != attrs['password_confirm']:
-            raise serializers.ValidationError({"password": "Passwords don't match"})
+        """
+        Comprehensive cross-field validation for user creation.
+        
+        Enforces:
+        1. Valid role/client/floor combinations
+        2. Creator permissions
+        3. Cross-ownership rules
+        """
+        role = attrs.get('role')
+        client_id = attrs.get('client_id')
+        floor_id = attrs.get('floor_id')
+        
+        # Get creator from context (set by view)
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError("Authentication required to create users")
+        
+        creator = request.user
+        
+        # 1. Validate role is allowed
+        allowed_roles = ['admin', 'staff', 'client', 'floor_user']
+        if role not in allowed_roles:
+            raise serializers.ValidationError(
+                {"role": f"Role must be one of: {', '.join(allowed_roles)}"}
+            )
+        
+        # 2. Enforce valid state matrix based on role
+        if role in ['admin', 'staff']:
+            # Admin and staff MUST have client=null and floor=null
+            if client_id is not None:
+                raise serializers.ValidationError(
+                    {"client_id": f"client field must be null when role is '{role}'"}
+                )
+            if floor_id is not None:
+                raise serializers.ValidationError(
+                    {"floor_id": f"floor field must be null when role is '{role}'"}
+                )
+        
+        elif role == 'client':
+            # Client role MUST have client set, floor must be null
+            if client_id is None:
+                raise serializers.ValidationError(
+                    {"client_id": "client field is required when role is 'client'"}
+                )
+            if floor_id is not None:
+                raise serializers.ValidationError(
+                    {"floor_id": "floor field must be null when role is 'client'"}
+                )
+            
+            # Validate client exists
+            try:
+                client = Client.objects.get(id=client_id)
+            except Client.DoesNotExist:
+                raise serializers.ValidationError(
+                    {"client_id": f"Client with id '{client_id}' does not exist"}
+                )
+        
+        elif role == 'floor_user':
+            # Floor_user MUST have both client and floor set
+            if client_id is None:
+                raise serializers.ValidationError(
+                    {"client_id": "client field is required when role is 'floor_user'"}
+                )
+            if floor_id is None:
+                raise serializers.ValidationError(
+                    {"floor_id": "floor field is required when role is 'floor_user'"}
+                )
+            
+            # Validate client exists
+            try:
+                client = Client.objects.get(id=client_id)
+            except Client.DoesNotExist:
+                raise serializers.ValidationError(
+                    {"client_id": f"Client with id '{client_id}' does not exist"}
+                )
+            
+            # Validate floor exists
+            from apps.zones.models import Floor
+            try:
+                floor = Floor.objects.get(id=floor_id)
+            except Floor.DoesNotExist:
+                raise serializers.ValidationError(
+                    {"floor_id": f"Floor with id '{floor_id}' does not exist"}
+                )
+            
+            # Validate floor belongs to the specified client
+            if floor.client_id != client_id:
+                raise serializers.ValidationError(
+                    {"floor_id": "floor does not belong to the specified client"}
+                )
+        
+        # 3. Enforce creator permissions
+        if creator.role == 'staff':
+            # Staff can only create client and floor_user roles
+            if role in ['admin', 'staff']:
+                raise serializers.ValidationError(
+                    {"role": "staff users cannot create admin or staff role users"}
+                )
+        
+        elif creator.role == 'client':
+            # Client users can only create floor_user roles within their own client
+            if role != 'floor_user':
+                raise serializers.ValidationError(
+                    {"role": "client users can only create floor_user role users"}
+                )
+            
+            # Ensure client_id matches creator's client
+            if client_id != str(creator.client_id):
+                raise serializers.ValidationError(
+                    {"client_id": "client users can only create users for their own client"}
+                )
+        
+        elif creator.role == 'floor_user':
+            # Floor users cannot create any users
+            raise serializers.ValidationError(
+                {"role": "floor_user role users cannot create other users"}
+            )
+        
         return attrs
     
     def create(self, validated_data):
-        """Create new user."""
-        validated_data.pop('password_confirm')
-        password = validated_data.pop('password')
-        user = User.objects.create_user(password=password, **validated_data)
+        """
+        Create new user with validated data.
+        
+        Users are always created without a password and must set it via invite email.
+        """
+        
+        # Convert client_id and floor_id to actual objects
+        client_id = validated_data.pop('client_id', None)
+        floor_id = validated_data.pop('floor_id', None)
+        
+        if client_id:
+            validated_data['client_id'] = client_id
+        if floor_id:
+            validated_data['floor_id'] = floor_id
+        
+        # Create user without password - password must be set via invite
+        from django.utils import timezone
+        from datetime import timedelta
+        import secrets
+        from .models import UserInviteToken
+        
+        # Create user without password (will be set via invite)
+        # Note: create_user requires a password, so we'll set a random one and then clear it
+        temp_password = secrets.token_urlsafe(32)
+        user = User.objects.create_user(password=temp_password, **validated_data)
+        # Clear the password so user must set it via invite
+        user.set_unusable_password()
+        user.is_active = False
+        user.save(update_fields=['is_active', 'password'])
+        
+        # Generate invite token
+        token = secrets.token_urlsafe(32)
+        expires_at = timezone.now() + timedelta(hours=24)
+        
+        UserInviteToken.objects.create(
+            user=user,
+            token=token,
+            expires_at=expires_at
+        )
+        
+        # Store token in user object for email sending (will be handled in view)
+        user._invite_token = token
+        
         return user
 
 

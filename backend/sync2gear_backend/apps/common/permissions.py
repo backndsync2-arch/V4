@@ -1,12 +1,13 @@
 """
-Custom permission classes for sync2gear API.
+Custom permission classes and mixins for sync2gear API.
 
 Copyright (c) 2025 sync2gear Ltd. All Rights Reserved.
 """
 
 from rest_framework import permissions
+from rest_framework.exceptions import ValidationError
 from apps.common.exceptions import PermissionDeniedError
-from apps.common.utils import get_effective_client
+from apps.common.utils import get_effective_client, get_impersonated_client
 
 
 class IsClientUser(permissions.BasePermission):
@@ -173,3 +174,85 @@ class IsUserManager(permissions.BasePermission):
             return False
         
         return False
+
+
+class ClientScopedWriteMixin:
+    """
+    Mixin to enforce client scoping on write operations (POST/PUT/PATCH/DELETE).
+    
+    This mixin ensures that:
+    1. client-role users can only create/update data for their own client
+    2. floor_user-role users can only create/update data for their own client and floor
+    3. Admin users (not impersonating) can create/update for any client
+    4. Admin users (impersonating) can only create/update for the impersonated client
+    
+    Usage:
+        class MyViewSet(ClientScopedWriteMixin, viewsets.ModelViewSet):
+            ...
+            
+            def perform_create(self, serializer):
+                self.enforce_write_scoping(serializer)
+                serializer.save(...)
+            
+            def perform_update(self, serializer):
+                self.enforce_write_scoping(serializer)
+                serializer.save(...)
+    """
+    
+    def enforce_write_scoping(self, serializer):
+        """
+        Enforce client scoping on write operations.
+        
+        This method should be called in perform_create() and perform_update()
+        before serializer.save() is called.
+        """
+        user = self.request.user
+        effective_client = get_effective_client(self.request)
+        is_impersonating = get_impersonated_client(self.request) is not None
+        
+        # Get the data being written
+        validated_data = serializer.validated_data
+        
+        # Determine which fields need scoping (client, floor)
+        has_client_field = 'client' in validated_data or 'client_id' in validated_data
+        has_floor_field = 'floor' in validated_data or 'floor_id' in validated_data
+        
+        # If user is client-role, force client to match their client
+        if user.role == 'client':
+            if not user.client_id:
+                raise ValidationError("User must have a client to perform this action")
+            
+            # Force client to match user's client
+            if has_client_field:
+                validated_data['client_id'] = user.client_id
+                validated_data.pop('client', None)  # Remove client object if present
+        
+        # If user is floor_user-role, force both client and floor
+        elif user.role == 'floor_user':
+            if not user.client_id:
+                raise ValidationError("User must have a client to perform this action")
+            if not user.floor_id:
+                raise ValidationError("User must have a floor to perform this action")
+            
+            # Force client and floor to match user's values
+            if has_client_field:
+                validated_data['client_id'] = user.client_id
+                validated_data.pop('client', None)
+            
+            if has_floor_field:
+                validated_data['floor_id'] = user.floor_id
+                validated_data.pop('floor', None)
+        
+        # If user is admin and IS impersonating, force client to impersonated client
+        elif user.role == 'admin' and is_impersonating and effective_client:
+            if has_client_field:
+                validated_data['client_id'] = effective_client.id
+                validated_data.pop('client', None)
+        
+        # If user is admin and NOT impersonating, allow any client value
+        # (no enforcement needed)
+        
+        # Update serializer with enforced values
+        for key, value in validated_data.items():
+            if key in serializer.fields:
+                serializer.validated_data[key] = value

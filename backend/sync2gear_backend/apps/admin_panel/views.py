@@ -112,7 +112,24 @@ class ClientViewSet(viewsets.ModelViewSet):
     def stop_impersonate(self, request):
         """
         Stop impersonating a client (admin only).
+        
+        Ends any active impersonation sessions for this admin.
         """
+        from apps.admin_panel.models import ImpersonationLog
+        from django.utils import timezone
+        
+        # Find and end active impersonation sessions for this admin
+        active_sessions = ImpersonationLog.objects.filter(
+            admin_user=request.user,
+            ended_at__isnull=True
+        )
+        
+        ended_count = 0
+        for session in active_sessions:
+            session.ended_at = timezone.now()
+            session.save(update_fields=['ended_at'])
+            ended_count += 1
+        
         # Log impersonation stop
         log_audit_event(
             request=request,
@@ -120,6 +137,7 @@ class ClientViewSet(viewsets.ModelViewSet):
             resource_type='client',
             details={
                 'admin_user': request.user.email,
+                'sessions_ended': ended_count,
             },
             user=request.user,
             status_code=status.HTTP_200_OK
@@ -127,7 +145,8 @@ class ClientViewSet(viewsets.ModelViewSet):
         
         return Response({
             'message': 'Stopped impersonating client',
-            'impersonation_active': False
+            'impersonation_active': False,
+            'sessions_ended': ended_count
         }, status=status.HTTP_200_OK)
     
     @action(detail=False, methods=['get'])
@@ -238,50 +257,51 @@ class UserManagementViewSet(viewsets.ModelViewSet):
             # Force client_id to be the user's client (prevent creating users for other clients)
             data['client_id'] = str(request.user.client.id)
         
-        # Use UserCreateSerializer for creation (handles password)
-        serializer = UserCreateSerializer(data=data)
+        # Use UserCreateSerializer for creation (handles validation, no password)
+        serializer = UserCreateSerializer(data=data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         
-        # Get password before saving (it will be hashed)
-        password = data.get('password')
-        send_email = data.get('send_email', False)
-        
-        # Create user
+        # Create user (always creates inactive user with invite token)
         user = serializer.save()
         
-        # Send email if requested and password is provided
-        if send_email and password:
+        # Get invite token (always generated for new users)
+        invite_token = getattr(user, '_invite_token', None)
+        
+        # Send invite email (always sent for new users)
+        if invite_token:
             try:
-                # Get login URL (for local development, use localhost)
-                # In production, this will be the actual domain
+                # Get login URL
                 if hasattr(request, 'build_absolute_uri'):
-                    login_url = request.build_absolute_uri('/login')
+                    base_url = request.build_absolute_uri('/').rstrip('/')
                 else:
-                    # Fallback for local development
-                    login_url = 'http://localhost:5173/login'
+                    base_url = 'http://localhost:5173'
+                
+                set_password_url = f"{base_url}/auth/set-password?token={invite_token}"
                 
                 # Render email template
-                email_subject = f'Welcome to sync2gear - Your Account Credentials'
-                email_body = render_to_string('admin_panel/email/user_credentials.html', {
+                from django.template.loader import render_to_string
+                email_subject = f'Welcome to sync2gear - Set Your Password'
+                email_body = render_to_string('admin_panel/email/user_invite.html', {
                     'user': user,
-                    'password': password,
-                    'login_url': login_url,
+                    'set_password_url': set_password_url,
+                    'expires_hours': 24,
                 })
                 
                 # Send email
+                from django.core.mail import send_mail
                 send_mail(
                     email_subject,
-                    f'Welcome to sync2gear!\n\nYour account has been created.\n\nEmail: {user.email}\nPassword: {password}\n\nLogin at: {login_url}\n\nPlease change your password after first login.',  # Plain text fallback
+                    f'Welcome to sync2gear!\n\nYour account has been created. Please set your password by clicking the link below:\n\n{set_password_url}\n\nThis link will expire in 24 hours.\n\nIf you did not request this account, please ignore this email.',  # Plain text fallback
                     settings.DEFAULT_FROM_EMAIL,
                     [user.email],
                     html_message=email_body,
                     fail_silently=False,
                 )
                 
-                logger.info(f"Credentials email sent to {user.email}")
+                logger.info(f"Invite email sent to {user.email}")
             except Exception as e:
-                logger.error(f"Failed to send credentials email to {user.email}: {e}", exc_info=True)
-                # Don't fail user creation if email fails, but log the error
+                logger.error(f"Failed to send invite email to {user.email}: {e}", exc_info=True)
+                # User is already created as inactive - this is fine per requirements
         
         # Log user creation
         log_audit_event(
@@ -430,11 +450,19 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             # When filtering by client, also include admin actions (client=None)
             client_id = self.request.query_params.get('client')
             if client_id:
-                # Include logs for the selected client OR admin actions (client=None)
-                queryset = queryset.filter(
-                    Q(client_id=client_id) | 
-                    Q(client__isnull=True, user__role='admin')
-                )
+                # Validate that client_id is a valid UUID
+                try:
+                    import uuid
+                    uuid.UUID(client_id)
+                    # Include logs for the selected client OR admin actions (client=None)
+                    queryset = queryset.filter(
+                        Q(client_id=client_id) | 
+                        Q(client__isnull=True, user__role='admin')
+                    )
+                except (ValueError, TypeError):
+                    # Invalid UUID format - ignore the filter and show all logs
+                    logger.warning(f"Invalid client_id format in audit logs filter: {client_id}")
+                    pass
         # Client users see their client's logs
         elif user.role == 'client' and user.client:
             queryset = AuditLog.objects.filter(client=user.client)

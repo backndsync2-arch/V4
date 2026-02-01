@@ -223,6 +223,76 @@ class ChangePasswordView(generics.GenericAPIView):
         return Response({'message': 'Password changed successfully'}, status=status.HTTP_200_OK)
 
 
+class SetPasswordView(generics.GenericAPIView):
+    """
+    Set password endpoint for user invite flow.
+    
+    Accepts a token from the invite email and a new password.
+    Validates the token, sets the password, marks user as active, and invalidates the token.
+    """
+    permission_classes = [permissions.AllowAny]  # Public endpoint for invite flow
+    
+    def post(self, request):
+        """Set password using invite token."""
+        from .models import UserInviteToken
+        from django.utils import timezone
+        from django.contrib.auth.password_validation import validate_password
+        
+        token = request.data.get('token')
+        password = request.data.get('password')
+        
+        if not token:
+            raise ValidationError("Token is required")
+        
+        if not password:
+            raise ValidationError("Password is required")
+        
+        # Validate password
+        try:
+            validate_password(password)
+        except Exception as e:
+            raise ValidationError(f"Invalid password: {', '.join(e.messages) if hasattr(e, 'messages') else str(e)}")
+        
+        # Find invite token
+        try:
+            invite_token = UserInviteToken.objects.get(token=token)
+        except UserInviteToken.DoesNotExist:
+            raise ValidationError("Invalid or expired invite token")
+        
+        # Validate token
+        if not invite_token.is_valid():
+            raise ValidationError("Invalid or expired invite token")
+        
+        # Set password
+        user = invite_token.user
+        user.set_password(password)
+        user.is_active = True
+        user.save(update_fields=['password', 'is_active'])
+        
+        # Invalidate token
+        invite_token.mark_used()
+        
+        # Log password set
+        log_audit_event(
+            request=request,
+            action='set_password',
+            resource_type='user',
+            resource_id=str(user.id),
+            details={
+                'email': user.email,
+                'via_invite': True,
+            },
+            user=user,
+            status_code=status.HTTP_200_OK
+        )
+        
+        return Response({
+            'message': 'Password set successfully. You can now log in.',
+            'user_id': str(user.id),
+            'email': user.email
+        }, status=status.HTTP_200_OK)
+
+
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
 def password_reset_request(request):

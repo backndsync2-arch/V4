@@ -15,7 +15,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatDateTime } from '@/lib/utils';
 import { toast } from 'sonner';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/app/components/ui/dropdown-menu';
-import { CreateClientDialog } from '@/app/components/CreateClientDialog';
 import { SuperAdminAI } from '@/app/components/SuperAdminAI';
 import { adminAPI, zonesAPI } from '@/lib/api';
 
@@ -28,7 +27,6 @@ export function Admin() {
   const [floors, setFloors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isAddClientOpen, setIsAddClientOpen] = useState(false);
   const [newClientName, setNewClientName] = useState('');
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
   const [selectedFloor, setSelectedFloor] = useState<string | null>(null);
@@ -49,11 +47,13 @@ export function Admin() {
   const loadClients = async () => {
     try {
       const clientsData = await adminAPI.getClients();
-      // Ensure it's always an array
+      // Ensure it's always an array - clients are already normalized by adminAPI.getClients()
       setClients(Array.isArray(clientsData) ? clientsData : []);
     } catch (error: any) {
       console.error('Failed to load clients:', error);
-      toast.error('Failed to load clients');
+      toast.error('Failed to load clients', {
+        description: error?.message || 'Please try again later',
+      });
       setClients([]); // Set to empty array on error
     } finally {
       setLoading(false);
@@ -332,7 +332,8 @@ export function Admin() {
             Manage <strong>Clients</strong> (businesses/organizations) and view system audit logs.
             <br />
             <span className="text-sm text-slate-500">
-              Note: To manage <strong>Users</strong> (people), use the "Team Members" page in the sidebar.
+              <strong>Important:</strong> User and Client creation is only available in the "Team Members" page. 
+              The Users tab here is read-only for viewing purposes.
             </span>
           </p>
         </div>
@@ -347,34 +348,16 @@ export function Admin() {
             <Settings className="h-4 w-4 mr-2" />
             Admin Settings
           </Button>
-          <Button onClick={() => setIsAddClientOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Client
+          <Button 
+            variant="outline"
+            onClick={() => navigate('/users')}
+          >
+            <Users className="h-4 w-4 mr-2" />
+            Manage Users & Clients
           </Button>
         </div>
       </div>
 
-      {/* Create Client Dialog */}
-      <CreateClientDialog
-        open={isAddClientOpen}
-        onOpenChange={setIsAddClientOpen}
-        onClientCreated={(newClient) => {
-          setClients([newClient, ...clients]);
-          
-          // Add audit log
-          const log = {
-            id: `log_${Date.now()}`,
-            userId: 'user1',
-            userName: 'Admin User',
-            action: 'create',
-            resource: 'client',
-            resourceId: newClient.id,
-            details: `Created client: ${newClient.name}`,
-            timestamp: new Date(),
-          };
-          setAuditLogs([log, ...auditLogs]);
-        }}
-      />
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -457,57 +440,75 @@ export function Admin() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {Array.isArray(clients) && clients.map((client) => {
-                    const status = client.status || (client.is_active ? 'active' : 'inactive');
-                    const createdAt = client.createdAt || client.created_at;
-                    return (
-                    <TableRow key={client.id}>
-                      <TableCell className="font-medium">{client.name || client.business_name}</TableCell>
-                      <TableCell>
-                        <Badge variant={status === 'active' ? 'default' : 'secondary'}>
-                          {status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{client.email}</TableCell>
-                      <TableCell>{createdAt ? formatDateTime(createdAt) : 'N/A'}</TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={async () => {
-                              try {
-                                await impersonateClient(client.id, client.name);
-                                toast.success(`Now viewing as ${client.name}`);
-                              } catch (error: any) {
-                                toast.error(error?.message || 'Failed to start impersonation');
-                              }
-                            }}>
-                              <Eye className="h-4 w-4 mr-2" />
-                              Impersonate
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleToggleClientStatus(client.id)}>
-                              {status === 'active' ? (
-                                <>
-                                  <Ban className="h-4 w-4 mr-2" />
-                                  Suspend
-                                </>
-                              ) : (
-                                <>
-                                  <CheckCircle className="h-4 w-4 mr-2" />
-                                  Activate
-                                </>
-                              )}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-8">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#1db954]"></div>
+                          <span className="text-slate-500">Loading clients...</span>
+                        </div>
                       </TableCell>
                     </TableRow>
-                    );
-                  })}
+                  ) : !Array.isArray(clients) || clients.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-8 text-slate-500">
+                        No clients found. Create your first client to get started.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    clients.map((client) => {
+                      const status = client.status || 'active';
+                      const createdAt = client.createdAt;
+                      const displayName = client.businessName || client.name || 'Unnamed Client';
+                      return (
+                        <TableRow key={client.id}>
+                          <TableCell className="font-medium">{displayName}</TableCell>
+                          <TableCell>
+                            <Badge variant={status === 'active' ? 'default' : 'secondary'}>
+                              {status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{client.email}</TableCell>
+                          <TableCell>{createdAt ? formatDateTime(createdAt) : 'N/A'}</TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={async () => {
+                                  try {
+                                    await impersonateClient(client.id, displayName);
+                                    toast.success(`Now viewing as ${displayName}`);
+                                  } catch (error: any) {
+                                    toast.error(error?.message || 'Failed to start impersonation');
+                                  }
+                                }}>
+                                  <Eye className="h-4 w-4 mr-2" />
+                                  Impersonate
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleToggleClientStatus(client.id)}>
+                                  {status === 'active' ? (
+                                    <>
+                                      <Ban className="h-4 w-4 mr-2" />
+                                      Suspend
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CheckCircle className="h-4 w-4 mr-2" />
+                                      Activate
+                                    </>
+                                  )}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -518,14 +519,26 @@ export function Admin() {
         <TabsContent value="users">
           <Card>
             <CardHeader>
-              <CardTitle>Users (People)</CardTitle>
-              <CardDescription>
-                Quick view of all users across all clients. 
-                <br />
-                <span className="text-sm text-slate-500">
-                  For full user management, use the "Team Members" page in the sidebar.
-                </span>
-              </CardDescription>
+              <div className="flex items-start justify-between">
+                <div>
+                  <CardTitle>Users (People) - View Only</CardTitle>
+                  <CardDescription>
+                    Quick view of all users across all clients. 
+                    <br />
+                    <span className="text-sm text-slate-500">
+                      <strong>Note:</strong> This is a read-only view. To create, edit, or manage users, use the "Team Members" page in the sidebar.
+                    </span>
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => navigate('/users')}
+                  className="ml-4"
+                >
+                  <Users className="h-4 w-4 mr-2" />
+                  Go to Team Members
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <Table>

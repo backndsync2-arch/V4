@@ -8,9 +8,151 @@ import json
 import logging
 from django.utils.deprecation import MiddlewareMixin
 from django.utils import timezone
-from apps.admin_panel.models import AuditLog
+from datetime import timedelta
+from django.conf import settings
+from apps.admin_panel.models import AuditLog, ImpersonationLog
+from apps.authentication.models import Client
 
 logger = logging.getLogger(__name__)
+
+# Default impersonation session timeout (8 hours)
+IMPERSONATION_SESSION_TIMEOUT_HOURS = getattr(settings, 'IMPERSONATION_SESSION_TIMEOUT_HOURS', 8)
+
+
+class ImpersonationLogMiddleware(MiddlewareMixin):
+    """
+    Middleware to log admin impersonation sessions.
+    
+    This middleware runs BEFORE data filtering to capture the intent
+    before any data is returned. It:
+    1. Validates impersonation header (admin only, valid client)
+    2. Creates/updates ImpersonationLog entries
+    3. Tracks actions performed during impersonation
+    4. Handles session expiry
+    """
+    
+    def process_request(self, request):
+        """Process request to handle impersonation logging."""
+        # Only process authenticated requests
+        if not request.user or not request.user.is_authenticated:
+            return None
+        
+        # Check for impersonation header
+        impersonate_client_id = request.META.get('HTTP_X_IMPERSONATE_CLIENT')
+        if not impersonate_client_id:
+            return None
+        
+        # Validate user is admin
+        if request.user.role != 'admin':
+            # Reject with 403 if non-admin tries to use impersonation header
+            logger.warning(
+                f"Non-admin user {request.user.email} attempted to use X-Impersonate-Client header"
+            )
+            # Mark error to be handled in process_response
+            request._impersonation_error = {
+                'error': 'Only admin users can use impersonation',
+                'status': 403
+            }
+            return None
+        
+        # Validate client exists
+        try:
+            client = Client.objects.get(id=impersonate_client_id)
+        except (Client.DoesNotExist, ValueError, TypeError):
+            logger.warning(
+                f"Admin {request.user.email} attempted to impersonate invalid client: {impersonate_client_id}"
+            )
+            request._impersonation_error = {
+                'error': f'Client with id {impersonate_client_id} does not exist',
+                'status': 404
+            }
+            return None
+        
+        # Get or create active impersonation log
+        impersonation_log = ImpersonationLog.objects.filter(
+            admin_user=request.user,
+            impersonated_client=client,
+            ended_at__isnull=True
+        ).first()
+        
+        # Check for session expiry
+        if impersonation_log:
+            timeout = timedelta(hours=IMPERSONATION_SESSION_TIMEOUT_HOURS)
+            if timezone.now() - impersonation_log.started_at > timeout:
+                # Session expired - end it
+                impersonation_log.ended_at = timezone.now()
+                impersonation_log.save(update_fields=['ended_at'])
+                logger.info(
+                    f"Impersonation session expired for admin {request.user.email} -> client {client.name}"
+                )
+                impersonation_log = None
+        
+        # Create new session if needed
+        if not impersonation_log:
+            ip_address = self._get_client_ip(request)
+            impersonation_log = ImpersonationLog.objects.create(
+                admin_user=request.user,
+                impersonated_client=client,
+                ip_address=ip_address,
+            )
+            logger.info(
+                f"Started impersonation session: admin {request.user.email} -> client {client.name}"
+            )
+        
+        # Store impersonation log in request for later use
+        request._impersonation_log = impersonation_log
+        
+        return None
+    
+    def process_response(self, request, response):
+        """Process response to log actions and handle errors."""
+        # Handle impersonation errors - return JSON error response
+        if hasattr(request, '_impersonation_error'):
+            from django.http import JsonResponse
+            error_info = request._impersonation_error
+            return JsonResponse(
+                {'error': error_info['error']},
+                status=error_info['status']
+            )
+        
+        # Log action if impersonation is active
+        if hasattr(request, '_impersonation_log') and request._impersonation_log:
+            impersonation_log = request._impersonation_log
+            
+            # Only log successful operations
+            if response.status_code >= 200 and response.status_code < 300:
+                # Extract endpoint summary
+                endpoint = request.path
+                method = request.method
+                
+                # Create summary
+                summary = f"{method} {endpoint}"
+                if request.method in ['POST', 'PUT', 'PATCH']:
+                    try:
+                        body = json.loads(request.body.decode('utf-8')) if request.body else {}
+                        # Create a brief summary (don't log full payload for security)
+                        if 'name' in body:
+                            summary += f" - {body.get('name', '')[:50]}"
+                        elif 'title' in body:
+                            summary += f" - {body.get('title', '')[:50]}"
+                        elif 'email' in body:
+                            summary += f" - {body.get('email', '')[:50]}"
+                    except:
+                        pass
+                
+                # Add action to log
+                impersonation_log.add_action(method, endpoint, summary)
+        
+        return response
+    
+    def _get_client_ip(self, request):
+        """Get client IP address from request."""
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0].strip()
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
 
 
 class AuditLogMiddleware(MiddlewareMixin):

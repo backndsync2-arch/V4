@@ -1,0 +1,139 @@
+// Prisma Schema for Sync2Gear
+// Database: PostgreSQL on AWS RDS
+
+generator client {
+  provider = "prisma-client-py"
+  output   = "../sync2gear_backend/prisma_client"
+}
+
+generator client_js {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique @db.VarChar(255)
+  name      String   @db.VarChar(255)
+  password  String   @db.VarChar(255) // Hashed password
+  role      String   @default("client") @db.VarChar(20) // client, floor_user, staff, admin
+  avatar    String?  @db.VarChar(500)
+  phone     String?  @db.VarChar(50)
+  timezone  String   @default("UTC") @db.VarChar(50)
+  is_active Boolean  @default(true)
+  is_staff  Boolean  @default(false)
+  is_superuser Boolean @default(false)
+  last_seen DateTime?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  tracks        Track[]
+  schedules     Schedule[]
+  announcements Announcement[]
+  play_logs     PlayLog[]
+
+  @@index([email])
+  @@index([role, is_active])
+  @@map("users")
+}
+
+model Track {
+  id        String   @id @default(uuid()) @db.Uuid
+  title     String   @db.VarChar(255)
+  artist    String?  @db.VarChar(255)
+  album     String?  @db.VarChar(255)
+  genre     String?  @db.VarChar(100)
+  year      Int?
+  duration  Int      // seconds
+  filename  String   @db.VarChar(255)
+  file_path String   @db.VarChar(500)
+  file_size BigInt   // bytes
+  cover_art String?  @db.VarChar(500)
+  order     Int      @default(0)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  user_id String? @db.Uuid
+  user    User?   @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([title, artist])
+  @@index([user_id])
+  @@map("tracks")
+}
+
+model Schedule {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(255)
+  type        String   @db.VarChar(20) // music, announcement
+  mode        String   @db.VarChar(20) // interval, timeline, datetime
+  config      Json     // Flexible schedule configuration
+  enabled     Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  // Relations
+  user_id String? @db.Uuid
+  user    User?   @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([enabled])
+  @@index([user_id])
+  @@map("schedules")
+}
+
+model Announcement {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String   @db.VarChar(255)
+  file_path   String   @db.VarChar(500)
+  duration    Int      // seconds
+  file_size   BigInt   // bytes
+  is_tts      Boolean  @default(false)
+  tts_text    String?  @db.Text
+  tts_voice   String?  @db.VarChar(50)
+  is_recording Boolean @default(false)
+  enabled     Boolean  @default(true)
+  category    String?  @db.VarChar(100)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  // Relations
+  user_id String? @db.Uuid
+  user    User?   @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  play_logs PlayLog[]
+
+  @@index([enabled])
+  @@index([is_tts])
+  @@index([user_id])
+  @@map("announcements")
+}
+
+model PlayLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  event_type    String   @db.VarChar(20) // instant, scheduled
+  status        String   @default("pending") @db.VarChar(20) // pending, delivered, playing, completed, failed
+  delivered_at  DateTime?
+  completed_at  DateTime?
+  error_message String?  @db.Text
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relations
+  user_id         String?      @db.Uuid
+  user            User?         @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  announcement_id String        @db.Uuid
+  announcement    Announcement  @relation(fields: [announcement_id], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([announcement_id])
+  @@index([user_id])
+  @@index([event_type, status])
+  @@map("play_logs")
+}
+

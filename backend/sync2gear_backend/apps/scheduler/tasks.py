@@ -7,9 +7,16 @@ Copyright (c) 2025 sync2gear Ltd. All Rights Reserved.
 from celery import shared_task
 from django.utils import timezone
 from datetime import datetime, time, timedelta
-from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 import logging
+
+# Optional channels import (not available in Lambda)
+try:
+    from channels.layers import get_channel_layer
+    CHANNELS_AVAILABLE = True
+except ImportError:
+    CHANNELS_AVAILABLE = False
+    get_channel_layer = None
 
 logger = logging.getLogger(__name__)
 
@@ -341,28 +348,31 @@ def _execute_schedule_impl(schedule_id):
                         except Exception as e:
                             logger.error(f"Failed to play announcement on zone {zone.id}: {e}")
 
-        # Send WebSocket notification for schedule execution
-        try:
-            event_data = {
-                'schedule_id': str(schedule.id),
-                'schedule_name': schedule.name,
-                'zone_ids': zone_ids,
-                'executed_at': executed_at,
-                'triggered_by': 'schedule',
-            }
-
-            # Send to global events group
-            async_to_sync(channel_layer.group_send)(
-                'global_events',
-                {
-                    'type': 'schedule_executed',
-                    'data': event_data
+        # Send WebSocket notification for schedule execution (if channels available)
+        if CHANNELS_AVAILABLE:
+            try:
+                event_data = {
+                    'schedule_id': str(schedule.id),
+                    'schedule_name': schedule.name,
+                    'zone_ids': zone_ids,
+                    'executed_at': executed_at,
+                    'triggered_by': 'schedule',
                 }
-            )
 
-            logger.info(f"Schedule {schedule.name} executed - notification sent")
-        except Exception as e:
-            logger.error(f"Failed to send schedule execution notification for {schedule.name}: {e}")
+                # Send to global events group
+                channel_layer = get_channel_layer()
+                if channel_layer:
+                    async_to_sync(channel_layer.group_send)(
+                        'global_events',
+                        {
+                            'type': 'schedule_executed',
+                            'data': event_data
+                        }
+                    )
+
+                logger.info(f"Schedule {schedule.name} executed - notification sent")
+            except Exception as e:
+                logger.error(f"Failed to send schedule execution notification for {schedule.name}: {e}")
 
         # Update last execution time
         schedule.last_executed_at = timezone.now()

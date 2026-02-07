@@ -168,8 +168,7 @@ class Command(BaseCommand):
                 "email": "admin@sync2gear.com",
                 "name": "System Admin",
                 "role": "admin",
-                # Dev convenience: attach admin to demo client so client-scoped endpoints work out of the box.
-                "client": demo_client,
+                "client": None,  # Admin must have client=None
                 "floor": None,
                 "is_staff": True,
                 "is_superuser": True,
@@ -181,8 +180,7 @@ class Command(BaseCommand):
                 "email": "staff@sync2gear.com",
                 "name": "Support Staff",
                 "role": "staff",
-                # Dev convenience: attach staff to demo client so client-scoped endpoints work out of the box.
-                "client": demo_client,
+                "client": None,  # Staff must have client=None
                 "floor": None,
                 "is_staff": True,
                 "is_superuser": False,
@@ -213,11 +211,11 @@ class Command(BaseCommand):
                 "is_active": True,
                 "password": "Floor@Downtown2025!",  # Strong password for demo account
             },
-            # Manager user - Demo account
+            # Additional client user - Demo account
             {
                 "email": "manager@example.com",
                 "name": "Manager User",
-                "role": "manager",
+                "role": "client",  # Changed from 'manager' to 'client' as manager is not a valid role
                 "client": demo_client,
                 "floor": None,
                 "is_staff": False,
@@ -225,11 +223,11 @@ class Command(BaseCommand):
                 "is_active": True,
                 "password": "Manager@Example2025!",
             },
-            # Operator user - Demo account
+            # Additional client user - Demo account
             {
                 "email": "operator@example.com",
                 "name": "Operator User",
-                "role": "operator",
+                "role": "client",  # Changed from 'operator' to 'client' as operator is not a valid role
                 "client": demo_client,
                 "floor": None,
                 "is_staff": False,
@@ -267,18 +265,23 @@ class Command(BaseCommand):
         )
 
         # Create users for test client
-        test_client_user, _ = User.objects.get_or_create(
-            email="testclient@retailstore.com",
-            defaults={
-                "name": "Test Client Admin",
-                "role": "client",
-                "client": test_client,
-                "floor": None,
-                "is_staff": False,
-                "is_superuser": False,
-                "is_active": True,
-            },
-        )
+        try:
+            test_client_user = User.objects.get(email="testclient@retailstore.com")
+            created = False
+        except User.DoesNotExist:
+            test_client_user = User.objects.create_user(
+                email="testclient@retailstore.com",
+                password="TestClient@Retail2025!",
+                name="Test Client Admin",
+                role="client",
+                client=test_client,
+                floor=None,
+                is_staff=False,
+                is_superuser=False,
+                is_active=True,
+            )
+            created = True
+        
         if reset_passwords:
             test_client_user.set_password("TestClient@Retail2025!")
             test_client_user.save(update_fields=["password"])
@@ -287,18 +290,22 @@ class Command(BaseCommand):
         )
 
         for a in accounts:
-            user, created = User.objects.get_or_create(
-                email=a["email"],
-                defaults={
-                    "name": a["name"],
-                    "role": a["role"],
-                    "client": a["client"],
-                    "floor": a["floor"],
-                    "is_active": True,
-                    "is_staff": a["is_staff"],
-                    "is_superuser": a["is_superuser"],
-                },
-            )
+            try:
+                user = User.objects.get(email=a["email"])
+                created = False
+            except User.DoesNotExist:
+                user = User.objects.create_user(
+                    email=a["email"],
+                    password=a["password"],
+                    name=a["name"],
+                    role=a["role"],
+                    client=a["client"],
+                    floor=a["floor"],
+                    is_active=True,
+                    is_staff=a["is_staff"],
+                    is_superuser=a["is_superuser"],
+                )
+                created = True
 
             # Ensure fields match our seeded intent even if user already existed
             changed = False
@@ -321,8 +328,8 @@ class Command(BaseCommand):
         self.stdout.write("  - admin@sync2gear.com / Admin@Sync2Gear2025!   (role=admin)")
         self.stdout.write("  - staff@sync2gear.com / Staff@Sync2Gear2025!   (role=staff)")
         self.stdout.write("  - client1@example.com / Client@Example2025!  (role=client)")
-        self.stdout.write("  - manager@example.com / Manager@Example2025!  (role=manager)")
-        self.stdout.write("  - operator@example.com / Operator@Example2025!  (role=operator)")
+        self.stdout.write("  - manager@example.com / Manager@Example2025!  (role=client)")
+        self.stdout.write("  - operator@example.com / Operator@Example2025!  (role=client)")
         self.stdout.write("  - floor1@downtowncoffee.com / Floor@Downtown2025!    (role=floor_user)")
         self.stdout.write("  - testclient@retailstore.com / TestClient@Retail2025!  (role=client, test client)")
         self.stdout.write(self.style.SUCCESS(f"\n✅ Created {Zone.objects.filter(client=demo_client).count()} zones and {Device.objects.filter(client=demo_client).count()} devices for demo client"))

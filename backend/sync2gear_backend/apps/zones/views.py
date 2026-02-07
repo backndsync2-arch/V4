@@ -238,33 +238,38 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         device.update_heartbeat()
 
-        # Send WebSocket notification if status changed
+        # Send WebSocket notification if status changed (if channels available)
         if not was_online and device.is_online:
             try:
-                from channels.layers import get_channel_layer
-                from asgiref.sync import async_to_sync
+                try:
+                    from channels.layers import get_channel_layer
+                    from asgiref.sync import async_to_sync
 
-                channel_layer = get_channel_layer()
-                event_data = {
-                    'device_id': str(device.id),
-                    'device_name': device.name,
-                    'zone_id': str(device.zone.id) if device.zone else None,
-                    'zone_name': device.zone.name if device.zone else None,
-                    'is_online': True,
-                    'last_seen': device.last_seen.isoformat() if device.last_seen else None,
-                    'volume': device.volume,
-                }
+                    channel_layer = get_channel_layer()
+                    if channel_layer:
+                        event_data = {
+                            'device_id': str(device.id),
+                            'device_name': device.name,
+                            'zone_id': str(device.zone.id) if device.zone else None,
+                            'zone_name': device.zone.name if device.zone else None,
+                            'is_online': True,
+                            'last_seen': device.last_seen.isoformat() if device.last_seen else None,
+                            'volume': device.volume,
+                        }
 
-                # Send to global events group
-                async_to_sync(channel_layer.group_send)(
-                    'global_events',
-                    {
-                        'type': 'device_status_change',
-                        'data': event_data
-                    }
-                )
+                        # Send to global events group
+                        async_to_sync(channel_layer.group_send)(
+                            'global_events',
+                            {
+                                'type': 'device_status_change',
+                                'data': event_data
+                            }
+                        )
 
-                logger.info(f"Device {device.name} came online - notification sent")
+                        logger.info(f"Device {device.name} came online - notification sent")
+                except ImportError:
+                    # Channels not available (e.g., in Lambda)
+                    logger.debug(f"Channels not available, skipping WebSocket notification for device {device.name}")
             except Exception as e:
                 logger.error(f"Failed to send online notification for device {device.name}: {e}")
 

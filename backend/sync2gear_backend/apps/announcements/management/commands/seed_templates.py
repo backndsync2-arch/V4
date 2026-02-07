@@ -126,9 +126,9 @@ class Command(BaseCommand):
                 # Always update image_url and description even if folder exists
                 if folder.image_url != folder_def['image_url'] or folder.description != folder_def['description']:
                     folder.image_url = folder_def['image_url']
-                folder.description = folder_def['description']
-                folder.active = True
-                folder.save()
+                    folder.description = folder_def['description']
+                    folder.active = True
+                    folder.save()
                     self.stdout.write(
                         self.style.SUCCESS(f'Updated image and description for {folder.name}')
                     )
@@ -140,7 +140,7 @@ class Command(BaseCommand):
                     continue
                 else:
                     # Delete old templates when using --force
-                folder.templates.all().delete()
+                    folder.templates.all().delete()
             
             self.stdout.write(f'Generating templates for {folder.name}...')
             

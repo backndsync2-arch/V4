@@ -1,88 +1,79 @@
 """
 Production settings for sync2gear.
 
-These settings are used in production deployment.
+These settings are used in production deployment on AWS Lambda.
 """
 
 from .base import *
 import os
+import pymongo
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=[])
+ALLOWED_HOSTS = ['*']  # API Gateway handles host validation
 
-# Database - Use PostgreSQL from DATABASE_URL
+# Database - MongoDB
+# Use environment variables if available, otherwise use defaults
+MONGODB_URL = os.environ.get('MONGODB_URI') or os.environ.get('MONGODB_URL') or 'mongodb+srv://backndsync2_db_user:QObM0opJLdHg2b3u@sync2gear.bjxcwmc.mongodb.net/sync2gear?appName=Sync2Gear'
+MONGODB_NAME = os.environ.get('DB_NAME', 'sync2gear')
+
+# Django's default database - SQLite for Django ORM models (User, Client, etc.)
+# Note: MongoDB is used for other data via pymongo (see db.py)
+# SQLite is required for Django ORM - MongoDB doesn't have native Django ORM support
+# All Django models will be stored in SQLite, other data in MongoDB
 DATABASES = {
-    'default': env.db('DATABASE_URL')
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': '/tmp/sync2gear_users.db',  # File-based SQLite for user persistence
+    }
 }
 
-# AWS S3 Storage Configuration
-USE_S3 = env.bool('USE_S3', default=True)
+# MongoDB connection - don't connect at import time, use lazy connection via db.py
+# This prevents blocking startup if MongoDB is unavailable
+MONGO_CLIENT = None
+MONGO_DB = None
 
-if USE_S3:
-    AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID')
-    AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY')
-    AWS_STORAGE_BUCKET_NAME = env('AWS_STORAGE_BUCKET_NAME')
-    AWS_S3_REGION_NAME = env('AWS_S3_REGION_NAME', default='us-east-1')
-    AWS_S3_CUSTOM_DOMAIN = env('AWS_S3_CUSTOM_DOMAIN', default=f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com')
-    AWS_S3_OBJECT_PARAMETERS = {
-        'CacheControl': 'max-age=86400',
-    }
-    AWS_DEFAULT_ACL = 'private'
-    AWS_QUERYSTRING_AUTH = True
-    AWS_QUERYSTRING_EXPIRE = 3600  # 1 hour
-    
-    # Static and media files
-    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-    STATICFILES_STORAGE = 'storages.backends.s3boto3.S3StaticStorage'
-    
-    MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
-    STATIC_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/static/'
-else:
-    # Fallback to local storage
-    DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
-    MEDIA_ROOT = BASE_DIR / 'media'
-    STATIC_ROOT = BASE_DIR / 'staticfiles'
+# File Storage - Use local storage (S3 can be added later if needed)
+DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+MEDIA_ROOT = '/tmp/media'  # Lambda /tmp directory
+STATIC_ROOT = '/tmp/staticfiles'
 
-# Email Configuration
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = env('EMAIL_HOST', default='smtp.gmail.com')
-EMAIL_PORT = env.int('EMAIL_PORT', default=587)
-EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
-EMAIL_HOST_USER = env('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
-DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@sync2gear.com')
+# Email Configuration (optional - can be configured later)
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = 'noreply@sync2gear.com'
 
-# Security Settings
-SECURE_SSL_REDIRECT = True
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+# Security Settings (relaxed for API Gateway)
+# API Gateway handles SSL termination, so we don't need these strict settings
+SECURE_SSL_REDIRECT = False  # API Gateway handles SSL
+SESSION_COOKIE_SECURE = False  # Not using cookies for auth (using JWT)
+CSRF_COOKIE_SECURE = False  # Not using CSRF cookies
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
-SECURE_HSTS_SECONDS = 31536000  # 1 year
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
+# HSTS is handled by API Gateway
+SECURE_HSTS_SECONDS = 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+SECURE_HSTS_PRELOAD = False
 
-# CORS - Only allow specific origins
-CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[])
+# CORS - Allow all origins for simplicity
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 
-# Sentry Error Tracking (optional)
-SENTRY_DSN = env('SENTRY_DSN', default=None)
-if SENTRY_DSN:
-    import sentry_sdk
-    from sentry_sdk.integrations.django import DjangoIntegration
-    from sentry_sdk.integrations.celery import CeleryIntegration
-    
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        integrations=[
-            DjangoIntegration(),
-            CeleryIntegration(),
-        ],
-        traces_sample_rate=0.1,
-        send_default_pii=True,
-        environment=env('ENVIRONMENT', default='production'),
-    )
+# Channel Layers - Disabled for Lambda (WebSocket not supported in HTTP API)
+# CHANNEL_LAYERS = {}
+
+# Sentry Error Tracking (disabled - can be enabled later if needed)
+# SENTRY_DSN = None

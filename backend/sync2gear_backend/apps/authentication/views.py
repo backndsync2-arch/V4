@@ -91,32 +91,56 @@ class LoginView(TokenObtainPairView):
     
     def post(self, request, *args, **kwargs):
         """Handle login and log audit event."""
-        response = super().post(request, *args, **kwargs)
-        
-        # Log successful login
-        if response.status_code == 200:
-            try:
-                # Get user from serializer
-                serializer = self.get_serializer(data=request.data)
-                if serializer.is_valid():
-                    user = serializer.user
+        try:
+            response = super().post(request, *args, **kwargs)
+            
+            # Log successful login
+            if response.status_code == 200:
+                try:
+                    # Get user from serializer
+                    serializer = self.get_serializer(data=request.data)
+                    if serializer.is_valid():
+                        user = serializer.user
+                        log_audit_event(
+                            request=request,
+                            action='login',
+                            resource_type='user',
+                            resource_id=str(user.id),
+                            details={
+                                'email': user.email,
+                                'role': user.role,
+                                'success': True,
+                            },
+                            user=user,
+                            status_code=200
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to log login event: {e}")
+            else:
+                # Log failed login attempt
+                try:
+                    email = request.data.get('email', 'unknown')
                     log_audit_event(
                         request=request,
-                        action='login',
+                        action='login_failed',
                         resource_type='user',
-                        resource_id=str(user.id),
                         details={
-                            'email': user.email,
-                            'role': user.role,
-                            'success': True,
+                            'email': email,
+                            'success': False,
+                            'reason': 'Invalid credentials',
                         },
-                        user=user,
-                        status_code=200
+                        user=None,
+                        status_code=response.status_code
                     )
-            except Exception as e:
-                logger.error(f"Failed to log login event: {e}")
-        else:
-            # Log failed login attempt
+                except Exception as e:
+                    logger.error(f"Failed to log failed login: {e}")
+            
+            return response
+        except Exception as e:
+            # Log the error
+            logger.error(f"Login error: {e}", exc_info=True)
+            
+            # Log failed login attempt (when exception is raised)
             try:
                 email = request.data.get('email', 'unknown')
                 log_audit_event(
@@ -126,15 +150,27 @@ class LoginView(TokenObtainPairView):
                     details={
                         'email': email,
                         'success': False,
-                        'reason': 'Invalid credentials',
+                        'reason': str(e),
                     },
                     user=None,
-                    status_code=response.status_code
+                    status_code=500
                 )
-            except Exception as e:
-                logger.error(f"Failed to log failed login: {e}")
-        
-        return response
+            except Exception as log_error:
+                logger.error(f"Failed to log failed login: {log_error}")
+            
+            # Return proper error response instead of raising
+            from rest_framework_simplejwt.exceptions import AuthenticationFailed
+            if isinstance(e, AuthenticationFailed):
+                return Response(
+                    {'detail': str(e)},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            else:
+                # For other errors, return 500 but with proper format
+                return Response(
+                    {'detail': 'An error occurred during login. Please try again.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
 
 
 class LogoutView(generics.GenericAPIView):
@@ -445,3 +481,94 @@ class UserSettingsViewSet(generics.RetrieveUpdateAPIView):
 
         serializer = self.get_serializer(user)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])  # Allow for initial setup
+def seed_users(request):
+    """
+    Seed default users endpoint.
+    Can be called once after deployment to create initial users.
+    """
+    import os
+    
+    # Simple security: Check for a secret token (optional)
+    secret_token = request.data.get('token', '')
+    expected_token = os.environ.get('SEED_TOKEN', 'sync2gear-seed-2025')
+    
+    if secret_token != expected_token:
+        return Response(
+            {'error': 'Invalid token. Provide token in request body.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+    
+    default_users = [
+        {
+            'email': 'admin@sync2gear.com',
+            'name': 'System Admin',
+            'password': 'Admin@Sync2Gear2025!',
+            'role': 'admin',
+            'is_active': True,
+            'is_staff': True,
+            'is_superuser': True,
+        },
+        {
+            'email': 'staff@sync2gear.com',
+            'name': 'Support Staff',
+            'password': 'Staff@Sync2Gear2025!',
+            'role': 'staff',
+            'is_active': True,
+            'is_staff': True,
+            'is_superuser': False,
+        },
+        {
+            'email': 'client@example.com',
+            'name': 'Client User',
+            'password': 'Client@Example2025!',
+            'role': 'client',
+            'is_active': True,
+            'is_staff': False,
+            'is_superuser': False,
+        },
+    ]
+    
+    created_count = 0
+    updated_count = 0
+    errors = []
+    
+    for user_data in default_users:
+        email = user_data['email']
+        password = user_data.pop('password')
+        
+        try:
+            user = User.objects.get(email=email)
+            # Update password
+            user.set_password(password)
+            for key, value in user_data.items():
+                setattr(user, key, value)
+            user.save()
+            updated_count += 1
+        except User.DoesNotExist:
+            try:
+                User.objects.create_user(
+                    email=email,
+                    password=password,
+                    **user_data
+                )
+                created_count += 1
+            except Exception as e:
+                errors.append(f"{email}: {str(e)}")
+        except Exception as e:
+            errors.append(f"{email}: {str(e)}")
+    
+    return Response({
+        'message': 'Users seeded successfully',
+        'created': created_count,
+        'updated': updated_count,
+        'errors': errors if errors else None,
+        'credentials': {
+            'admin': 'admin@sync2gear.com / Admin@Sync2Gear2025!',
+            'staff': 'staff@sync2gear.com / Staff@Sync2Gear2025!',
+            'client': 'client@example.com / Client@Example2025!',
+        }
+    }, status=status.HTTP_200_OK)

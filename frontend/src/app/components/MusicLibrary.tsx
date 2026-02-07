@@ -66,7 +66,7 @@ export function MusicLibrary() {
   
   // Filter music files by selected zone (activeTarget from GlobalHeader)
   const zoneFilteredFiles = activeTarget
-    ? musicFiles.filter((f: any) => f.zoneId === activeTarget || f.zone === activeTarget)
+    ? musicFiles.filter((f: any) => String(f.zoneId || '') === String(activeTarget || '') || String(f.zone || '') === String(activeTarget || ''))
     : musicFiles;
   
   const displayedFiles = selectedFolder
@@ -107,11 +107,20 @@ export function MusicLibrary() {
         if (!musicUploadFolderId && musicFolders.length > 0) {
           setMusicUploadFolderId(musicFolders[0].id);
         }
-        // Set default zone to activeTarget if available
-        if (activeTarget && !musicUploadZoneId) {
+        // Always sync zone with activeTarget (navbar zone)
+        if (activeTarget) {
           setMusicUploadZoneId(activeTarget);
-        } else if (!musicUploadZoneId && z && z.length > 0) {
-          setMusicUploadZoneId(z[0].id);
+          if (isAdmin) {
+            setAnnouncementUploadZoneId(activeTarget);
+          }
+        } else if (z && z.length > 0) {
+          // Fallback to first zone if no activeTarget
+          if (!musicUploadZoneId) {
+            setMusicUploadZoneId(z[0].id);
+          }
+          if (isAdmin && !announcementUploadZoneId) {
+            setAnnouncementUploadZoneId(z[0].id);
+          }
         }
 
         if (isAdmin) {
@@ -119,11 +128,6 @@ export function MusicLibrary() {
           setAnnouncementFolders(annFolders);
           if (!announcementUploadFolderId && annFolders.length > 0) {
             setAnnouncementUploadFolderId(annFolders[0].id);
-          }
-          if (activeTarget && !announcementUploadZoneId) {
-            setAnnouncementUploadZoneId(activeTarget);
-          } else if (!announcementUploadZoneId && z && z.length > 0) {
-            setAnnouncementUploadZoneId(z[0].id);
           }
         }
       } catch (e: any) {
@@ -145,6 +149,27 @@ export function MusicLibrary() {
       }
     }
   }, [isUploadOpen]);
+
+  // Sync upload zone with activeTarget when dialog opens or activeTarget changes
+  useEffect(() => {
+    if (activeTarget) {
+      // Always sync with activeTarget when it changes
+      setMusicUploadZoneId(activeTarget);
+      if (isAdmin) {
+        setAnnouncementUploadZoneId(activeTarget);
+      }
+    }
+  }, [activeTarget, isAdmin]);
+
+  // Also sync when upload dialog opens
+  useEffect(() => {
+    if (isUploadOpen && activeTarget) {
+      setMusicUploadZoneId(activeTarget);
+      if (isAdmin) {
+        setAnnouncementUploadZoneId(activeTarget);
+      }
+    }
+  }, [isUploadOpen, activeTarget, isAdmin]);
 
   // Folder creation is handled by CreateFolderDialog now.
 
@@ -615,17 +640,36 @@ export function MusicLibrary() {
                           onValueChange={(value) => setMusicUploadZoneId(value)}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select zone..." />
+                            <SelectValue placeholder="Select zone...">
+                              {(() => {
+                                const selectedZone = zones.find((z: any) => z.id === (musicUploadZoneId || activeTarget));
+                                return selectedZone ? selectedZone.name : (activeTarget ? 'Loading...' : 'Select zone...');
+                              })()}
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            {zones.map((z: any) => (
-                              <SelectItem key={z.id} value={z.id}>
-                                {z.name}
-                              </SelectItem>
-                            ))}
+                            {zones
+                              .filter((z: any) => {
+                                // For admin: if client is selected, filter zones by that client
+                                if (isAdmin && uploadClientId) {
+                                  return z.clientId === uploadClientId;
+                                }
+                                // For admin without client selection: show all zones
+                                // For non-admin: show only their client's zones (already filtered by backend)
+                                return true;
+                              })
+                              .map((z: any) => (
+                                <SelectItem key={z.id} value={z.id}>
+                                  {z.name}
+                                </SelectItem>
+                              ))}
                           </SelectContent>
                         </Select>
-                        <p className="text-xs text-gray-400">Select the zone for these music files.</p>
+                        <p className="text-xs text-gray-400">
+                          {activeTarget 
+                            ? `Current zone: ${zones.find((z: any) => z.id === activeTarget)?.name || 'Unknown'}. ${isAdmin ? 'You can select a different zone if needed.' : ''}`
+                            : 'Select the zone for these music files.'}
+                        </p>
                       </div>
                       <div className="space-y-2">
                         <Label>Music Folder</Label>
@@ -657,17 +701,34 @@ export function MusicLibrary() {
                           onValueChange={(value) => setAnnouncementUploadZoneId(value)}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select zone..." />
+                            <SelectValue placeholder="Select zone...">
+                              {(() => {
+                                const selectedZone = zones.find((z: any) => z.id === (announcementUploadZoneId || activeTarget));
+                                return selectedZone ? selectedZone.name : 'Select zone...';
+                              })()}
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            {zones.map((z: any) => (
-                              <SelectItem key={z.id} value={z.id}>
-                                {z.name}
-                              </SelectItem>
-                            ))}
+                            {zones
+                              .filter((z: any) => {
+                                // For admin: if client is selected, filter zones by that client
+                                if (isAdmin && uploadClientId) {
+                                  return String(z.clientId || z.client_id || '') === String(uploadClientId);
+                                }
+                                return true;
+                              })
+                              .map((z: any) => (
+                                <SelectItem key={z.id} value={z.id}>
+                                  {z.name}
+                                </SelectItem>
+                              ))}
                           </SelectContent>
                         </Select>
-                        <p className="text-xs text-gray-400">Select the zone for these announcement files.</p>
+                        <p className="text-xs text-gray-400">
+                          {activeTarget 
+                            ? `Current zone: ${zones.find((z: any) => z.id === activeTarget)?.name || 'Unknown'}. You can select a different zone if needed.`
+                            : 'Select the zone for these announcement files.'}
+                        </p>
                       </div>
                       <div className="space-y-2">
                         <Label>Announcement Folder</Label>

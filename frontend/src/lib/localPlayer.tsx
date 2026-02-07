@@ -96,14 +96,24 @@ export function LocalPlayerProvider({ children }: { children: React.ReactNode })
     }
     const audio = ensureAudio();
 
+    // Format URL to be absolute if needed
+    let audioUrl = next.url;
+    if (audioUrl && !audioUrl.startsWith('http://') && !audioUrl.startsWith('https://')) {
+      // If relative URL, make it absolute
+      audioUrl = audioUrl.startsWith('/') ? `${window.location.origin}${audioUrl}` : `${window.location.origin}/${audioUrl}`;
+    }
+
     // If same track, just toggle
-    if (track?.id === next.id) {
+    if (track?.id === next.id && audio.src === audioUrl) {
       if (audio.paused) {
         try {
           await audio.play();
         } catch (e: any) {
           console.error('Audio play blocked:', e);
-          toast.error('Browser blocked playback. Click play again (or allow audio autoplay).');
+          const errorMsg = e?.name === 'NotAllowedError' 
+            ? 'Browser blocked playback. Please click the play button again.' 
+            : e?.message || 'Failed to play audio';
+          toast.error(errorMsg);
         }
       } else {
         audio.pause();
@@ -115,14 +125,38 @@ export function LocalPlayerProvider({ children }: { children: React.ReactNode })
     setCurrentTime(0);
     setDuration(0);
 
-    audio.src = next.url;
-    audio.currentTime = 0;
-    try {
-      await audio.play();
-    } catch (e: any) {
-      console.error('Audio play blocked:', e);
-      toast.error('Browser blocked playback. Click play again (or allow audio autoplay).');
-    }
+    // Load the audio first, then play
+    return new Promise<void>((resolve) => {
+      const handleCanPlay = async () => {
+        audio.removeEventListener('canplay', handleCanPlay);
+        audio.removeEventListener('error', handleError);
+        audio.currentTime = 0;
+        try {
+          await audio.play();
+          resolve();
+        } catch (e: any) {
+          console.error('Audio play blocked:', e);
+          const errorMsg = e?.name === 'NotAllowedError' 
+            ? 'Browser blocked playback. Please click the play button again.' 
+            : e?.message || 'Failed to play audio';
+          toast.error(errorMsg);
+          resolve();
+        }
+      };
+
+      const handleError = (e: Event) => {
+        audio.removeEventListener('canplay', handleCanPlay);
+        audio.removeEventListener('error', handleError);
+        console.error('Audio load error:', e);
+        toast.error('Failed to load audio file. Please check the file URL.');
+        resolve();
+      };
+
+      audio.addEventListener('canplay', handleCanPlay, { once: true });
+      audio.addEventListener('error', handleError, { once: true });
+      audio.src = audioUrl;
+      audio.load(); // Explicitly load the audio
+    });
   };
 
   const toggle = async () => {
@@ -133,7 +167,10 @@ export function LocalPlayerProvider({ children }: { children: React.ReactNode })
         await audio.play();
       } catch (e: any) {
         console.error('Audio play blocked:', e);
-        toast.error('Browser blocked playback. Click play again (or allow audio autoplay).');
+        const errorMsg = e?.name === 'NotAllowedError' 
+          ? 'Browser blocked playback. Please click the play button again.' 
+          : e?.message || 'Failed to play audio';
+        toast.error(errorMsg);
       }
     } else {
       audio.pause();

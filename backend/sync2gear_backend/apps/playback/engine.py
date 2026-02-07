@@ -10,11 +10,18 @@ import random
 import logging
 from django.db import transaction
 from django.utils import timezone
-from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from .models import PlaybackState
 from apps.music.models import MusicFile, Folder
 from apps.scheduler.models import ChannelPlaylist, ChannelPlaylistItem
+
+# Optional channels import (not available in Lambda)
+try:
+    from channels.layers import get_channel_layer
+    CHANNELS_AVAILABLE = True
+except ImportError:
+    CHANNELS_AVAILABLE = False
+    get_channel_layer = None
 
 logger = logging.getLogger(__name__)
 
@@ -438,18 +445,24 @@ class PlaybackEngine:
             return
         
         try:
+            # Only broadcast if channels is available (not in Lambda)
+            if not CHANNELS_AVAILABLE:
+                logger.debug(f"Channels not available, skipping WebSocket broadcast for zone {zone_id}")
+                return
+            
             from .serializers import PlaybackStateSerializer
             serializer = PlaybackStateSerializer(state)
             data = serializer.data
             
             # Send via WebSocket
             channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)(
-                f'playback_{zone_id}',
-                {
-                    'type': 'playback_update',
-                    'data': data
-                }
-            )
+            if channel_layer:
+                async_to_sync(channel_layer.group_send)(
+                    f'playback_{zone_id}',
+                    {
+                        'type': 'playback_update',
+                        'data': data
+                    }
+                )
         except Exception as e:
             logger.error(f"Error broadcasting state for zone {zone_id}: {e}")

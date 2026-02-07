@@ -1,0 +1,28 @@
+{
+  "name": "sync2gear-backend",
+  "version": "1.0.0",
+  "description": "Sync2Gear Backend Serverless Deployment",
+  "scripts": {
+    "deploy": "serverless deploy --stage prod --region us-east-1",
+    "deploy:prod": "serverless deploy --stage prod --region us-east-1",
+    "deploy:dev": "serverless deploy --stage dev --region us-east-1",
+    "remove": "serverless remove --region us-east-1",
+    "logs": "serverless logs -f api -t",
+    "info": "serverless info",
+    "prisma:push": "prisma db push --skip-generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:generate": "python -m prisma generate --schema=prisma/schema.prisma",
+    "prisma:studio": "prisma studio"
+  },
+  "devDependencies": {
+    "@prisma/client": "^5.19.0",
+    "prisma": "^5.19.0",
+    "serverless": "^3.38.0",
+    "serverless-dotenv-plugin": "^6.0.0",
+    "serverless-offline": "^13.0.0",
+    "serverless-python-requirements": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

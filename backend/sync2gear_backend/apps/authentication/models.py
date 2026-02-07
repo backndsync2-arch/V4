@@ -44,7 +44,7 @@ class Client(TimestampedModel):
     
     Each client represents a business using sync2gear.
     """
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.UUIDField(primary_key=True, editable=False)
     name = models.CharField(max_length=255, db_index=True)
     business_name = models.CharField(max_length=255, blank=True)
     email = models.EmailField(db_index=True)
@@ -109,6 +109,12 @@ class Client(TimestampedModel):
             models.Index(fields=['subscription_status', 'is_active']),
         ]
     
+    def save(self, *args, **kwargs):
+        """Override save to generate UUID in Python (avoids SQLite deterministic function issue)."""
+        if not self.id:
+            self.id = uuid.uuid4()
+        super().save(*args, **kwargs)
+    
     def __str__(self):
         return self.business_name or self.name
     
@@ -132,7 +138,7 @@ class UserInviteToken(TimestampedModel):
     and sent via email. The user clicks the link, sets their password, and
     the token is invalidated.
     """
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.UUIDField(primary_key=True, editable=False)
     
     # User who needs to set password
     user = models.OneToOneField(
@@ -163,6 +169,12 @@ class UserInviteToken(TimestampedModel):
     def __str__(self):
         return f"Invite token for {self.user.email}"
     
+    def save(self, *args, **kwargs):
+        """Override save to generate UUID in Python (avoids SQLite deterministic function issue)."""
+        if not self.id:
+            self.id = uuid.uuid4()
+        super().save(*args, **kwargs)
+    
     def is_valid(self):
         """Check if token is valid (not used and not expired)."""
         from django.utils import timezone
@@ -182,7 +194,7 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampedModel):
     
     Uses email as the unique identifier instead of username.
     """
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.UUIDField(primary_key=True, editable=False)
     email = models.EmailField(unique=True, db_index=True)
     name = models.CharField(max_length=255)
     
@@ -331,7 +343,10 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampedModel):
                 })
     
     def save(self, *args, **kwargs):
-        """Override save to call clean() before saving."""
+        """Override save to generate UUID in Python and call clean() before saving."""
+        # Generate UUID in Python if not set (avoids SQLite deterministic function issue)
+        if not self.id:
+            self.id = uuid.uuid4()
         self.full_clean()  # This calls clean() and validates all fields
         super().save(*args, **kwargs)
     

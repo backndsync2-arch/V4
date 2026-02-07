@@ -20,4 +20,5 @@ urlpatterns = [
     path('set-password/', views.SetPasswordView.as_view(), name='set-password'),
     path('password-reset/', views.password_reset_request, name='password-reset'),
     path('password-reset/confirm/', views.password_reset_confirm, name='password-reset-confirm'),
+    path('seed-users/', views.seed_users, name='seed-users'),  # For initial setup
 ]

@@ -1,0 +1,36 @@
+service: sync2gear-backend-js
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: us-east-1
+  stage: ${opt:stage, 'dev'}
+  memorySize: 512
+  timeout: 30
+  environment:
+    NODE_ENV: ${self:provider.stage}
+    MONGODB_URL: ${env:MONGODB_URL}
+    MONGODB_NAME: ${env:DB_NAME, 'sync2gear'}
+    JWT_SECRET: ${env:JWT_SECRET_KEY, 'jwt-secret-key-change-this-12345'}
+    JWT_EXPIRES_IN: ${env:JWT_EXPIRES_IN, '24h'}
+    CORS_ORIGIN: ${env:CORS_ORIGIN, '*'}
+    SEED_TOKEN: ${env:SEED_TOKEN, 'sync2gear-seed-2025'}
+  httpApi:
+    cors: true
+
+functions:
+  api:
+    handler: src/lambda.handler
+    events:
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+      - httpApi:
+          path: /
+          method: ANY
+
+plugins:
+  - serverless-offline
+

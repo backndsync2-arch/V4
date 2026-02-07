@@ -26,21 +26,17 @@ SECRET_KEY = env('SECRET_KEY', default='django-insecure-change-this-in-productio
 
 # Application definition
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
+    # Minimal Django apps for API only
+    'django.contrib.auth',  # Needed for JWT
+    'django.contrib.contenttypes',  # Needed for DRF
+    'django.contrib.sessions',  # Needed for sessions (optional, can remove if not using)
     
     # Third-party apps
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
-    'channels',
     'drf_spectacular',
-    'django_extensions',
     
     # Local apps
     'apps.common',
@@ -88,7 +84,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
-ASGI_APPLICATION = 'config.asgi.application'
+# ASGI_APPLICATION = 'config.asgi.application'  # Disabled - not needed for Lambda
 
 # Custom User Model
 AUTH_USER_MODEL = 'authentication.User'
@@ -192,26 +188,11 @@ CORS_ALLOW_HEADERS = [
     'x-impersonate-client',  # Custom header for admin impersonation
 ]
 
-# Channels (WebSocket)
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            "hosts": [(env('REDIS_HOST', default='localhost'), int(env('REDIS_PORT', default=6379)))],
-        },
-    },
-}
+# Channels (WebSocket) - Disabled for Lambda
+# CHANNEL_LAYERS = {}
 
-# Celery Configuration
-CELERY_BROKER_URL = env('CELERY_BROKER_URL', default='redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default='redis://localhost:6379/0')
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'UTC'
-CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
-CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
+# Celery Configuration - Disabled for Lambda (use separate service if needed)
+# CELERY_BROKER_URL = None
 
 # File Upload Limits
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(env('MAX_UPLOAD_SIZE_MB', default=50)) * 1024 * 1024
@@ -229,47 +210,90 @@ SPECTACULAR_SETTINGS = {
 }
 
 # Logging Configuration
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
+# Lambda has read-only filesystem except /tmp
+if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+    # Running in Lambda - use /tmp for logs directory
+    LOG_DIR = '/tmp/logs'
+    # Lambda uses CloudWatch for logs, not file-based logging
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'verbose': {
+                'format': '{levelname} {asctime} {module} {message}',
+                'style': '{',
+            },
+            'simple': {
+                'format': '{levelname} {message}',
+                'style': '{',
+            },
         },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+                'formatter': 'verbose',
+            },
         },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
+        'root': {
+            'handlers': ['console'],
+            'level': env('LOG_LEVEL', default='INFO'),
         },
-        'file': {
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'logs' / 'django.log',
-            'formatter': 'verbose',
+        'loggers': {
+            'django': {
+                'handlers': ['console'],
+                'level': env('LOG_LEVEL', default='INFO'),
+                'propagate': False,
+            },
+            'apps': {
+                'handlers': ['console'],
+                'level': env('LOG_LEVEL', default='INFO'),
+                'propagate': False,
+            },
         },
-    },
-    'root': {
-        'handlers': ['console', 'file'],
-        'level': env('LOG_LEVEL', default='INFO'),
-    },
-    'loggers': {
-        'django': {
+    }
+else:
+    # Local development - use file-based logging
+    LOG_DIR = BASE_DIR / 'logs'
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'verbose': {
+                'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+                'style': '{',
+            },
+            'simple': {
+                'format': '{levelname} {message}',
+                'style': '{',
+            },
+        },
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+                'formatter': 'verbose',
+            },
+            'file': {
+                'class': 'logging.FileHandler',
+                'filename': LOG_DIR / 'django.log',
+                'formatter': 'verbose',
+            },
+        },
+        'root': {
             'handlers': ['console', 'file'],
             'level': env('LOG_LEVEL', default='INFO'),
-            'propagate': False,
         },
-        'apps': {
-            'handlers': ['console', 'file'],
-            'level': env('LOG_LEVEL', default='INFO'),
-            'propagate': False,
+        'loggers': {
+            'django': {
+                'handlers': ['console', 'file'],
+                'level': env('LOG_LEVEL', default='INFO'),
+                'propagate': False,
+            },
+            'apps': {
+                'handlers': ['console', 'file'],
+                'level': env('LOG_LEVEL', default='INFO'),
+                'propagate': False,
+            },
         },
-    },
-}
-
-# Create logs directory if it doesn't exist
-os.makedirs(BASE_DIR / 'logs', exist_ok=True)
+    }
+    # Create logs directory if it doesn't exist (only in local development)
+    os.makedirs(LOG_DIR, exist_ok=True)

@@ -1,0 +1,126 @@
+service: sync2gear-api
+
+frameworkVersion: '3'
+
+plugins:
+  - serverless-python-requirements
+
+provider:
+  name: aws
+  runtime: python3.11
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'prod'}
+  memorySize: 1024
+  timeout: 29
+  iam:
+    role:
+      statements: []
+  environment:
+    DJANGO_SETTINGS_MODULE: config.settings.lambda_production
+    DEBUG: 'False'
+    LOG_LEVEL: 'INFO'
+    SECRET_KEY: ${env:SECRET_KEY, 'django-insecure-change-this-in-production-12345'}
+    JWT_SECRET_KEY: ${env:JWT_SECRET_KEY, 'jwt-secret-key-change-this-12345'}
+    # MongoDB credentials (with fallback values)
+    MONGODB_URI: ${env:MONGODB_URI, 'mongodb+srv://backndsync2_db_user:QObM0opJLdHg2b3u@sync2gear.bjxcwmc.mongodb.net/sync2gear?appName=Sync2Gear'}
+    DB_HOST: ${env:DB_HOST, 'sync2gear.bjxcwmc.mongodb.net'}
+    DB_PORT: ${env:DB_PORT, '27017'}
+    DB_NAME: ${env:DB_NAME, 'sync2gear'}
+    DB_USER: ${env:DB_USER, 'backndsync2_db_user'}
+    DB_PASSWORD: ${env:DB_PASSWORD, 'QObM0opJLdHg2b3u'}
+  httpApi:
+    cors: true  # Simple CORS - allow all origins, methods, and headers
+
+custom:
+  pythonRequirements:
+    dockerizePip: false
+    fileName: sync2gear_backend/requirements.txt
+    strip: true
+    slim: false  # Temporarily disabled to ensure environ package is included
+    slimPatterns:
+      - '**/*.pyc'
+      - '**/*.pyo'
+      - '**/__pycache__/**'
+      - '**/tests/**'
+      - '**/test/**'
+      - '**/*.dist-info/**'
+      - '**/*.egg-info/**'
+      - '**/docs/**'
+      - '**/examples/**'
+      - '**/LICENSE*'
+      - '**/README*'
+      - '**/CHANGELOG*'
+      - '**/locale/**'
+      - '**/translations/**'
+      - '**/contrib/admin/**'
+      - '**/contrib/staticfiles/**'
+      - '**/contrib/gis/**'
+    noDeploy:
+      - boto3
+      - botocore
+      - boto
+      - s3transfer
+      - jmespath
+      - urllib3
+      - six
+      - python-dateutil
+    layer: true
+    zip: true
+    invalidateCaches: true
+
+package:
+  individually: true
+  excludeDevDependencies: true
+  patterns:
+    # Start by excluding everything
+    - '!**'
+    # ONLY include application code (whitelist approach)
+    - 'sync2gear_backend/apps/**/*.py'
+    - 'sync2gear_backend/config/**/*.py'
+    - 'sync2gear_backend/lambda_handler.py'
+    - 'sync2gear_backend/db.py'
+    - 'sync2gear_backend/manage.py'
+    # Exclude everything else explicitly
+    - '!sync2gear_backend/venv/**'
+    - '!sync2gear_backend/prisma_client/**'
+    - '!sync2gear_backend/**/migrations/**'
+    - '!sync2gear_backend/**/management/**'
+    - '!sync2gear_backend/**/templates/**'
+    - '!sync2gear_backend/**/__pycache__/**'
+    - '!sync2gear_backend/**/*.pyc'
+    - '!sync2gear_backend/**/tests/**'
+    - '!sync2gear_backend/**/test_*.py'
+    - '!sync2gear_backend/**/tasks.py'
+    - '!sync2gear_backend/config/celery.py'
+    - '!sync2gear_backend/config/asgi.py'
+    - '!sync2gear_backend/**/consumers.py'
+    - '!sync2gear_backend/**/routing.py'
+    - '!sync2gear_backend/db.sqlite3'
+    - '!sync2gear_backend/logs/**'
+    - '!sync2gear_backend/media/**'
+    - '!sync2gear_backend/staticfiles/**'
+    - '!sync2gear_backend/.env*'
+    - '!sync2gear_backend/**/*.md'
+    - '!sync2gear_backend/**/*.sh'
+    - '!sync2gear_backend/migrate_users_to_prisma.py'
+    - '!sync2gear_backend/prisma_example.py'
+    - '!.serverless/**'
+    - '!.git/**'
+    - '!node_modules/**'
+    - '!prisma/**'
+    - '!*.md'
+    - '!.gitignore'
+
+functions:
+  api:
+    handler: sync2gear_backend/lambda_handler.handler
+    description: Django REST API handler for Sync2Gear
+    layers:
+      - Ref: PythonRequirementsLambdaLayer
+    events:
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+      - httpApi:
+          path: /api/health
+          method: GET

@@ -12,7 +12,8 @@ DEBUG = True
 
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1', '0.0.0.0'])
 
-# Database - Use SQLite for development (no PostgreSQL required)
+# Database - Use SQLite for Django ORM models (User, Client, etc.)
+# MongoDB is used for other data via pymongo (see db.py)
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',

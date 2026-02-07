@@ -21,6 +21,7 @@ export const announcementsAPI = {
     voice?: string;
     folder_id?: string;
     zone_id?: string;
+    client_id?: string;
   }): Promise<AnnouncementAudio> => {
     const res = await apiFetch('/announcements/tts/', {
       method: 'POST',
@@ -32,7 +33,7 @@ export const announcementsAPI = {
   // Upload announcement audio
   uploadAnnouncement: async (
     file: File,
-    data: { title: string; folder_id?: string; zone_id?: string; is_recording?: boolean },
+    data: { title: string; folder_id?: string; zone_id?: string; is_recording?: boolean; client_id?: string },
     onProgress?: (progress: number) => void
   ): Promise<AnnouncementAudio> => {
     const res = await uploadFile('/announcements/upload/', file, data, onProgress);
@@ -129,10 +130,12 @@ export const announcementsAPI = {
       voice: string;
       folder_id?: string;
       zone_id?: string;
+      client_id?: string;
     }>;
     voice?: string;
     folder_id?: string;
     zone_id?: string;
+    client_id?: string;
   }): Promise<AnnouncementAudio[]> => {
     const res = await apiFetch('/announcements/batch-tts/', {
       method: 'POST',

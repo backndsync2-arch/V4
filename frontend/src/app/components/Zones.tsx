@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Settings, Plus, Grid3x3, Loader2, Volume2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { zonesAPI } from '@/lib/api';
+import { ClientSelector } from '@/app/components/admin/ClientSelector';
 
 interface Zone {
   id: string;
@@ -20,7 +21,7 @@ interface Zone {
 }
 
 export function Zones() {
-  const { user } = useAuth();
+  const { user, impersonatingClient } = useAuth();
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
   const [zoneSettingsOpen, setZoneSettingsOpen] = useState<Record<string, boolean>>({});
@@ -28,6 +29,7 @@ export function Zones() {
   const [isCreateZoneOpen, setIsCreateZoneOpen] = useState(false);
   const [newZoneName, setNewZoneName] = useState('');
   const [newZoneDescription, setNewZoneDescription] = useState('');
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
 
   // Load zones
   useEffect(() => {
@@ -87,18 +89,46 @@ export function Zones() {
     }
     
     try {
-      await zonesAPI.createZone({
+      // For admin users, include client_id if available (from impersonation or user's clientId)
+      const zoneData: any = {
         name: newZoneName.trim(),
         description: newZoneDescription.trim() || undefined,
-      });
+      };
+      
+      // If admin, use impersonated client, selected client, or user's clientId
+      if (user?.role === 'admin') {
+        if (impersonatingClient) {
+          zoneData.client_id = impersonatingClient;
+          console.log('Zone creation: Using impersonated client:', impersonatingClient);
+        } else if (selectedClientId) {
+          zoneData.client_id = selectedClientId;
+          console.log('Zone creation: Using selected client:', selectedClientId);
+        } else if (user?.clientId) {
+          zoneData.client_id = user.clientId;
+          console.log('Zone creation: Using user clientId:', user.clientId);
+        } else {
+          toast.error('Please select a client for this zone');
+          return;
+        }
+      }
+      
+      console.log('Zone creation data:', zoneData);
+      await zonesAPI.createZone(zoneData);
       toast.success('Zone created successfully');
       setIsCreateZoneOpen(false);
       setNewZoneName('');
       setNewZoneDescription('');
+      setSelectedClientId(''); // Reset client selection
       loadData();
+      // Trigger a custom event to refresh GlobalHeader zones
+      window.dispatchEvent(new CustomEvent('zones-updated'));
     } catch (error: any) {
       console.error('Failed to create zone:', error);
-      toast.error('Failed to create zone');
+      // Show actual error message from API
+      const errorMessage = error?.message || error?.data?.message || error?.data?.detail || 
+                          (Array.isArray(error?.data?.non_field_errors) ? error.data.non_field_errors[0] : null) ||
+                          'Failed to create zone. Please ensure you have a client associated with your account.';
+      toast.error(errorMessage);
     }
   };
 
@@ -153,6 +183,13 @@ export function Zones() {
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
+                <ClientSelector
+                  value={selectedClientId}
+                  onValueChange={setSelectedClientId}
+                  required={user?.role === 'admin' && !impersonatingClient && !user?.clientId}
+                  label="Client"
+                  description="Select which client this zone belongs to"
+                />
                 <div className="space-y-2">
                   <Label>Zone Name</Label>
                   <Input 

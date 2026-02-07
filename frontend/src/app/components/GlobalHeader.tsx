@@ -31,9 +31,17 @@ export function GlobalHeader() {
     };
     load();
     const interval = window.setInterval(load, 10000);
+    
+    // Listen for zones-updated event to refresh immediately
+    const handleZonesUpdated = () => {
+      load();
+    };
+    window.addEventListener('zones-updated', handleZonesUpdated);
+    
     return () => {
       mounted = false;
       window.clearInterval(interval);
+      window.removeEventListener('zones-updated', handleZonesUpdated);
     };
   }, [activeTarget, setActiveTarget]);
 

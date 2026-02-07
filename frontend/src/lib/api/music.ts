@@ -25,6 +25,7 @@ export const musicAPI = {
     type?: 'music' | 'announcements';
     cover_image?: File;
     zone_id?: string;
+    client_id?: string;
   }): Promise<Folder> => {
     // Backend requires multipart/form-data (MultiPartParser), so always use FormData
     const formData = new FormData();
@@ -37,6 +38,9 @@ export const musicAPI = {
     }
     if (data.zone_id) {
       formData.append('zone_id', data.zone_id);
+    }
+    if (data.client_id) {
+      formData.append('client_id', data.client_id);
     }
     if (data.cover_image) {
       formData.append('cover_image', data.cover_image);
@@ -146,6 +150,7 @@ export const musicAPI = {
       artist?: string;
       album?: string;
       cover_art?: File;
+      client_id?: string;
     },
     onProgress?: (progress: number) => void
   ): Promise<MusicFile> => {
@@ -160,6 +165,7 @@ export const musicAPI = {
       if (data.title) formData.append('title', data.title);
       if (data.artist) formData.append('artist', data.artist);
       if (data.album) formData.append('album', data.album);
+      if (data.client_id) formData.append('client_id', data.client_id);
       
       const headers: HeadersInit = {};
       const token = getAccessToken();
@@ -212,6 +218,7 @@ export const musicAPI = {
     if (data.title) formData.append('title', data.title);
     if (data.artist) formData.append('artist', data.artist);
     if (data.album) formData.append('album', data.album);
+    if (data.client_id) formData.append('client_id', data.client_id);
     
     const headers: HeadersInit = {};
     const token = getAccessToken();

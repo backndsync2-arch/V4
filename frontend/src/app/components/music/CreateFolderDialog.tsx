@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 import { musicAPI } from '@/lib/api';
 import type { Folder } from '@/lib/types';
 import { usePlayback } from '@/lib/playback';
+import { useAuth } from '@/lib/auth';
+import { ClientSelector } from '@/app/components/admin/ClientSelector';
 
 export function CreateFolderDialog({
   open,
@@ -18,11 +20,13 @@ export function CreateFolderDialog({
   onCreated: (folder: Folder) => void;
 }) {
   const { activeTarget } = usePlayback();
+  const { user, impersonatingClient } = useAuth();
   const thumbInputId = React.useId();
   const [name, setName] = useState('');
   const [thumbFile, setThumbFile] = useState<File | null>(null);
   const [thumbPreview, setThumbPreview] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
 
   useEffect(() => {
     if (!open) {
@@ -30,6 +34,7 @@ export function CreateFolderDialog({
       setThumbFile(null);
       setThumbPreview(null);
       setIsCreating(false);
+      setSelectedClientId('');
     }
   }, [open]);
 
@@ -41,14 +46,34 @@ export function CreateFolderDialog({
       toast.error('Please select a zone first');
       return;
     }
+    
+    // For admin, check if client is selected
+    if (user?.role === 'admin' && !impersonatingClient && !user?.clientId && !selectedClientId) {
+      toast.error('Please select a client for this folder');
+      return;
+    }
+    
     setIsCreating(true);
     try {
-      const created = await musicAPI.createFolder({
+      const folderData: any = {
         name: name.trim(),
         type: 'music',
         zone_id: activeTarget,
         cover_image: thumbFile || undefined,
-      });
+      };
+      
+      // Add client_id for admin if needed
+      if (user?.role === 'admin') {
+        if (impersonatingClient) {
+          folderData.client_id = impersonatingClient;
+        } else if (selectedClientId) {
+          folderData.client_id = selectedClientId;
+        } else if (user?.clientId) {
+          folderData.client_id = user.clientId;
+        }
+      }
+      
+      const created = await musicAPI.createFolder(folderData);
       onCreated(created);
       toast.success(`Folder "${created.name}" created`);
       onOpenChange(false);
@@ -69,6 +94,13 @@ export function CreateFolderDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          <ClientSelector
+            value={selectedClientId}
+            onValueChange={setSelectedClientId}
+            required={user?.role === 'admin' && !impersonatingClient && !user?.clientId}
+            label="Client"
+            description="Select which client this folder belongs to"
+          />
           <div className="space-y-2">
             <Label>Thumbnail (optional)</Label>
             <div className="flex items-center gap-4">

@@ -22,10 +22,11 @@ import { EditFolderDialog } from '@/app/components/music/EditFolderDialog';
 import { cn } from '@/app/components/ui/utils';
 import { usePlayback } from '@/lib/playback';
 import { zonesAPI } from '@/lib/api';
+import { ClientSelector } from '@/app/components/admin/ClientSelector';
 import { ConfirmationDialog } from '@/app/components/ui/confirmation-dialog';
 
 export function MusicLibrary() {
-  const { user } = useAuth();
+  const { user, impersonatingClient } = useAuth();
   const { activeTarget } = usePlayback();
   const musicUploadInputId = React.useId();
   const musicUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -54,9 +55,14 @@ export function MusicLibrary() {
   const [musicUploadZoneId, setMusicUploadZoneId] = useState<string | null>(null);
   const [announcementUploadZoneId, setAnnouncementUploadZoneId] = useState<string | null>(null);
   const [deleteFolderDialog, setDeleteFolderDialog] = useState<{ open: boolean; folder: any | null }>({ open: false, folder: null });
+  const [uploadClientId, setUploadClientId] = useState<string>('');
 
   const isAdmin = user?.role === 'admin';
-  const filteredFolders = folders;
+  
+  // Filter folders by selected zone (activeTarget from GlobalHeader)
+  const filteredFolders = activeTarget
+    ? folders.filter((f: any) => String(f.zoneId || '') === String(activeTarget || '') || f.zone === activeTarget)
+    : folders;
   
   // Filter music files by selected zone (activeTarget from GlobalHeader)
   const zoneFilteredFiles = activeTarget
@@ -271,12 +277,17 @@ export function MusicLibrary() {
         // Upload each file as an announcement
         for (let i = 0; i < filesToUploadFiltered.length; i++) {
           const f = filesToUploadFiltered[i];
+          // Get effective client ID for admin
+          const effectiveClientId = uploadClientId || 
+                                   (user?.role === 'admin' ? (impersonatingClient || user?.clientId) : user?.clientId);
+          
           await announcementsAPI.uploadAnnouncement(
             f,
             { 
               title: f.name.replace(/\.[^/.]+$/, ''), 
               folder_id: targetFolderId || undefined,
               zone_id: announcementUploadZoneId || activeTarget || undefined,
+              client_id: effectiveClientId || undefined,
             },
             (p) => {
               // Calculate total progress: completed files + current file progress
@@ -308,6 +319,11 @@ export function MusicLibrary() {
             
             // Track progress for this specific file
             let fileProgress = 0;
+            
+            // Get effective client ID for admin
+            const effectiveClientId = uploadClientId || 
+                                     (user?.role === 'admin' ? (impersonatingClient || user?.clientId) : user?.clientId);
+            
             const result = await musicAPI.uploadMusicFile(
               f,
               { 
@@ -315,6 +331,7 @@ export function MusicLibrary() {
                 zone_id: musicUploadZoneId || activeTarget || undefined,
                 title: f.name.replace(/\.[^/.]+$/, ''),
                 cover_art: coverArt || undefined,
+                client_id: effectiveClientId || undefined,
               },
               (p) => {
                 // Update this file's progress
@@ -371,6 +388,7 @@ export function MusicLibrary() {
       setIsUploadOpen(false);
       // Clear cover art map after upload completes
       setMusicCoverArtMap(new Map());
+      setUploadClientId(''); // Reset client selection
     } catch (error: any) {
       toast.error(error.message || 'Upload failed');
       console.error('Upload error:', error);
@@ -564,6 +582,13 @@ export function MusicLibrary() {
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
+                  <ClientSelector
+                    value={uploadClientId}
+                    onValueChange={setUploadClientId}
+                    required={isAdmin && !user?.clientId && !localStorage.getItem('sync2gear_impersonating')}
+                    label="Client"
+                    description="Select which client these files belong to"
+                  />
                   {isAdmin && (
                     <div className="space-y-2">
                       <Label>Destination</Label>

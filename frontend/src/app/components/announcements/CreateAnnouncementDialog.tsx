@@ -11,6 +11,8 @@ import { FileText, Sparkles, Upload, Mic, Play, Pause, Plus, Volume2, StopCircle
 import { toast } from 'sonner';
 import { announcementsAPI } from '@/lib/api';
 import { Folder, TTSVoice, GeneratedScript } from './announcements.types';
+import { useAuth } from '@/lib/auth';
+import { ClientSelector } from '@/app/components/admin/ClientSelector';
 
 interface CreateAnnouncementDialogProps {
   folders: Folder[];
@@ -320,7 +322,7 @@ export function CreateAnnouncementDialog({
       onNewFolderNameChange(newFolderNameLocal.trim());
     }
     if (onCreateFolder) {
-      const newFolder = await onCreateFolder();
+      const newFolder = await onCreateFolder(selectedClientId);
       // After creating, select the new folder
       if (newFolder && newFolder.id) {
         onCategoryChange(newFolder.id);
@@ -373,6 +375,15 @@ export function CreateAnnouncementDialog({
         <DialogTitle className="text-white">Create Announcement</DialogTitle>
         <DialogDescription className="text-gray-400">Create announcements with text-to-speech, upload, or record</DialogDescription>
       </DialogHeader>
+      <div className="mb-4">
+        <ClientSelector
+          value={selectedClientId}
+          onValueChange={setSelectedClientId}
+          required={user?.role === 'admin' && !impersonatingClient && !user?.clientId}
+          label="Client"
+          description="Select which client this announcement belongs to"
+        />
+      </div>
       <Tabs defaultValue="script" className="w-full">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="script">
@@ -518,7 +529,13 @@ export function CreateAnnouncementDialog({
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={onCreateScript} className="w-full" disabled={isCreating}>
+          <Button onClick={() => {
+            // Store selectedClientId temporarily for handler to use
+            if (selectedClientId) {
+              (window as any).__tempSelectedClientId = selectedClientId;
+            }
+            onCreateScript();
+          }} className="w-full" disabled={isCreating}>
             {isCreating ? 'Creating...' : 'Create Announcement'}
           </Button>
         </TabsContent>
@@ -767,7 +784,13 @@ export function CreateAnnouncementDialog({
                 )}
               </div>
 
-              <Button onClick={onCreateBulk} className="w-full" disabled={isCreating}>
+              <Button onClick={() => {
+                // Store selectedClientId temporarily for handler to use
+                if (selectedClientId) {
+                  (window as any).__tempSelectedClientId = selectedClientId;
+                }
+                onCreateBulk();
+              }} className="w-full" disabled={isCreating}>
                 {isCreating ? 'Creating...' : `Create ${generatedScripts.filter(s => s.selected).length} Announcement${generatedScripts.filter(s => s.selected).length > 1 ? 's' : ''}`}
               </Button>
             </div>
@@ -864,7 +887,13 @@ export function CreateAnnouncementDialog({
               </div>
             )}
           </div>
-          <Button className="w-full" disabled={isUploading || !uploadFile} onClick={onUpload}>
+          <Button className="w-full" disabled={isUploading || !uploadFile} onClick={() => {
+            // Store selectedClientId temporarily for handler to use
+            if (selectedClientId) {
+              (window as any).__tempSelectedClientId = selectedClientId;
+            }
+            onUpload();
+          }}>
             {isUploading ? 'Uploading...' : 'Upload'}
           </Button>
         </TabsContent>

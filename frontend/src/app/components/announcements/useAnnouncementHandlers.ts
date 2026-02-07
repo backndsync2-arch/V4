@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { announcementsAPI, musicAPI } from '@/lib/api';
 import { FolderSettings, Folder, AnnouncementAudio, TTSVoice, GeneratedScript } from './announcements.types';
 import { formatDuration } from '@/lib/utils';
+import { useAuth } from '@/lib/auth';
 
 interface UseAnnouncementHandlersProps {
   user: any;
@@ -141,8 +142,27 @@ export function useAnnouncementHandlers({
   previewAudio,
   setPreviewAudio,
 }: UseAnnouncementHandlersProps) {
+  const { user: authUser, impersonatingClient } = useAuth();
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const handleCreateFolder = async () => {
+  
+  // Get effective client ID for admin
+  const getEffectiveClientId = (selectedClientId?: string) => {
+    // Priority: 1) selectedClientId from dialog, 2) impersonated client, 3) user's clientId
+    if (user?.role === 'admin') {
+      // Check for temporarily stored client ID from dialog
+      const tempClientId = (window as any).__tempSelectedClientId;
+      if (tempClientId) {
+        delete (window as any).__tempSelectedClientId;
+        return tempClientId;
+      }
+      if (selectedClientId) return selectedClientId;
+      if (impersonatingClient) return impersonatingClient;
+      return user?.clientId || null;
+    }
+    return user?.clientId || null;
+  };
+  
+  const handleCreateFolder = async (selectedClientId?: string) => {
     if (!newFolderName.trim()) {
       toast.error('Please enter a folder name');
       return null;
@@ -154,11 +174,19 @@ export function useAnnouncementHandlers({
     
     setIsCreatingFolder(true);
     try {
-      const newFolder = await musicAPI.createFolder({
+      const folderData: any = {
         name: newFolderName,
         type: 'announcements',
         zone_id: activeTarget,
-      });
+      };
+      
+      // Add client_id for admin
+      const effectiveClientId = selectedClientId || getEffectiveClientId();
+      if (effectiveClientId) {
+        folderData.client_id = effectiveClientId;
+      }
+      
+      const newFolder = await musicAPI.createFolder(folderData);
       
       setFolders([...folders, newFolder]);
       
@@ -187,7 +215,7 @@ export function useAnnouncementHandlers({
     }
   };
 
-  const handleUploadAnnouncement = async (isRecording: boolean = false) => {
+  const handleUploadAnnouncement = async (isRecording: boolean = false, selectedClientId?: string) => {
     if (!uploadFile) {
       toast.error('Please select an audio file to upload');
       return;
@@ -199,6 +227,13 @@ export function useAnnouncementHandlers({
         (newTitle && newTitle.trim()) ||
         uploadFile.name.replace(/\.[^/.]+$/, '');
 
+      // Get effective client ID (check for temp stored value or passed value)
+      const tempClientId = (window as any).__tempSelectedClientId;
+      if (tempClientId) {
+        delete (window as any).__tempSelectedClientId;
+      }
+      const effectiveClientId = selectedClientId || tempClientId || getEffectiveClientId();
+
       await announcementsAPI.uploadAnnouncement(
         uploadFile,
         { 
@@ -206,6 +241,7 @@ export function useAnnouncementHandlers({
           folder_id: newCategory || undefined,
           zone_id: activeTarget || undefined,
           is_recording: isRecording,
+          client_id: effectiveClientId || undefined,
         },
         () => {}
       );
@@ -285,6 +321,9 @@ export function useAnnouncementHandlers({
 
     setIsCreating(true);
     try {
+      // Get effective client ID (check for temp stored value)
+      const effectiveClientId = getEffectiveClientId();
+      
       const announcements = await announcementsAPI.createBatchTTSAnnouncements({
         announcements: selectedScripts.map(s => ({
           title: s.title,
@@ -292,10 +331,12 @@ export function useAnnouncementHandlers({
           voice: selectedVoice,
           folder_id: newCategory || undefined,
           zone_id: activeTarget || undefined,
+          client_id: effectiveClientId || undefined,
         })),
         voice: selectedVoice,
         folder_id: newCategory || undefined,
         zone_id: activeTarget || undefined,
+        client_id: effectiveClientId || undefined,
       });
 
       const allAnnouncements = await announcementsAPI.getAnnouncements();
@@ -349,12 +390,16 @@ export function useAnnouncementHandlers({
 
     setIsCreating(true);
     try {
+      // Get effective client ID (check for temp stored value)
+      const effectiveClientId = getEffectiveClientId();
+      
       const announcement = await announcementsAPI.createTTSAnnouncement({
         title: newTitle,
         text: newText,
         voice: selectedVoice,
         folder_id: newCategory || undefined,
         zone_id: activeTarget || undefined,
+        client_id: effectiveClientId || undefined,
       });
 
       const script = {

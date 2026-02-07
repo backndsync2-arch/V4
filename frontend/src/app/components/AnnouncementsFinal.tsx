@@ -69,7 +69,12 @@ export function AnnouncementsFinal() {
   }, [ttsVoices, formState.selectedVoice]);
 
   const clientId = user?.role === 'admin' ? null : user?.clientId;
-  const filteredFolders = clientId ? folders.filter(f => f.clientId === clientId) : folders;
+  
+  // Filter folders by client first, then by zone
+  let clientFilteredFolders = clientId ? folders.filter(f => f.clientId === clientId) : folders;
+  const filteredFolders = activeTarget
+    ? clientFilteredFolders.filter((f: any) => String(f.zoneId || '') === String(activeTarget || '') || f.zone === activeTarget)
+    : clientFilteredFolders;
   
   // Apply client filter first
   const clientFilteredAudio = clientId

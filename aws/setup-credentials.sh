@@ -14,9 +14,17 @@ fi
 
 # Configure AWS credentials
 echo "Configuring AWS credentials..."
-aws configure set aws_access_key_id AKIA2HVQ5SVB56AGSDC6
-aws configure set aws_secret_access_key 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
-aws configure set default.region us-east-1
+# Use environment variables or AWS credentials file
+# DO NOT commit actual credentials to git
+if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+    echo "Error: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables must be set"
+    echo "Or use: aws configure"
+    exit 1
+fi
+
+aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
+aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+aws configure set default.region "${AWS_DEFAULT_REGION:-us-east-1}"
 aws configure set default.output json
 
 # Verify credentials

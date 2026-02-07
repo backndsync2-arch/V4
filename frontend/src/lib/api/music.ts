@@ -140,7 +140,7 @@ export const musicAPI = {
     return unwrapList(res).map(normalizeMusicFile);
   },
 
-  // Upload music file
+  // Upload music file using S3 presigned URLs (bypasses API Gateway 10MB limit)
   uploadMusicFile: async (
     file: File,
     data: {
@@ -154,37 +154,95 @@ export const musicAPI = {
     },
     onProgress?: (progress: number) => void
   ): Promise<MusicFile> => {
-    // Backend expects POST /music/files/ with multipart field "file" and optional "cover_art"
-    // If cover_art is provided, we need to upload it as a separate file field
-    if (data.cover_art) {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('cover_art', data.cover_art);
-      if (data.folder_id) formData.append('folder_id', data.folder_id);
-      if (data.zone_id) formData.append('zone_id', data.zone_id);
-      if (data.title) formData.append('title', data.title);
-      if (data.artist) formData.append('artist', data.artist);
-      if (data.album) formData.append('album', data.album);
-      if (data.client_id) formData.append('client_id', data.client_id);
+    const token = getAccessToken();
+    if (!token) {
+      throw new APIError(401, 'Authentication required');
+    }
+
+    try {
+      // Step 1: Get presigned URL from backend
+      if (onProgress) onProgress(5);
       
-      const headers: HeadersInit = {};
-      const token = getAccessToken();
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      const uploadUrlResponse = await apiFetch('/music/upload-url/', {
+        method: 'POST',
+        body: JSON.stringify({
+          filename: file.name,
+          contentType: file.type || 'audio/mpeg',
+          fileSize: file.size,
+          client_id: data.client_id,
+        }),
+      });
+
+      const { uploadUrl, s3Key } = uploadUrlResponse;
+      if (!uploadUrl || !s3Key) {
+        throw new APIError(500, 'Failed to get upload URL');
       }
+
+      // Step 2: Upload file directly to S3 using presigned URL
+      if (onProgress) onProgress(10);
       
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         
         xhr.upload.addEventListener('progress', (e) => {
           if (e.lengthComputable && onProgress) {
-            onProgress((e.loaded / e.total) * 100);
+            // Map S3 upload progress to 10-90% (10% for getting URL, 90% for S3 upload, 10% for completing)
+            const s3Progress = 10 + (e.loaded / e.total) * 80;
+            onProgress(s3Progress);
           }
         });
         
-        xhr.addEventListener('load', () => {
+        xhr.addEventListener('load', async () => {
           if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(normalizeMusicFile(JSON.parse(xhr.responseText)));
+            try {
+              // Step 3: Complete upload by saving metadata
+              if (onProgress) onProgress(90);
+              
+              const completeResponse = await apiFetch('/music/files/complete/', {
+                method: 'POST',
+                body: JSON.stringify({
+                  s3Key,
+                  title: data.title || file.name.replace(/\.[^/.]+$/, ''),
+                  artist: data.artist,
+                  album: data.album,
+                  folder_id: data.folder_id,
+                  zone_id: data.zone_id,
+                  client_id: data.client_id,
+                  fileSize: file.size,
+                  contentType: file.type || 'audio/mpeg',
+                }),
+              });
+
+              if (onProgress) onProgress(100);
+              
+              // Handle cover art separately if provided (upload via separate API call)
+              if (data.cover_art) {
+                try {
+                  // Upload cover art using the existing endpoint
+                  const coverFormData = new FormData();
+                  coverFormData.append('cover_art', data.cover_art);
+                  
+                  const coverResponse = await fetch(`${API_BASE_URL}/music/files/${completeResponse.id}/upload_cover_art/`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${token}`,
+                    },
+                    body: coverFormData,
+                  });
+                  
+                  if (!coverResponse.ok) {
+                    throw new Error('Cover art upload failed');
+                  }
+                } catch (coverError) {
+                  console.warn('Failed to upload cover art:', coverError);
+                  // Don't fail the whole upload if cover art fails
+                }
+              }
+
+              resolve(normalizeMusicFile(completeResponse));
+            } catch (completeError: any) {
+              reject(new APIError(completeError.status || 500, completeError.message || 'Failed to complete upload', completeError));
+            }
           } else {
             let errorData: any = {};
             try {
@@ -192,73 +250,29 @@ export const musicAPI = {
             } catch {
               // ignore parse error
             }
-            reject(new APIError(xhr.status, errorData?.message || 'Upload failed', errorData));
+            reject(new APIError(xhr.status, errorData?.message || 'S3 upload failed', errorData));
           }
         });
         
         xhr.addEventListener('error', () => {
-          reject(new APIError(0, 'Network error'));
+          reject(new APIError(0, 'Network error during S3 upload'));
         });
         
-        xhr.open('POST', `${API_BASE_URL}/music/files/`);
-        Object.entries(headers).forEach(([key, value]) => {
-          xhr.setRequestHeader(key, value);
+        xhr.addEventListener('abort', () => {
+          reject(new APIError(0, 'Upload cancelled'));
         });
-        xhr.send(formData);
+        
+        // Upload to S3 using PUT with presigned URL
+        xhr.open('PUT', uploadUrl);
+        xhr.setRequestHeader('Content-Type', file.type || 'audio/mpeg');
+        xhr.send(file);
       });
+    } catch (error: any) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      throw new APIError(error?.status || 500, error?.message || 'Upload failed', error);
     }
-    
-    // No cover art, use existing uploadFile function
-    const { cover_art: _unused, ...rest } = data;
-    // uploadFile expects formData fields, so we need to handle zone_id
-    const formData = new FormData();
-    formData.append('file', file);
-    if (data.folder_id) formData.append('folder_id', data.folder_id);
-    if (data.zone_id) formData.append('zone_id', data.zone_id);
-    if (data.title) formData.append('title', data.title);
-    if (data.artist) formData.append('artist', data.artist);
-    if (data.album) formData.append('album', data.album);
-    if (data.client_id) formData.append('client_id', data.client_id);
-    
-    const headers: HeadersInit = {};
-    const token = getAccessToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable && onProgress) {
-          onProgress((e.loaded / e.total) * 100);
-        }
-      });
-      
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(normalizeMusicFile(JSON.parse(xhr.responseText)));
-        } else {
-          let errorData: any = {};
-          try {
-            errorData = JSON.parse(xhr.responseText);
-          } catch {
-            // ignore parse error
-          }
-          reject(new APIError(xhr.status, errorData?.message || 'Upload failed', errorData));
-        }
-      });
-      
-      xhr.addEventListener('error', () => {
-        reject(new APIError(0, 'Network error'));
-      });
-      
-      xhr.open('POST', `${API_BASE_URL}/music/files/`);
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      xhr.send(formData);
-    });
   },
 
   // Batch upload music files

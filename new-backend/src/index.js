@@ -13,13 +13,30 @@ const adminRoutes = require('./routes/admin');
 
 const app = express();
 
+// Handle OPTIONS requests FIRST - before any other middleware
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Max-Age', '86400');
+  res.sendStatus(200);
+});
+
+// CORS Middleware - Required for browser requests
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Max-Age', '86400');
+  next();
+});
+
 // Middleware
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
-  credentials: true,
-}));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Increase body parser limits for file uploads
+// Note: API Gateway HTTP API has a hard 10MB limit for the entire request
+// Multipart encoding adds overhead, so actual file size limit is ~8-9MB
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -46,14 +63,20 @@ app.get('/api/v1/', (req, res) => {
   });
 });
 
-// 404 handler
+// 404 handler - Ensure CORS headers are set even for 404s
 app.use((req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
   res.status(404).json({ detail: 'Not found.' });
 });
 
-// Error handler
+// Error handler - Ensure CORS headers on errors too
 app.use((err, req, res, next) => {
   console.error('Error:', err);
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
   res.status(err.status || 500).json({
     detail: err.message || 'An error occurred.',
   });

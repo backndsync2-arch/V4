@@ -6,19 +6,54 @@ provider:
   name: aws
   runtime: nodejs20.x
   region: us-east-1
-  stage: ${opt:stage, 'dev'}
-  memorySize: 512
-  timeout: 30
+  stage: ${opt:stage, 'prod'}
+  memorySize: 1024
+  timeout: 60
   environment:
     NODE_ENV: ${self:provider.stage}
     MONGODB_URL: ${env:MONGODB_URL}
     MONGODB_NAME: ${env:DB_NAME, 'sync2gear'}
     JWT_SECRET: ${env:JWT_SECRET_KEY, 'jwt-secret-key-change-this-12345'}
     JWT_EXPIRES_IN: ${env:JWT_EXPIRES_IN, '24h'}
-    CORS_ORIGIN: ${env:CORS_ORIGIN, '*'}
     SEED_TOKEN: ${env:SEED_TOKEN, 'sync2gear-seed-2025'}
+    API_BASE_URL: https://02nn8drgsd.execute-api.us-east-1.amazonaws.com
+    S3_BUCKET_NAME: ${self:custom.s3BucketName}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:DeleteObject
+            - s3:PutObjectAcl
+          Resource:
+            - arn:aws:s3:::${self:custom.s3BucketName}/*
+        - Effect: Allow
+          Action:
+            - s3:ListBucket
+          Resource:
+            - arn:aws:s3:::${self:custom.s3BucketName}
   httpApi:
-    cors: true
+    cors:
+      allowedOrigins:
+        - "*"
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+        - X-Requested-With
+        - Accept
+        - Origin
+      allowedMethods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - PATCH
+        - OPTIONS
+      allowCredentials: false
+    # Note: API Gateway HTTP API has a 10MB payload limit that cannot be increased
+    # For files larger than 10MB, use S3 presigned URLs for direct upload
 
 functions:
   api:
@@ -31,6 +66,29 @@ functions:
           path: /
           method: ANY
 
+custom:
+  s3BucketName: sync2gear-music-${self:provider.stage}
+
+resources:
+  Resources:
+    MusicBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.s3BucketName}
+        CorsConfiguration:
+          CorsRules:
+            - AllowedOrigins:
+                - "*"
+              AllowedHeaders:
+                - "*"
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - HEAD
+              MaxAge: 3000
+
 plugins:
+  - serverless-dotenv-plugin
   - serverless-offline
 

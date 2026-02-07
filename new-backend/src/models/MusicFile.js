@@ -18,6 +18,10 @@ const musicFileSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  s3Key: {
+    type: String,
+    // Optional: S3 key if file is stored in S3
+  },
   title: {
     type: String,
     required: true,

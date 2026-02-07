@@ -1,0 +1,23 @@
+# Exclude uploads directory (files should be stored in S3, not Lambda)
+uploads/
+*.mp3
+*.wav
+*.flac
+*.mp4
+*.avi
+
+# Exclude development files
+.env
+.env.local
+*.log
+.DS_Store
+
+# Exclude test files
+*.test.js
+*.spec.js
+__tests__/
+
+# Exclude documentation
+README.md
+*.md
+

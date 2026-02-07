@@ -6,23 +6,49 @@ const MusicFile = require('../models/MusicFile');
 const Folder = require('../models/Folder');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const { getEffectiveClient } = require('../middleware/utils');
+const { getPresignedUploadUrl, getPresignedDownloadUrl, streamFile, BUCKET_NAME } = require('../services/s3');
 
 const router = express.Router();
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
-const musicDir = path.join(uploadsDir, 'music');
-const coversDir = path.join(uploadsDir, 'covers');
+// Determine uploads directory - use /tmp in Lambda, otherwise local uploads
+const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+const baseUploadsDir = isLambda ? '/tmp' : path.join(__dirname, '..', '..', 'uploads');
+const musicDir = path.join(baseUploadsDir, 'music');
+const coversDir = path.join(baseUploadsDir, 'covers');
 
-[uploadsDir, musicDir, coversDir].forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+// Helper function to get base URL for file serving
+const getBaseUrl = (req) => {
+  // Use environment variable if set (for Lambda)
+  if (process.env.API_BASE_URL) {
+    return process.env.API_BASE_URL;
   }
-});
+  // Fallback: construct from request headers
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || req.get('host');
+  return `${protocol}://${host}`;
+};
+
+// Lazy directory creation function - only create when needed
+const ensureDirectories = () => {
+  [musicDir, coversDir].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+      } catch (error) {
+        // Ignore errors in Lambda if directory already exists or can't be created
+        if (!isLambda) {
+          console.error(`Failed to create directory ${dir}:`, error);
+        }
+      }
+    }
+  });
+};
 
 // Configure multer for file uploads - save to disk
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
+    // Ensure directories exist before using them
+    ensureDirectories();
     if (file.fieldname === 'cover_art' || file.fieldname === 'cover_image') {
       cb(null, coversDir);
     } else {
@@ -41,7 +67,10 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB
+    // API Gateway HTTP API has a 10MB payload limit for the ENTIRE request
+    // Multipart encoding adds ~10-15% overhead, so limit file to ~8.5MB to be safe
+    // For files larger than this, implement S3 presigned URLs for direct upload
+    fileSize: 8.5 * 1024 * 1024, // 8.5MB (accounts for multipart encoding overhead)
   },
   fileFilter: (req, file, cb) => {
     // Accept audio files for music uploads
@@ -126,8 +155,28 @@ router.get('/files/', authenticate, async (req, res) => {
       .limit(100);
 
     // Format response to match frontend expectations
+    const baseUrl = getBaseUrl(req);
     const formattedFiles = musicFiles.map(f => {
       const fileObj = f.toJSON ? f.toJSON() : f;
+      // Fix URLs that point to localhost - replace with current API base URL
+      let fileUrl = fileObj.fileUrl || fileObj.file_url;
+      let coverArtUrl = fileObj.coverArtUrl || fileObj.cover_art || null;
+      
+      if (fileUrl && (fileUrl.includes('localhost') || fileUrl.includes('127.0.0.1'))) {
+        // Extract the path from the old URL and rebuild with correct base
+        const urlMatch = fileUrl.match(/\/api\/v1\/music\/files\/[^\/]+\/stream\/?/);
+        if (urlMatch) {
+          fileUrl = `${baseUrl}${urlMatch[0]}`;
+        }
+      }
+      
+      if (coverArtUrl && (coverArtUrl.includes('localhost') || coverArtUrl.includes('127.0.0.1'))) {
+        const urlMatch = coverArtUrl.match(/\/api\/v1\/music\/files\/[^\/]+\/cover\/?/);
+        if (urlMatch) {
+          coverArtUrl = `${baseUrl}${urlMatch[0]}`;
+        }
+      }
+      
       return {
         id: fileObj._id || fileObj.id,
         name: fileObj.title || fileObj.filename,
@@ -138,10 +187,10 @@ router.get('/files/', authenticate, async (req, res) => {
         year: fileObj.year || null,
         duration: fileObj.duration || 0,
         file_size: fileObj.fileSize || 0,
-        file_url: fileObj.fileUrl || fileObj.file_url,
-        url: fileObj.fileUrl || fileObj.file_url,
-        cover_art: fileObj.coverArtUrl || fileObj.cover_art || null,
-        cover_art_url: fileObj.coverArtUrl || fileObj.cover_art_url || null,
+        file_url: fileUrl,
+        url: fileUrl,
+        cover_art: coverArtUrl,
+        cover_art_url: coverArtUrl,
         folder_id: fileObj.folderId || fileObj.folder_id || null,
         folderId: fileObj.folderId || fileObj.folder_id || null,
         zone_id: fileObj.zoneId || fileObj.zone_id || null,
@@ -166,7 +215,150 @@ router.get('/files/', authenticate, async (req, res) => {
   }
 });
 
-// Upload music file (with optional cover art)
+// Get presigned URL for S3 upload (bypasses API Gateway 10MB limit)
+router.post('/upload-url/', authenticate, async (req, res) => {
+  try {
+    const { filename, contentType, fileSize } = req.body;
+    
+    if (!filename || !contentType) {
+      return res.status(400).json({
+        error: 'filename and contentType are required'
+      });
+    }
+
+    // Get effective client
+    const effectiveClient = getEffectiveClient(req);
+    let targetClientId = effectiveClient;
+
+    if (req.user.role === 'admin' && !effectiveClient) {
+      targetClientId = req.body.client_id;
+      if (!targetClientId) {
+        return res.status(400).json({ error: 'Admin must provide client_id' });
+      }
+    } else if (!targetClientId) {
+      return res.status(400).json({ error: 'No client associated with this user' });
+    }
+
+    // Generate unique S3 key
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(filename);
+    const name = path.basename(filename, ext);
+    const s3Key = `music/${targetClientId}/${name}-${uniqueSuffix}${ext}`;
+
+    // Generate presigned URL (valid for 1 hour)
+    const uploadUrl = await getPresignedUploadUrl(s3Key, contentType, 3600);
+
+    return res.status(200).json({
+      uploadUrl,
+      s3Key,
+      expiresIn: 3600
+    });
+  } catch (error) {
+    console.error('Get upload URL error:', error);
+    return res.status(500).json({
+      detail: 'An error occurred while generating upload URL.'
+    });
+  }
+});
+
+// Complete upload after file is uploaded to S3
+router.post('/files/complete/', authenticate, async (req, res) => {
+  try {
+    const { s3Key, title, artist, album, genre, year, folder_id, zone_id, client_id, fileSize, contentType } = req.body;
+
+    if (!s3Key) {
+      return res.status(400).json({
+        error: 's3Key is required'
+      });
+    }
+
+    // Get effective client
+    const effectiveClient = getEffectiveClient(req);
+    let targetClientId = effectiveClient;
+
+    if (req.user.role === 'admin' && !effectiveClient) {
+      targetClientId = client_id;
+      if (!targetClientId) {
+        return res.status(400).json({ error: 'Admin must provide client_id' });
+      }
+    } else if (!targetClientId) {
+      return res.status(400).json({ error: 'No client associated with this user' });
+    }
+
+    // Validate folder if provided
+    if (folder_id) {
+      const folder = await Folder.findOne({ _id: folder_id, clientId: targetClientId });
+      if (!folder) {
+        return res.status(400).json({ error: 'Folder not found or not accessible' });
+      }
+    }
+
+    // Generate file URL (use API endpoint that will stream from S3)
+    const baseUrl = getBaseUrl(req);
+    const token = req.headers.authorization?.replace('Bearer ', '') || '';
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+    
+    const filename = path.basename(s3Key);
+    const fileUrl = `${baseUrl}/api/v1/music/files/${encodeURIComponent(filename)}/stream/${tokenParam}`;
+
+    const musicFile = new MusicFile({
+      filename: path.basename(s3Key),
+      fileSize: fileSize || 0,
+      fileUrl,
+      s3Key, // Store S3 key for streaming
+      title: title || filename,
+      artist: artist || 'Unknown',
+      album: album || '',
+      genre: genre || '',
+      year: year ? parseInt(year) : null,
+      duration: 0,
+      coverArtUrl: null,
+      clientId: targetClientId,
+      uploadedById: req.user._id,
+      folderId: folder_id || null,
+      zoneId: zone_id || null,
+      order: 0,
+    });
+
+    await musicFile.save();
+
+    // Format response
+    const fileObj = musicFile.toJSON ? musicFile.toJSON() : musicFile;
+    const formattedFile = {
+      id: fileObj._id || fileObj.id,
+      name: fileObj.title || fileObj.filename,
+      title: fileObj.title,
+      artist: fileObj.artist || 'Unknown',
+      album: fileObj.album || '',
+      genre: fileObj.genre || '',
+      year: fileObj.year || null,
+      duration: fileObj.duration || 0,
+      file_size: fileObj.fileSize || 0,
+      file_url: fileObj.fileUrl || fileObj.file_url,
+      url: fileObj.fileUrl || fileObj.file_url,
+      cover_art: fileObj.coverArtUrl || fileObj.cover_art || null,
+      cover_art_url: fileObj.coverArtUrl || fileObj.cover_art_url || null,
+      folder_id: fileObj.folderId || fileObj.folder_id || null,
+      folderId: fileObj.folderId || fileObj.folder_id || null,
+      zone_id: fileObj.zoneId || fileObj.zone_id || null,
+      zoneId: fileObj.zoneId || fileObj.zone_id || null,
+      client_id: fileObj.clientId || fileObj.client_id || null,
+      clientId: fileObj.clientId || fileObj.client_id || null,
+      order: fileObj.order || 0,
+      created_at: fileObj.createdAt || fileObj.created_at,
+      updated_at: fileObj.updatedAt || fileObj.updated_at,
+    };
+
+    return res.status(201).json(formattedFile);
+  } catch (error) {
+    console.error('Complete upload error:', error);
+    return res.status(500).json({
+      detail: 'An error occurred while completing upload.'
+    });
+  }
+});
+
+// Upload music file (with optional cover art) - Keep for small files < 8MB
 router.post('/files/', authenticate, upload.fields([
   { name: 'file', maxCount: 1 },
   { name: 'cover_art', maxCount: 1 }
@@ -206,7 +398,7 @@ router.post('/files/', authenticate, upload.fields([
     // Generate file URLs pointing to our serving endpoint
     // Include token in query string so audio elements can access files
     // file.filename is the saved filename (with unique suffix), file.originalname is the original
-    const baseUrl = req.protocol + '://' + req.get('host');
+    const baseUrl = getBaseUrl(req);
     const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token || '';
     const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
     const fileUrl = `${baseUrl}/api/v1/music/files/${encodeURIComponent(file.filename)}/stream/${tokenParam}`;
@@ -386,34 +578,67 @@ router.options('/files/:filename/stream/', (req, res) => {
 router.get('/files/:filename/stream/', optionalAuthenticate, async (req, res) => {
   try {
     const filename = decodeURIComponent(req.params.filename);
-    const filePath = path.join(musicDir, filename);
 
-    // Check if file exists
-    if (!fs.existsSync(filePath)) {
+    // Find the music file in database to check permissions and get S3 key
+    const musicFile = await MusicFile.findOne({ 
+      $or: [
+        { fileUrl: { $regex: filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') } },
+        { filename: filename }
+      ]
+    });
+    
+    if (!musicFile) {
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
       return res.status(404).json({
-        detail: 'File not found.'
+        detail: 'File not found in database.'
       });
     }
 
-    // Find the music file in database to check permissions
-    // The fileUrl contains the filename, so we search for it
-    const musicFile = await MusicFile.findOne({ 
-      fileUrl: { $regex: filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') } 
-    });
-    
     // If we have a user from auth, check permissions
-    if (musicFile && req.user) {
+    if (req.user) {
       const effectiveClient = getEffectiveClient(req);
       // Check access - only if user is authenticated
       if (req.user.role !== 'admin' && musicFile.clientId !== effectiveClient) {
+        res.header('Access-Control-Allow-Origin', '*');
         return res.status(403).json({
           detail: 'You do not have permission to access this file.'
         });
       }
-    } else if (musicFile && !req.user) {
+    } else {
       // No auth token provided - for development, allow access
-      // In production, you might want to require auth
       console.warn(`File access without authentication: ${filename}`);
+    }
+
+    // If file is stored in S3, generate presigned URL and redirect
+    if (musicFile.s3Key) {
+      try {
+        const downloadUrl = await getPresignedDownloadUrl(musicFile.s3Key, 3600);
+        res.header('Access-Control-Allow-Origin', '*');
+        res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+        return res.redirect(302, downloadUrl);
+      } catch (s3Error) {
+        console.error('S3 streaming error:', s3Error);
+        res.header('Access-Control-Allow-Origin', '*');
+        return res.status(500).json({
+          detail: 'Error accessing file from S3.'
+        });
+      }
+    }
+
+    // Fallback to local file system
+    const filePath = path.join(musicDir, filename);
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      console.error(`File not found: ${filePath} (looking in ${musicDir})`);
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      return res.status(404).json({
+        detail: 'File not found. Files uploaded locally are not available in Lambda. Please re-upload files through the deployed API.',
+        path: filePath,
+        musicDir: musicDir
+      });
     }
 
     // Set appropriate headers for audio streaming
@@ -465,8 +690,11 @@ router.get('/files/:filename/stream/', optionalAuthenticate, async (req, res) =>
     }
   } catch (error) {
     console.error('Stream error:', error);
+    // Ensure CORS headers on error responses
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     return res.status(500).json({
-      detail: 'An error occurred.'
+      detail: 'An error occurred while streaming the file.'
     });
   }
 });
@@ -648,7 +876,7 @@ router.post('/folders/', authenticate, imageUpload.single('cover_image'), async 
     // Handle cover image upload
     let coverImageUrl = null;
     if (req.file) {
-      const baseUrl = req.protocol + '://' + req.get('host');
+      const baseUrl = getBaseUrl(req);
       const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token || '';
       const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
       coverImageUrl = `${baseUrl}/api/v1/music/files/${encodeURIComponent(req.file.filename)}/cover/${tokenParam}`;
@@ -716,7 +944,7 @@ router.patch('/folders/:id/', authenticate, imageUpload.single('cover_image'), a
 
     // Handle cover image upload
     if (req.file) {
-      const baseUrl = req.protocol + '://' + req.get('host');
+      const baseUrl = getBaseUrl(req);
       folder.coverImage = `${baseUrl}/api/v1/music/files/${req.file.filename}/cover/`;
     } else if (req.body.cover_image === null || req.body.cover_image === '') {
       // Allow removing cover image

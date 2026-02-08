@@ -160,6 +160,38 @@ export const musicAPI = {
     }
 
     try {
+      // Step 0: Extract duration from audio file
+      let duration = 0;
+      try {
+        const audio = new Audio();
+        const audioUrl = URL.createObjectURL(file);
+        audio.src = audioUrl;
+        
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Timeout loading audio metadata'));
+          }, 10000); // 10 second timeout
+          
+          audio.addEventListener('loadedmetadata', () => {
+            clearTimeout(timeout);
+            if (Number.isFinite(audio.duration) && audio.duration > 0) {
+              duration = Math.round(audio.duration); // Round to nearest second
+            }
+            URL.revokeObjectURL(audioUrl);
+            resolve();
+          });
+          
+          audio.addEventListener('error', (e) => {
+            clearTimeout(timeout);
+            URL.revokeObjectURL(audioUrl);
+            reject(e);
+          });
+        });
+      } catch (durationError) {
+        console.warn('Failed to extract audio duration:', durationError);
+        // Continue with duration = 0 if extraction fails
+      }
+
       // Step 1: Get presigned URL from backend
       if (onProgress) onProgress(5);
       
@@ -210,6 +242,7 @@ export const musicAPI = {
                   client_id: data.client_id,
                   fileSize: file.size,
                   contentType: file.type || 'audio/mpeg',
+                  duration: duration, // Send extracted duration
                 }),
               });
 

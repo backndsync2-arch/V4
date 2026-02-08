@@ -488,18 +488,44 @@ export function MusicLibrary() {
   }, [searchedFiles, musicFiles, selectedFolder, searchQuery]);
 
   const handleCoverArtChange = async (fileId: string, url: string | null) => {
-    setCoverArt({ ...coverArt, [fileId]: url });
-    
-    // TODO: Upload cover art to backend
-    // try {
-    //   if (url) {
-    //     const blob = await fetch(url).then(r => r.blob());
-    //     const file = new File([blob], 'cover.jpg', { type: 'image/jpeg' });
-    //     await musicAPI.uploadCoverArt(fileId, file);
-    //   }
-    // } catch (error: any) {
-    //   toast.error('Failed to upload cover art');
-    // }
+    // If URL is null, remove the cover art
+    if (!url) {
+      setCoverArt({ ...coverArt, [fileId]: null });
+      return;
+    }
+
+    // If it's a blob URL (from file selection), upload it
+    if (url.startsWith('blob:')) {
+      try {
+        // Fetch the blob
+        const response = await fetch(url);
+        const blob = await response.blob();
+        
+        // Convert blob to File
+        const file = new File([blob], 'cover-art.jpg', { type: blob.type || 'image/jpeg' });
+        
+        // Upload to backend
+        const result = await musicAPI.uploadCoverArt(fileId, file);
+        
+        // Update the music file in state
+        setMusicFiles(prev => prev.map(f =>
+          f.id === fileId
+            ? { ...f, coverArtUrl: result.coverArtUrl, cover_art_url: result.coverArtUrl }
+            : f
+        ));
+        
+        // Also update local cover art state for immediate UI feedback
+        setCoverArt({ ...coverArt, [fileId]: result.coverArtUrl });
+        
+        toast.success('Cover image uploaded successfully!');
+      } catch (error: any) {
+        console.error('Failed to upload cover art:', error);
+        toast.error('Failed to upload cover image: ' + (error.message || 'Unknown error'));
+      }
+    } else {
+      // If it's a regular URL, just update the state
+      setCoverArt({ ...coverArt, [fileId]: url });
+    }
   };
 
   return (

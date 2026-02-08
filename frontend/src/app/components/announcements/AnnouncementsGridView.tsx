@@ -50,11 +50,12 @@ export function AnnouncementsGridView({
       {announcements.map((audio) => {
         return (
           <Card key={audio.id} className="overflow-hidden border-white/10 bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] shadow-lg hover:shadow-xl hover:shadow-[#1db954]/20 transition-all duration-300 group">
-            <div className="aspect-square bg-gradient-to-br from-[#1db954]/20 via-[#1ed760]/10 to-[#2a2a2a] relative overflow-hidden">
+            <div className="aspect-square bg-gradient-to-br from-[#1db954]/20 via-[#1ed760]/10 to-[#2a2a2a] relative overflow-hidden group">
               <ImageUpload
-                currentImage={announcementIcons[audio.id] || undefined}
+                currentImage={audio.coverArtUrl || announcementIcons[audio.id] || undefined}
                 onImageChange={(url) => onIconChange(audio.id, url)}
-                variant="icon"
+                variant="cover"
+                className="w-full h-full"
               />
               <Button
                 size="sm"

@@ -44,7 +44,10 @@ export function ImageUpload({
     setPreviewUrl(url);
     onImageChange(url);
     setShowDialog(false);
-    toast.success('Image uploaded successfully');
+    // Only show success toast for profile variant (cover variant shows success after actual upload)
+    if (variant === 'profile') {
+      toast.success('Image uploaded successfully');
+    }
   };
 
   const handleRemoveImage = () => {
@@ -167,14 +170,14 @@ export function ImageUpload({
     );
   }
 
-  // Cover art variant (for music files)
+  // Cover art variant (for music files and announcements)
   if (variant === 'cover') {
     return (
       <>
-        <div className={`relative group ${className}`}>
+        <div className={`relative w-full h-full ${className}`}>
           <button
             onClick={handleClick}
-            className="w-full aspect-square rounded-lg overflow-hidden bg-gradient-to-br from-slate-100 to-slate-200 hover:from-slate-200 hover:to-slate-300 transition-all duration-200 flex items-center justify-center"
+            className="w-full h-full rounded-lg overflow-hidden bg-gradient-to-br from-[#1db954]/20 via-[#1ed760]/10 to-[#2a2a2a] hover:from-[#1db954]/30 hover:via-[#1ed760]/20 hover:to-[#2a2a2a] transition-all duration-200 flex items-center justify-center"
           >
             {previewUrl ? (
               <img
@@ -183,7 +186,7 @@ export function ImageUpload({
                 className="w-full h-full object-cover"
               />
             ) : (
-              <ImageIcon className="h-12 w-12 text-slate-400" />
+              <ImageIcon className="h-12 w-12 text-gray-400" />
             )}
           </button>
           <button
@@ -191,7 +194,7 @@ export function ImageUpload({
               e.stopPropagation();
               fileInputRef.current?.click();
             }}
-            className="absolute top-2 right-2 h-8 w-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110 opacity-0 group-hover:opacity-100"
+            className="absolute top-2 right-2 h-8 w-8 rounded-full bg-[#1db954] hover:bg-[#1ed760] text-white flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110 opacity-0 group-hover:opacity-100"
             title="Upload cover art"
           >
             <Plus className="h-4 w-4" />

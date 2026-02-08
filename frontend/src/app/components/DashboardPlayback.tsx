@@ -78,14 +78,23 @@ export function DashboardPlayback() {
   const isAudioUrl = (url?: string) => {
     if (!url) return false;
     const u = url.toLowerCase();
-    return (
+    // Check for file extensions
+    if (
       u.endsWith('.mp3') ||
       u.endsWith('.wav') ||
       u.endsWith('.m4a') ||
       u.endsWith('.aac') ||
       u.endsWith('.ogg') ||
       u.endsWith('.flac')
-    );
+    ) {
+      return true;
+    }
+    // Check for streaming URLs (backend returns URLs like /api/v1/music/files/.../stream/)
+    if (u.includes('/stream/') || u.includes('/stream')) {
+      return true;
+    }
+    // If URL exists and is not empty, assume it's valid (backend validates file types)
+    return u.length > 0;
   };
 
   // Playback state - sync with shared playback state
@@ -391,7 +400,7 @@ export function DashboardPlayback() {
     const load = async () => {
       try {
         const [m, a, folders, z] = await Promise.all([
-          musicAPI.getMusicFiles(),
+          musicAPI.getMusicFiles(undefined, activeTarget || undefined),
           announcementsAPI.getAnnouncements(),
           musicAPI.getFolders('announcements', activeTarget || undefined),
           zonesAPI.getZones(),

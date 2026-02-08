@@ -13,3 +13,4 @@ foreach ($line in $envFile) {
 # Deploy using serverless
 npm run deploy
 
+

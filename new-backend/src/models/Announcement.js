@@ -1,18 +1,19 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 
-const musicFileSchema = new mongoose.Schema({
+const announcementSchema = new mongoose.Schema({
   _id: {
     type: String,
     default: () => uuidv4(),
   },
-  filename: {
+  title: {
     type: String,
     required: true,
+    index: true,
   },
-  fileSize: {
-    type: Number,
-    required: true,
+  text: {
+    type: String,
+    default: '',
   },
   fileUrl: {
     type: String,
@@ -20,25 +21,24 @@ const musicFileSchema = new mongoose.Schema({
   },
   s3Key: {
     type: String,
-    // Optional: S3 key if file is stored in S3
+    sparse: true,
   },
-  title: {
-    type: String,
-    required: true,
-    index: true,
-  },
-  artist: {
-    type: String,
-    index: true,
-  },
-  album: String,
-  genre: String,
-  year: Number,
   duration: {
     type: Number, // seconds
-    required: true,
+    default: 0,
   },
-  coverArtUrl: String,
+  voice: {
+    type: String,
+    default: 'fable', // Default to fable (UK English)
+  },
+  provider: {
+    type: String,
+    default: 'elevenlabs', // TTS provider
+  },
+  coverArtUrl: {
+    type: String,
+    default: null,
+  },
   coverArtS3Key: {
     type: String,
     sparse: true,
@@ -46,6 +46,10 @@ const musicFileSchema = new mongoose.Schema({
   folderId: {
     type: String,
     ref: 'Folder',
+    index: true,
+  },
+  category: {
+    type: String, // Alias for folderId for backward compatibility
     index: true,
   },
   zoneId: {
@@ -59,9 +63,18 @@ const musicFileSchema = new mongoose.Schema({
     required: true,
     index: true,
   },
-  uploadedById: {
+  createdById: {
     type: String,
     ref: 'User',
+  },
+  isRecording: {
+    type: Boolean,
+    default: false,
+  },
+  enabled: {
+    type: Boolean,
+    default: true,
+    index: true,
   },
   order: {
     type: Number,
@@ -82,5 +95,10 @@ const musicFileSchema = new mongoose.Schema({
   _id: false,
 });
 
-module.exports = mongoose.model('MusicFile', musicFileSchema);
+// Index for common queries
+announcementSchema.index({ clientId: 1, zoneId: 1 });
+announcementSchema.index({ clientId: 1, folderId: 1 });
+announcementSchema.index({ clientId: 1, enabled: 1 });
+
+module.exports = mongoose.model('Announcement', announcementSchema);
 

@@ -180,6 +180,7 @@ export const normalizeAnnouncement = (raw: any): AnnouncementAudio => {
     createdBy: String(raw?.created_by_name ?? raw?.createdBy ?? ''),
     scriptId: undefined,
     ttsText: raw?.tts_text ?? raw?.ttsText ?? undefined,
+    coverArtUrl: raw?.cover_art_url ?? raw?.coverArtUrl ?? undefined,
   };
 };
 

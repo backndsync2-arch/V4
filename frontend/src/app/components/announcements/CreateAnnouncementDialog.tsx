@@ -53,7 +53,7 @@ interface CreateAnnouncementDialogProps {
   onAnnouncementsCreated?: () => void;
   newFolderName?: string;
   onNewFolderNameChange?: (name: string) => void;
-  onCreateFolder?: () => Promise<Folder | null>;
+  onCreateFolder?: (selectedClientId?: string) => Promise<Folder | null>;
   isCreatingFolder?: boolean;
   activeTarget?: string | null;
 }
@@ -101,6 +101,8 @@ export function CreateAnnouncementDialog({
   isCreatingFolder = false,
   activeTarget,
 }: CreateAnnouncementDialogProps) {
+  const { user, impersonatingClient } = useAuth();
+  const [selectedClientId, setSelectedClientId] = React.useState<string>('');
   const [showCreateFolderInput, setShowCreateFolderInput] = React.useState(false);
   const [newFolderNameLocal, setNewFolderNameLocal] = React.useState('');
   const [isRecording, setIsRecording] = React.useState(false);
@@ -516,18 +518,63 @@ export function CreateAnnouncementDialog({
           </div>
           <div className="space-y-2">
             <Label>Folder</Label>
-            <Select value={newCategory} onValueChange={onCategoryChange}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select folder..." />
-              </SelectTrigger>
-              <SelectContent>
-                {folders.map(folder => (
-                  <SelectItem key={folder.id} value={folder.id}>
-                    {folder.name}
+            {!showCreateFolderInput ? (
+              <Select value={newCategory} onValueChange={handleFolderSelectChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select folder..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {folders.map(folder => (
+                    <SelectItem key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="__create_new__" className="text-[#1db954]">
+                    <Plus className="h-4 w-4 inline mr-2" />
+                    Create New Folder
                   </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Folder name"
+                    value={newFolderNameLocal}
+                    onChange={(e) => setNewFolderNameLocal(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleCreateFolderInline();
+                      } else if (e.key === 'Escape') {
+                        setShowCreateFolderInput(false);
+                        setNewFolderNameLocal('');
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowCreateFolderInput(false);
+                      setNewFolderNameLocal('');
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleCreateFolderInline}
+                  disabled={!newFolderNameLocal.trim() || isCreatingFolder}
+                  className="w-full"
+                >
+                  {isCreatingFolder ? 'Creating...' : 'Create Folder'}
+                </Button>
+              </div>
+            )}
           </div>
           <Button onClick={() => {
             // Store selectedClientId temporarily for handler to use

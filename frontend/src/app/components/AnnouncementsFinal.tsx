@@ -15,6 +15,8 @@ import { InstantPlayDialog } from './announcements/InstantPlayDialog';
 import { FolderSettings } from './announcements/announcements.types';
 import { usePlayback } from '@/lib/playback';
 import { useAnnouncementsData } from './announcements/useAnnouncementsData';
+import { announcementsAPI } from '@/lib/api';
+import { toast } from 'sonner';
 import { useAnnouncementDialogs } from './announcements/useAnnouncementDialogs';
 import { useAnnouncementFormState } from './announcements/useAnnouncementFormState';
 import { useAnnouncementHandlers } from './announcements/useAnnouncementHandlers';
@@ -237,8 +239,46 @@ export function AnnouncementsFinal() {
     ? audioFiles.filter(a => a.category === dialogs.selectedFolderForSettings || a.folderId === dialogs.selectedFolderForSettings)
     : [];
 
-  const handleIconChange = (id: string, url: string | null) => {
-    setAnnouncementIcons({ ...announcementIcons, [id]: url });
+  const handleIconChange = async (id: string, url: string | null) => {
+    // If URL is null, remove the cover art
+    if (!url) {
+      setAnnouncementIcons({ ...announcementIcons, [id]: null });
+      // Optionally, could also update the announcement to remove coverArtUrl
+      return;
+    }
+
+    // If it's a blob URL (from file selection), upload it
+    if (url.startsWith('blob:')) {
+      try {
+        // Fetch the blob
+        const response = await fetch(url);
+        const blob = await response.blob();
+        
+        // Convert blob to File
+        const file = new File([blob], 'cover-art.jpg', { type: blob.type || 'image/jpeg' });
+        
+        // Upload to backend
+        const result = await announcementsAPI.uploadCoverArt(id, file);
+        
+        // Update the announcement in state
+        setAudioFiles(prev => prev.map(a => 
+          a.id === id 
+            ? { ...a, coverArtUrl: result.coverArtUrl }
+            : a
+        ));
+        
+        // Also update local icons state for immediate UI feedback
+        setAnnouncementIcons({ ...announcementIcons, [id]: result.coverArtUrl });
+        
+        toast.success('Cover image uploaded successfully!');
+      } catch (error: any) {
+        toast.error(error.message || 'Failed to upload cover image');
+        console.error('Upload cover art error:', error);
+      }
+    } else {
+      // It's already a URL (from backend), just update local state
+      setAnnouncementIcons({ ...announcementIcons, [id]: url });
+    }
   };
 
   return (

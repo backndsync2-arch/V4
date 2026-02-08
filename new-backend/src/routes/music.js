@@ -264,7 +264,7 @@ router.post('/upload-url/', authenticate, async (req, res) => {
 // Complete upload after file is uploaded to S3
 router.post('/files/complete/', authenticate, async (req, res) => {
   try {
-    const { s3Key, title, artist, album, genre, year, folder_id, zone_id, client_id, fileSize, contentType } = req.body;
+    const { s3Key, title, artist, album, genre, year, folder_id, zone_id, client_id, fileSize, contentType, duration } = req.body;
 
     if (!s3Key) {
       return res.status(400).json({
@@ -301,6 +301,9 @@ router.post('/files/complete/', authenticate, async (req, res) => {
     const filename = path.basename(s3Key);
     const fileUrl = `${baseUrl}/api/v1/music/files/${encodeURIComponent(filename)}/stream/${tokenParam}`;
 
+    // Parse duration (should be in seconds, ensure it's a number)
+    const parsedDuration = duration && !isNaN(Number(duration)) ? Math.max(0, Math.round(Number(duration))) : 0;
+
     const musicFile = new MusicFile({
       filename: path.basename(s3Key),
       fileSize: fileSize || 0,
@@ -311,7 +314,7 @@ router.post('/files/complete/', authenticate, async (req, res) => {
       album: album || '',
       genre: genre || '',
       year: year ? parseInt(year) : null,
-      duration: 0,
+      duration: parsedDuration, // Use duration from frontend
       coverArtUrl: null,
       clientId: targetClientId,
       uploadedById: req.user._id,
@@ -370,7 +373,7 @@ router.post('/files/', authenticate, upload.fields([
       });
     }
 
-    const { title, artist, album, genre, year, folder_id, zone_id, client_id } = req.body;
+    const { title, artist, album, genre, year, folder_id, zone_id, client_id, duration } = req.body;
     const file = req.files.file[0];
     const coverArtFile = req.files.cover_art ? req.files.cover_art[0] : null;
 
@@ -409,9 +412,9 @@ router.post('/files/', authenticate, upload.fields([
       coverArtUrl = `${baseUrl}/api/v1/music/files/${encodeURIComponent(coverArtFile.filename)}/cover/${tokenParam}`;
     }
     
-    // Extract duration from file (simplified - in production use a library like node-ffmpeg)
-    // For now, set to 0 - frontend can extract it from metadata
-    const duration = 0; // TODO: Extract actual duration using music-metadata or similar
+    // Parse duration (should be in seconds, ensure it's a number)
+    // If not provided, default to 0 (frontend should extract it)
+    const parsedDuration = duration && !isNaN(Number(duration)) ? Math.max(0, Math.round(Number(duration))) : 0;
 
     const musicFile = new MusicFile({
       filename: file.originalname,
@@ -422,7 +425,7 @@ router.post('/files/', authenticate, upload.fields([
       album: album || '',
       genre: genre || '',
       year: year ? parseInt(year) : null,
-      duration,
+      duration: parsedDuration,
       coverArtUrl: coverArtUrl,
       clientId: targetClientId,
       uploadedById: req.user._id,
@@ -533,6 +536,73 @@ router.patch('/files/:id/', authenticate, async (req, res) => {
     return res.status(500).json({
       detail: 'An error occurred.'
     });
+  }
+});
+
+// Upload cover art for music file
+router.post('/files/:id/upload_cover_art/', authenticate, imageUpload.single('cover_art'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file uploaded.' });
+    }
+
+    const musicFile = await MusicFile.findById(req.params.id);
+
+    if (!musicFile) {
+      return res.status(404).json({ detail: 'Music file not found.' });
+    }
+
+    const effectiveClient = getEffectiveClient(req);
+
+    if (musicFile.clientId !== effectiveClient && req.user.role !== 'admin') {
+      return res.status(403).json({ detail: 'You do not have permission to update this music file.' });
+    }
+
+    // Upload to S3 for persistence (online only)
+    const { PutObjectCommand } = require('@aws-sdk/client-s3');
+    const { S3Client } = require('@aws-sdk/client-s3');
+    
+    const s3Client = new S3Client({
+      region: process.env.AWS_REGION || 'us-east-1',
+    });
+    
+    const s3Key = `music/covers/${musicFile._id}-${Date.now()}-${req.file.filename}`;
+    
+    // Read file and upload to S3
+    const fileContent = fs.readFileSync(req.file.path);
+    const putCommand = new PutObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: s3Key,
+      Body: fileContent,
+      ContentType: req.file.mimetype,
+    });
+    
+    await s3Client.send(putCommand);
+    
+    // Clean up local file (online only, no local storage)
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch (err) {
+      console.warn('Failed to delete local file:', err);
+    }
+    
+    // Generate URL for the cover image (will use presigned URL when accessed)
+    const baseUrl = getBaseUrl(req);
+    const coverArtUrl = `${baseUrl}/api/v1/music/files/${musicFile._id}/cover/`;
+
+    musicFile.coverArtUrl = coverArtUrl;
+    musicFile.coverArtS3Key = s3Key;
+    await musicFile.save();
+
+    const obj = musicFile.toJSON ? musicFile.toJSON() : musicFile;
+    return res.status(200).json({
+      id: obj._id || obj.id,
+      cover_art_url: obj.coverArtUrl,
+      coverArtUrl: obj.coverArtUrl,
+    });
+  } catch (error) {
+    console.error('Upload cover art error:', error);
+    return res.status(500).json({ detail: 'An error occurred.' });
   }
 });
 
@@ -699,7 +769,7 @@ router.get('/files/:filename/stream/', optionalAuthenticate, async (req, res) =>
   }
 });
 
-// Serve cover art by filename
+// Serve cover art by filename (legacy - for old files)
 router.get('/files/:filename/cover/', optionalAuthenticate, async (req, res) => {
   try {
     const filename = decodeURIComponent(req.params.filename);
@@ -726,6 +796,7 @@ router.get('/files/:filename/cover/', optionalAuthenticate, async (req, res) => 
     res.writeHead(200, {
       'Content-Length': stat.size,
       'Content-Type': contentType,
+      'Access-Control-Allow-Origin': '*',
     });
     fs.createReadStream(filePath).pipe(res);
   } catch (error) {
@@ -733,6 +804,95 @@ router.get('/files/:filename/cover/', optionalAuthenticate, async (req, res) => 
     return res.status(500).json({
       detail: 'An error occurred.'
     });
+  }
+});
+
+// Serve cover art by music file ID (new - uses S3)
+router.get('/files/:id/cover/', optionalAuthenticate, async (req, res) => {
+  try {
+    const musicFile = await MusicFile.findById(req.params.id);
+
+    if (!musicFile) {
+      return res.status(404).json({
+        detail: 'Music file not found.'
+      });
+    }
+
+    // Use S3 presigned URL (online only - no local fallback)
+    if (musicFile.coverArtS3Key) {
+      try {
+        const presignedUrl = await getPresignedDownloadUrl(musicFile.coverArtS3Key, 3600);
+        
+        // Redirect to presigned URL (valid for 1 hour)
+        return res.redirect(302, presignedUrl);
+      } catch (s3Error) {
+        console.error('Failed to generate presigned URL for cover image:', s3Error);
+        // If presigned URL generation fails, try streaming directly as fallback
+        try {
+          const s3Stream = await streamFile(musicFile.coverArtS3Key);
+          if (s3Stream) {
+            const ext = path.extname(musicFile.coverArtS3Key).toLowerCase();
+            const contentType = {
+              '.jpg': 'image/jpeg',
+              '.jpeg': 'image/jpeg',
+              '.png': 'image/png',
+              '.gif': 'image/gif',
+              '.webp': 'image/webp',
+            }[ext] || 'image/jpeg';
+
+            res.writeHead(200, {
+              'Content-Type': contentType,
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+              'Cache-Control': 'public, max-age=31536000',
+            });
+            s3Stream.pipe(res);
+            return;
+          }
+        } catch (streamError) {
+          console.error('S3 stream also failed:', streamError.message);
+          return res.status(500).json({ 
+            detail: 'Failed to retrieve cover image from S3. Please check AWS permissions.',
+            error: streamError.message 
+          });
+        }
+      }
+    }
+
+    // Fallback to legacy filename-based serving if no S3 key
+    if (musicFile.coverArtUrl) {
+      const urlParts = musicFile.coverArtUrl.split('/');
+      const filename = urlParts[urlParts.length - 1];
+      if (filename && filename !== 'cover/') {
+        const filePath = path.join(coversDir, filename);
+        if (fs.existsSync(filePath)) {
+          const stat = fs.statSync(filePath);
+          const ext = path.extname(filename).toLowerCase();
+          const contentType = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
+          }[ext] || 'image/jpeg';
+
+          res.writeHead(200, {
+            'Content-Length': stat.size,
+            'Content-Type': contentType,
+            'Access-Control-Allow-Origin': '*',
+          });
+          fs.createReadStream(filePath).pipe(res);
+          return;
+        }
+      }
+    }
+
+    return res.status(404).json({
+      detail: 'Cover image not found.'
+    });
+  } catch (error) {
+    console.error('Cover image error:', error);
+    return res.status(500).json({ detail: 'An error occurred.' });
   }
 });
 

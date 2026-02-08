@@ -64,3 +64,4 @@ npm run deploy:dev
 - Staff: `staff@sync2gear.com` / `Staff@Sync2Gear2025!`
 - Client: `client@example.com` / `Client@Example2025!`
 
+

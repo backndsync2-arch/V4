@@ -104,10 +104,12 @@ export function Dashboard() {
       });
       if (response.ok) {
         const data = await response.json();
-        setSchedules(data);
+        // Extract results array from response (API returns { results: [], count: 0 })
+        const schedulesArray = Array.isArray(data) ? data : (data.results || []);
+        setSchedules(schedulesArray);
         
         // If any schedule has countdownSeconds: 0, immediately trigger execution
-        const schedulesAtZero = data.filter((s: any) => s.countdownSeconds === 0);
+        const schedulesAtZero = schedulesArray.filter((s: any) => s.countdownSeconds === 0);
         if (schedulesAtZero.length > 0) {
           // Check if we've already triggered execution for these schedules
           const schedulesToExecute = schedulesAtZero.filter((s: any) => {
@@ -164,7 +166,7 @@ export function Dashboard() {
     const load = async (silent = false) => {
       try {
         const [music, anns, folders] = await Promise.all([
-          musicAPI.getMusicFiles(),
+          musicAPI.getMusicFiles(undefined, activeTarget || undefined),
           announcementsAPI.getAnnouncements(),
           musicAPI.getFolders('announcements', activeTarget || undefined),
         ]);

@@ -10,6 +10,9 @@ const authRoutes = require('./routes/auth');
 const musicRoutes = require('./routes/music');
 const zonesRoutes = require('./routes/zones');
 const adminRoutes = require('./routes/admin');
+const announcementsRoutes = require('./routes/announcements');
+const schedulesRoutes = require('./routes/schedules');
+const playbackRoutes = require('./routes/playback');
 
 const app = express();
 
@@ -48,6 +51,9 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/music', musicRoutes);
 app.use('/api/v1/zones', zonesRoutes);
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/announcements', announcementsRoutes);
+app.use('/api/v1/schedules', schedulesRoutes);
+app.use('/api/v1/playback', playbackRoutes);
 
 // Root endpoint
 app.get('/api/v1/', (req, res) => {
@@ -59,6 +65,9 @@ app.get('/api/v1/', (req, res) => {
       music: '/api/v1/music/',
       zones: '/api/v1/zones/',
       admin: '/api/v1/admin/',
+      announcements: '/api/v1/announcements/',
+      schedules: '/api/v1/schedules/',
+      playback: '/api/v1/playback/',
     },
   });
 });

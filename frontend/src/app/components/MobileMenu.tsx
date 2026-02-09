@@ -2,7 +2,7 @@ import React from 'react';
 import { useAuth } from '@/lib/auth';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/app/components/ui/sheet';
 import { Button } from '@/app/components/ui/button';
-import { Menu, User, Users, UsersRound, LogOut } from 'lucide-react';
+import { Menu, User, Users, UsersRound, LogOut, FileText } from 'lucide-react';
 import { cn } from '@/app/components/ui/utils';
 
 interface MobileMenuProps {
@@ -18,6 +18,8 @@ export function MobileMenu({ currentPage, onNavigate }: MobileMenuProps) {
   const menuItems = [
     // Team Members: visible to admin, staff, and client roles (not floor_user)
     ...(user && user.role !== 'floor_user' ? [{ id: 'users', label: 'Team Members', icon: UsersRound }] : []),
+    // Audit Logs: visible to all authenticated users
+    ...(user ? [{ id: 'audit-logs', label: 'Audit Logs', icon: FileText }] : []),
     // Admin panel: only for sync2gear admins
     ...(user?.role === 'admin' ? [{ id: 'admin', label: 'Admin Dashboard', icon: Users }] : []),
     { id: 'profile', label: 'My Profile', icon: User },

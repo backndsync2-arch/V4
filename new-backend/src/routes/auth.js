@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Client = require('../models/Client');
 const { authenticate } = require('../middleware/auth');
+const { logAuditEvent } = require('../middleware/audit');
 
 const router = express.Router();
 
@@ -90,6 +91,16 @@ router.post('/login/', async (req, res) => {
     const user = await User.findOne({ email: email.toLowerCase() });
     
     if (!user) {
+      // Log failed login attempt (user not found)
+      await logAuditEvent({
+        action: 'login',
+        resourceType: 'user',
+        user: { _id: 'unknown', email: email.toLowerCase(), name: 'Unknown' },
+        status: 'failure',
+        errorMessage: 'User not found',
+        req,
+      });
+      
       return res.status(401).json({
         detail: 'Invalid email or password.'
       });
@@ -106,6 +117,18 @@ router.post('/login/', async (req, res) => {
     const isPasswordValid = await user.comparePassword(password);
     
     if (!isPasswordValid) {
+      // Log failed login attempt
+      await logAuditEvent({
+        action: 'login',
+        resourceType: 'user',
+        resourceId: user._id,
+        user: user,
+        clientId: user.clientId,
+        status: 'failure',
+        errorMessage: 'Invalid password',
+        req,
+      });
+      
       return res.status(401).json({
         detail: 'Invalid email or password.'
       });
@@ -118,6 +141,17 @@ router.post('/login/', async (req, res) => {
     // Generate tokens
     const accessToken = generateToken(user._id);
     const refreshToken = generateToken(user._id);
+
+    // Log successful login
+    await logAuditEvent({
+      action: 'login',
+      resourceType: 'user',
+      resourceId: user._id,
+      user: user,
+      clientId: user.clientId,
+      status: 'success',
+      req,
+    });
 
     // Return user data (password excluded by toJSON)
     const userObj = user.toJSON();
@@ -151,6 +185,16 @@ router.get('/me/', authenticate, async (req, res) => {
 // Logout
 router.post('/logout/', authenticate, async (req, res) => {
   try {
+    // Log logout event
+    await logAuditEvent({
+      action: 'logout',
+      resourceType: 'user',
+      resourceId: req.user._id,
+      user: req.user,
+      clientId: req.user.clientId,
+      req,
+    });
+    
     // In production, you'd blacklist the token here
     return res.status(200).json({ message: 'Successfully logged out' });
   } catch (error) {

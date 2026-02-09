@@ -260,8 +260,29 @@ router.patch('/clients/:id/', authenticate, isAdmin, async (req, res) => {
       updateFields.trialEndsAt = new Date(Date.now() + (updateFields.trialDays || client.trialDays || 14) * 24 * 60 * 60 * 1000);
     }
     
+    // Capture changes for audit log
+    const changes = {};
+    Object.keys(updateFields).forEach(key => {
+      const oldValue = client[key];
+      const newValue = updateFields[key];
+      if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+        changes[key] = { before: oldValue, after: newValue };
+      }
+    });
+    
     Object.assign(client, updateFields);
     await client.save();
+    
+    // Log audit event
+    await logAuditEvent({
+      action: 'update',
+      resourceType: 'client',
+      resourceId: client._id,
+      user: req.user,
+      clientId: client.clientId,
+      changes: Object.keys(changes).length > 0 ? changes : null,
+      req,
+    });
     
     // Format response
     res.json({
@@ -311,6 +332,17 @@ router.delete('/clients/:id/', authenticate, isAdmin, async (req, res) => {
     if (usersCount > 0) {
       return res.status(400).json({ error: `Cannot delete client with ${usersCount} user(s). Please delete or reassign users first.` });
     }
+    
+    // Log audit event before deletion
+    await logAuditEvent({
+      action: 'delete',
+      resourceType: 'client',
+      resourceId: client._id,
+      user: req.user,
+      clientId: client.clientId,
+      details: { name: client.name, email: client.email },
+      req,
+    });
     
     await Client.deleteOne({ _id: client._id });
     res.status(204).send();
@@ -376,6 +408,203 @@ router.post('/clients/stop_impersonate/', authenticate, isAdmin, async (req, res
   } catch (error) {
     console.error('Stop impersonate error:', error);
     res.status(500).json({ error: 'Failed to stop impersonation' });
+  }
+});
+
+// ============================================================================
+// AUDIT LOGS
+// ============================================================================
+
+// Get audit logs (accessible to both admin and clients)
+// Admin: can see ALL logs (including admin actions, all client logs, etc.)
+// Clients: can only see logs for their own client
+router.get('/audit-logs/', authenticate, async (req, res) => {
+  try {
+    const AuditLog = require('../models/AuditLog');
+    
+    // Build query
+    let query = {};
+    
+    // IMPORTANT: Admin users see ALL logs (no client_id filter)
+    // Only non-admin users are restricted to their client's logs
+    if (req.user.role !== 'admin') {
+      // Non-admin users: restrict to their client's logs
+      if (req.user.clientId) {
+        query.client_id = req.user.clientId;
+      } else {
+        // If client user has no clientId, they can't see any logs
+        return res.json({
+          results: [],
+          count: 0,
+          page: 1,
+          limit: 50,
+          total_pages: 0,
+        });
+      }
+    }
+    // For admin users: query remains empty (no client_id filter) = see ALL logs
+    
+    // Filter by user
+    if (req.query.user_id) {
+      query.user_id = req.query.user_id;
+    }
+    
+    // Filter by client (only for admin - allows filtering to specific client)
+    if (req.query.client_id && req.user.role === 'admin') {
+      query.client_id = req.query.client_id;
+    }
+    
+    // Filter by resource type
+    if (req.query.resource_type) {
+      query.resource_type = req.query.resource_type;
+    }
+    
+    // Filter by action
+    if (req.query.action) {
+      query.action = req.query.action;
+    }
+    
+    // Filter by status
+    if (req.query.status) {
+      query.status = req.query.status;
+    }
+    
+    // Date range filter
+    if (req.query.start_date || req.query.end_date) {
+      query.createdAt = {};
+      if (req.query.start_date) {
+        query.createdAt.$gte = new Date(req.query.start_date);
+      }
+      if (req.query.end_date) {
+        query.createdAt.$lte = new Date(req.query.end_date);
+      }
+    }
+    
+    // Search by user email, name, action, or resource type
+    if (req.query.search) {
+      const searchRegex = { $regex: req.query.search, $options: 'i' };
+      const searchConditions = [
+        { user_email: searchRegex },
+        { user_name: searchRegex },
+        { action: searchRegex },
+        { resource_type: searchRegex },
+      ];
+      
+      // If there are other filters (like client_id for non-admin users), combine with $and
+      const hasOtherFilters = Object.keys(query).length > 0;
+      if (hasOtherFilters) {
+        // Store existing query
+        const existingQuery = { ...query };
+        // Clear query and use $and to combine existing filters with search
+        query = {
+          $and: [
+            existingQuery,
+            { $or: searchConditions }
+          ]
+        };
+      } else {
+        // No other filters, just use $or for search
+        query.$or = searchConditions;
+      }
+    }
+    
+    // Pagination
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+    
+    // Debug logging for admin users
+    if (req.user.role === 'admin') {
+      console.log('[Audit Logs] Admin user query:', JSON.stringify(query, null, 2));
+    }
+    
+    // Get total count
+    const total = await AuditLog.countDocuments(query);
+    
+    // Get audit logs
+    const auditLogs = await AuditLog.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+    
+    // Debug logging for admin users
+    if (req.user.role === 'admin') {
+      console.log(`[Audit Logs] Admin user - Found ${auditLogs.length} logs (total: ${total})`);
+      if (auditLogs.length > 0) {
+        console.log('[Audit Logs] Sample log client_ids:', auditLogs.slice(0, 5).map(l => l.client_id));
+      }
+    }
+    
+    // Format response
+    const formattedLogs = auditLogs.map(log => ({
+      id: log._id,
+      action: log.action,
+      resource_type: log.resource_type,
+      resource_id: log.resource_id || null,
+      user_id: log.user_id,
+      user_email: log.user_email,
+      user_name: log.user_name,
+      client_id: log.client_id || null,
+      ip_address: log.ip_address || null,
+      user_agent: log.user_agent || null,
+      details: log.details || {},
+      changes: log.changes || null,
+      status: log.status,
+      error_message: log.error_message || null,
+      created_at: log.createdAt,
+    }));
+    
+    res.json({
+      results: formattedLogs,
+      count: total,
+      page: page,
+      limit: limit,
+      total_pages: Math.ceil(total / limit),
+    });
+  } catch (error) {
+    console.error('Get audit logs error:', error);
+    res.status(500).json({ error: 'Failed to fetch audit logs' });
+  }
+});
+
+// Get single audit log (accessible to both admin and clients)
+router.get('/audit-logs/:id/', authenticate, async (req, res) => {
+  try {
+    const AuditLog = require('../models/AuditLog');
+    const log = await AuditLog.findById(req.params.id).lean();
+    
+    if (!log) {
+      return res.status(404).json({ error: 'Audit log not found' });
+    }
+    
+    // If user is not admin, check if log belongs to their client
+    if (req.user.role !== 'admin') {
+      if (!req.user.clientId || log.client_id !== req.user.clientId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+    }
+    
+    res.json({
+      id: log._id,
+      action: log.action,
+      resource_type: log.resource_type,
+      resource_id: log.resource_id || null,
+      user_id: log.user_id,
+      user_email: log.user_email,
+      user_name: log.user_name,
+      client_id: log.client_id || null,
+      ip_address: log.ip_address || null,
+      user_agent: log.user_agent || null,
+      details: log.details || {},
+      changes: log.changes || null,
+      status: log.status,
+      error_message: log.error_message || null,
+      created_at: log.createdAt,
+    });
+  } catch (error) {
+    console.error('Get audit log error:', error);
+    res.status(500).json({ error: 'Failed to fetch audit log' });
   }
 });
 
@@ -607,6 +836,17 @@ router.post('/users/', authenticate, isUserManager, async (req, res) => {
     
     await user.save();
     
+    // Log audit event
+    await logAuditEvent({
+      action: 'create',
+      resourceType: 'user',
+      resourceId: user._id,
+      user: req.user,
+      clientId: user.clientId,
+      details: { email: user.email, name: user.name, role: user.role },
+      req,
+    });
+    
     // Format response (password is automatically excluded by toJSON)
     res.status(201).json({
       id: user._id,
@@ -706,8 +946,29 @@ router.patch('/users/:id/', authenticate, isUserManager, async (req, res) => {
       updateFields.password = await bcrypt.hash(req.body.password, salt);
     }
     
+    // Capture changes for audit log
+    const changes = {};
+    Object.keys(updateFields).forEach(key => {
+      const oldValue = user[key];
+      const newValue = updateFields[key];
+      if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+        changes[key] = { before: oldValue, after: newValue };
+      }
+    });
+    
     Object.assign(user, updateFields);
     await user.save();
+    
+    // Log audit event
+    await logAuditEvent({
+      action: 'update',
+      resourceType: 'user',
+      resourceId: user._id,
+      user: req.user,
+      clientId: user.clientId,
+      changes: Object.keys(changes).length > 0 ? changes : null,
+      req,
+    });
     
     // Format response
     res.json({
@@ -755,6 +1016,17 @@ router.delete('/users/:id/', authenticate, isUserManager, async (req, res) => {
     if (user._id === req.user._id) {
       return res.status(400).json({ error: 'You cannot delete your own account' });
     }
+    
+    // Log audit event before deletion
+    await logAuditEvent({
+      action: 'delete',
+      resourceType: 'user',
+      resourceId: user._id,
+      user: req.user,
+      clientId: user.clientId,
+      details: { email: user.email, name: user.name, role: user.role },
+      req,
+    });
     
     await User.deleteOne({ _id: user._id });
     res.status(204).send();

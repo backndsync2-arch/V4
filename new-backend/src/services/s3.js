@@ -1,8 +1,12 @@
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
+// Configure S3 client with explicit region
+// In Lambda, credentials are automatically provided by the execution role
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || 'us-east-1',
+  // Let AWS SDK use default credential chain (Lambda execution role)
+  // This ensures presigned URLs are signed with the Lambda role's credentials
 });
 
 const BUCKET_NAME = process.env.S3_BUCKET_NAME || 'sync2gear-music-prod';
@@ -32,13 +36,27 @@ async function getPresignedUploadUrl(key, contentType, expiresIn = 3600) {
  * @returns {Promise<string>} Presigned URL for GET operation
  */
 async function getPresignedDownloadUrl(key, expiresIn = 3600) {
-  const command = new GetObjectCommand({
-    Bucket: BUCKET_NAME,
-    Key: key,
-  });
+  try {
+    const command = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+    });
 
-  const url = await getSignedUrl(s3Client, command, { expiresIn });
-  return url;
+    // Generate presigned URL - AWS SDK will use Lambda execution role credentials automatically
+    const url = await getSignedUrl(s3Client, command, { expiresIn });
+    
+    console.log(`[S3] Generated presigned URL for key: ${key}, bucket: ${BUCKET_NAME}, expiresIn: ${expiresIn}s`);
+    return url;
+  } catch (error) {
+    console.error(`[S3] Failed to generate presigned URL for key: ${key}, bucket: ${BUCKET_NAME}`, error);
+    console.error(`[S3] Error details:`, {
+      message: error.message,
+      code: error.code,
+      name: error.name,
+      stack: error.stack,
+    });
+    throw error;
+  }
 }
 
 /**

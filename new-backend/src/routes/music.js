@@ -293,12 +293,25 @@ router.post('/files/complete/', authenticate, async (req, res) => {
       }
     }
 
+    // Check for duplicate song name (case-insensitive) for the same client
+    const filename = path.basename(s3Key);
+    const songTitle = title || filename;
+    const existingSong = await MusicFile.findOne({
+      clientId: targetClientId,
+      title: { $regex: new RegExp(`^${songTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+    });
+
+    if (existingSong) {
+      return res.status(400).json({
+        error: `A song with the name "${songTitle}" already exists. Please use a different name.`
+      });
+    }
+
     // Generate file URL (use API endpoint that will stream from S3)
     const baseUrl = getBaseUrl(req);
     const token = req.headers.authorization?.replace('Bearer ', '') || '';
     const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
     
-    const filename = path.basename(s3Key);
     const fileUrl = `${baseUrl}/api/v1/music/files/${encodeURIComponent(filename)}/stream/${tokenParam}`;
 
     // Parse duration (should be in seconds, ensure it's a number)
@@ -309,7 +322,7 @@ router.post('/files/complete/', authenticate, async (req, res) => {
       fileSize: fileSize || 0,
       fileUrl,
       s3Key, // Store S3 key for streaming
-      title: title || filename,
+      title: songTitle,
       artist: artist || 'Unknown',
       album: album || '',
       genre: genre || '',
@@ -398,6 +411,35 @@ router.post('/files/', authenticate, upload.fields([
       }
     }
 
+    // Check for duplicate song name (case-insensitive) for the same client
+    const songTitle = title || file.originalname;
+    const existingSong = await MusicFile.findOne({
+      clientId: targetClientId,
+      title: { $regex: new RegExp(`^${songTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+    });
+
+    if (existingSong) {
+      // Clean up uploaded file if duplicate found
+      if (file.path && fs.existsSync(file.path)) {
+        try {
+          fs.unlinkSync(file.path);
+        } catch (err) {
+          console.warn('Failed to delete duplicate file:', err);
+        }
+      }
+      if (coverArtFile && coverArtFile.path && fs.existsSync(coverArtFile.path)) {
+        try {
+          fs.unlinkSync(coverArtFile.path);
+        } catch (err) {
+          console.warn('Failed to delete duplicate cover art:', err);
+        }
+      }
+      
+      return res.status(400).json({
+        error: `A song with the name "${songTitle}" already exists. Please use a different name.`
+      });
+    }
+
     // Generate file URLs pointing to our serving endpoint
     // Include token in query string so audio elements can access files
     // file.filename is the saved filename (with unique suffix), file.originalname is the original
@@ -420,7 +462,7 @@ router.post('/files/', authenticate, upload.fields([
       filename: file.originalname,
       fileSize: file.size,
       fileUrl,
-      title: title || file.originalname,
+      title: songTitle,
       artist: artist || 'Unknown',
       album: album || '',
       genre: genre || '',
@@ -519,7 +561,23 @@ router.patch('/files/:id/', authenticate, async (req, res) => {
 
     // Update fields
     const { title, artist, album, genre, year, folder_id, zone_id, order } = req.body;
-    if (title !== undefined) musicFile.title = title;
+    
+    // Check for duplicate song name if title is being updated
+    if (title !== undefined && title !== musicFile.title) {
+      const existingSong = await MusicFile.findOne({
+        _id: { $ne: musicFile._id }, // Exclude current song
+        clientId: musicFile.clientId,
+        title: { $regex: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+      });
+
+      if (existingSong) {
+        return res.status(400).json({
+          error: `A song with the name "${title}" already exists. Please use a different name.`
+        });
+      }
+      musicFile.title = title;
+    }
+    
     if (artist !== undefined) musicFile.artist = artist;
     if (album !== undefined) musicFile.album = album;
     if (genre !== undefined) musicFile.genre = genre;

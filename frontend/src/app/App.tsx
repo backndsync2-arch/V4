@@ -18,6 +18,7 @@ import { Users } from '@/app/components/Users';
 import { Admin } from '@/app/components/Admin';
 import { AdminSettings } from '@/app/components/AdminSettings';
 import { Profile } from '@/app/components/Profile';
+import { AuditLogs } from '@/app/components/AuditLogs';
 import { TutorialOverlay } from '@/app/components/TutorialOverlay';
 import { Toaster } from '@/app/components/ui/sonner';
 
@@ -192,6 +193,11 @@ function AppContent() {
             <Route path="/users" element={
               <ProtectedRoute>
                 <Users />
+              </ProtectedRoute>
+            } />
+            <Route path="/audit-logs" element={
+              <ProtectedRoute>
+                <AuditLogs />
               </ProtectedRoute>
             } />
             <Route path="/admin" element={

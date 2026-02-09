@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '@/lib/auth';
-import { Music2, LayoutDashboard, Music, Radio, Calendar, User, Users, Grid3x3, LogOut, UsersRound } from 'lucide-react';
+import { Music2, LayoutDashboard, Music, Radio, Calendar, User, Users, Grid3x3, LogOut, UsersRound, FileText } from 'lucide-react';
 import { cn } from '@/app/components/ui/utils';
 import { GlobalHeader } from '@/app/components/GlobalHeader';
 import { MiniPlayer } from '@/app/components/MiniPlayer';
@@ -35,6 +35,10 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
     // - admin/staff: see all users
     // - client: see only users from their own client
     ...(user && user.role !== 'floor_user' ? [{ id: 'users', label: 'Team Members', icon: UsersRound }] : []),
+    // Audit Logs: visible to all authenticated users
+    // - admin: see all logs
+    // - clients: see only their own client's logs
+    ...(user ? [{ id: 'audit-logs', label: 'Audit Logs', icon: FileText }] : []),
     // Admin panel: only for sync2gear admins (manages businesses/clients)
     // Hide Admin panel when impersonating a client (admin should see client view)
     ...(user?.role === 'admin' && !impersonatingClient ? [{ id: 'admin', label: 'Admin', icon: Users }] : []),

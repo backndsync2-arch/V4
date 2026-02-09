@@ -120,22 +120,28 @@ export const adminAPI = {
 
   // Get audit logs
   getAuditLogs: async (params?: {
-    client?: string;
-    floor?: string;
-    role?: string;
-    user?: string;
+    page?: number;
+    limit?: number;
+    search?: string;
+    user_id?: string;
+    client_id?: string;
     resource_type?: string;
-    date_from?: string;
-    date_to?: string;
-  }): Promise<any[]> => {
+    action?: string;
+    status?: string;
+    start_date?: string;
+    end_date?: string;
+  }): Promise<any> => {
     const queryParams = new URLSearchParams();
-    if (params?.client) queryParams.append('client', params.client);
-    if (params?.floor) queryParams.append('floor', params.floor);
-    if (params?.role) queryParams.append('role', params.role);
-    if (params?.user) queryParams.append('user', params.user);
+    if (params?.page) queryParams.append('page', String(params.page));
+    if (params?.limit) queryParams.append('limit', String(params.limit));
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.user_id) queryParams.append('user_id', params.user_id);
+    if (params?.client_id) queryParams.append('client_id', params.client_id);
     if (params?.resource_type) queryParams.append('resource_type', params.resource_type);
-    if (params?.date_from) queryParams.append('date_from', params.date_from);
-    if (params?.date_to) queryParams.append('date_to', params.date_to);
+    if (params?.action) queryParams.append('action', params.action);
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.start_date) queryParams.append('start_date', params.start_date);
+    if (params?.end_date) queryParams.append('end_date', params.end_date);
     
     const query = queryParams.toString();
     const url = query ? `/admin/audit-logs/?${query}` : '/admin/audit-logs/';

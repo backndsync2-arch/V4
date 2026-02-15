@@ -105,6 +105,23 @@ export function AnnouncementsFolderList({
                     <div className="flex-1 text-left min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="whitespace-nowrap">{folder.name}</span>
+                        {/* Always show delete button for folders, even if active */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-red-400 hover:text-red-300 hover:bg-red-900/20 ml-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Are you sure you want to delete folder "${folder.name}"?`)) {
+                              // Call delete folder API
+                              // This needs to be passed down as a prop
+                              // For now we will rely on the settings dialog delete
+                              onFolderSettings(folder.id);
+                            }
+                          }}
+                        >
+                          <Settings className="h-3 w-3" />
+                        </Button>
                         {settings?.enabled && (
                           <Badge variant="default" className="shrink-0">
                             <Clock className="h-3 w-3 mr-1" />

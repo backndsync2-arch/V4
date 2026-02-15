@@ -774,6 +774,10 @@ export function useAnnouncementHandlers({
              setIsPlayVoiceDialogOpen(true);
           } else {
              toast.error('This announcement has no audio file yet. Please wait a moment or try regenerating it.');
+             // Add option to delete invalid announcement
+             if (window.confirm('This announcement seems invalid. Do you want to delete it?')) {
+               handleDelete(audioId);
+             }
           }
         }
       } catch (error) {

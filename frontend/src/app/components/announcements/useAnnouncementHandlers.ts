@@ -754,11 +754,11 @@ export function useAnnouncementHandlers({
             });
             
             audioElement.addEventListener('error', (e) => {
-              console.error('Audio playback error:', e, 'URL:', fullUrl);
-              toast.error('Failed to play audio. The file may be missing or corrupted.');
-              setPlayingAudio(null);
-              audioRef.current = null;
-            });
+          console.error('Audio playback error:', e, 'URL:', fullUrl);
+          toast.error('Unable to play this announcement. The audio file may need to be regenerated.');
+          setPlayingAudio(null);
+          audioRef.current = null;
+        });
           } catch (playError) {
             console.error('Playback error:', playError, 'URL:', fullUrl);
             toast.error('Failed to play audio. Please try again.');
@@ -773,9 +773,9 @@ export function useAnnouncementHandlers({
              setPlayVoiceDialogVoice(selectedVoice || 'alloy');
              setIsPlayVoiceDialogOpen(true);
           } else {
-             toast.error('This announcement has no audio file yet. Please wait a moment or try regenerating it.');
-             // Add option to delete invalid announcement
-             if (window.confirm('This announcement seems invalid. Do you want to delete it?')) {
+             toast.error('This announcement needs an audio file. Please generate it first.');
+             // Add option to delete announcement without audio
+             if (window.confirm('This announcement doesn\'t have an audio file yet. Do you want to delete it?')) {
                handleDelete(audioId);
              }
           }
@@ -796,6 +796,12 @@ export function useAnnouncementHandlers({
       setPlayingAudio(null);
       toast.info('Playback stopped');
     } else {
+      // Validate audio URL before attempting to play
+      if (!audio.url || audio.url === '#' || audio.url === '') {
+        toast.error('This announcement has no audio file. Please generate the audio first.');
+        return;
+      }
+      
       const audioUrl = audio.url.startsWith('http') ? audio.url : `${window.location.origin}${audio.url}`;
       
       const audioElement = new Audio(audioUrl);
@@ -847,45 +853,46 @@ export function useAnnouncementHandlers({
 
       const announcement = audioFiles.find(a => a.id === selectedAnnouncementForInstant);
       
-      if (announcement && announcement.url && announcement.url !== '#' && announcement.url !== '') {
-        try {
-          if (audioRef.current) {
-            audioRef.current.pause();
-            audioRef.current.currentTime = 0;
-          }
-          
-          const audioUrl = announcement.url.startsWith('http') 
-            ? announcement.url 
-            : `${window.location.origin}${announcement.url}`;
-          
-          const audioElement = new Audio(audioUrl);
-          audioRef.current = audioElement;
-          setPlayingAudio(selectedAnnouncementForInstant);
-          
-          await audioElement.play();
-          
-          audioElement.addEventListener('ended', () => {
-            setPlayingAudio(null);
-            audioRef.current = null;
-          });
-          
-          audioElement.addEventListener('error', (e) => {
-            console.error('Audio playback error:', e, 'URL:', audioUrl);
-            toast.warning('Backend received command, but audio playback failed in browser. Check audio file URL.');
-            setPlayingAudio(null);
-            audioRef.current = null;
-          });
-          
-          toast.success(`Playing "${announcement.title}" on: ${deviceNames}`);
-        } catch (playError: any) {
-          console.error('Browser audio playback error:', playError);
-          toast.success(`Command sent to devices: ${deviceNames}`, {
-            description: 'Browser audio playback failed. Audio should play on physical devices.',
-          });
+      // Validate announcement has proper audio URL
+      if (!announcement || !announcement.url || announcement.url === '#' || announcement.url === '') {
+        toast.error('Selected announcement has no audio file. Please generate the audio first.');
+        setIsSending(false);
+        return;
+      }
+      
+      try {
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
         }
-      } else {
+        
+        const audioUrl = announcement.url.startsWith('http') 
+          ? announcement.url 
+          : `${window.location.origin}${announcement.url}`;
+        
+        const audioElement = new Audio(audioUrl);
+        audioRef.current = audioElement;
+        setPlayingAudio(selectedAnnouncementForInstant);
+        
+        await audioElement.play();
+        
+        audioElement.addEventListener('ended', () => {
+          setPlayingAudio(null);
+          audioRef.current = null;
+        });
+        
+        audioElement.addEventListener('error', (e) => {
+            console.error('Audio playback error:', e, 'URL:', audioUrl);
+            toast.warning('Unable to play announcement preview. The audio file may need to be regenerated.');
+            setPlayingAudio(null);
+            audioRef.current = null;
+          });
+        
+        toast.success(`Playing "${announcement.title}" on: ${deviceNames}`);
+      } catch (playError: any) {
+        console.error('Browser audio playback error:', playError);
         toast.success(`Command sent to devices: ${deviceNames}`, {
-          description: 'Announcement has no audio URL. Please ensure the audio file is generated.',
+          description: 'Browser audio playback failed. Audio should play on physical devices.',
         });
       }
       

@@ -4,6 +4,8 @@ const path = require('path');
 const fs = require('fs');
 const Announcement = require('../models/Announcement');
 const Folder = require('../models/Folder');
+const Client = require('../models/Client');
+const Zone = require('../models/Zone');
 const VoicePreview = require('../models/VoicePreview');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const { getEffectiveClient } = require('../middleware/utils');
@@ -24,6 +26,18 @@ const getBaseUrl = (req) => {
   const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
   const host = req.headers['x-forwarded-host'] || req.headers.host || req.get('host');
   return `${protocol}://${host}`;
+};
+
+// Helper to create safe S3 path segments
+const slugify = (str) => {
+  return (str || '')
+    .toString()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9/_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^\-|\-$/g, '')
+    .toLowerCase();
 };
 
 // Lazy directory creation
@@ -331,6 +345,169 @@ router.post('/upload/', authenticate, upload.single('file'), async (req, res) =>
     });
   } catch (error) {
     console.error('Upload announcement error:', error);
+    return res.status(500).json({ detail: 'An error occurred.' });
+  }
+});
+
+// Presigned S3 upload URL for announcements
+router.post('/upload-url/', authenticate, async (req, res) => {
+  try {
+    const { filename, contentType, zone_id, folder_id, client_id } = req.body;
+    if (!filename || !contentType) {
+      return res.status(400).json({ error: 'filename and contentType are required' });
+    }
+    const effectiveClient = getEffectiveClient(req);
+    let targetClientId = effectiveClient;
+    if (req.user.role === 'admin' && !effectiveClient) {
+      targetClientId = client_id;
+      if (!targetClientId) {
+        return res.status(400).json({ error: 'Admin must provide client_id' });
+      }
+    } else if (!targetClientId) {
+      return res.status(400).json({ error: 'No client associated with this user' });
+    }
+    let clientName = targetClientId;
+    try {
+      const client = await Client.findById(targetClientId);
+      if (client && client.name) clientName = client.name;
+    } catch {}
+    let zoneName = 'unassigned-zone';
+    if (zone_id) {
+      try {
+        const z = await Zone.findOne({ _id: zone_id, clientId: targetClientId });
+        if (z && z.name) zoneName = z.name;
+      } catch {}
+    }
+    let folderName = 'uncategorized';
+    if (folder_id) {
+      try {
+        const f = await Folder.findOne({ _id: folder_id, clientId: targetClientId, type: 'announcements' });
+        if (f && f.name) folderName = f.name;
+      } catch {}
+    }
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(filename);
+    const name = path.basename(filename, ext);
+    const s3Key = `${slugify(clientName)}/${slugify(zoneName)}/announcements/${slugify(folderName)}/${slugify(name)}-${uniqueSuffix}${ext}`;
+    const uploadUrl = await getPresignedUploadUrl(s3Key, contentType, 3600);
+    return res.status(200).json({ uploadUrl, s3Key, expiresIn: 3600 });
+  } catch (error) {
+    console.error('Announcements upload-url error:', error);
+    return res.status(500).json({ detail: 'An error occurred while generating upload URL.' });
+  }
+});
+
+// Complete S3 upload - create Announcement record
+router.post('/files/complete/', authenticate, async (req, res) => {
+  try {
+    const { s3Key, title, folder_id, zone_id, client_id, duration = 0 } = req.body;
+    if (!s3Key || !title) {
+      return res.status(400).json({ error: 's3Key and title are required' });
+    }
+    const effectiveClient = getEffectiveClient(req);
+    let targetClientId = effectiveClient;
+    if (req.user.role === 'admin' && !effectiveClient) {
+      targetClientId = client_id;
+      if (!targetClientId) {
+        return res.status(400).json({ error: 'Admin must provide client_id.' });
+      }
+    } else if (!targetClientId) {
+      return res.status(400).json({ error: 'No client associated with this user' });
+    }
+    // Validate folder if provided
+    if (folder_id) {
+      const folder = await Folder.findOne({ _id: folder_id, clientId: targetClientId, type: 'announcements' });
+      if (!folder) {
+        return res.status(400).json({ error: 'Folder not found or not accessible. Make sure it is an announcements folder.' });
+      }
+    }
+    const baseUrl = getBaseUrl(req);
+    // Stream by ID endpoint
+    const announcement = new Announcement({
+      title,
+      text: '',
+      fileUrl: `${baseUrl}/api/v1/announcements/by_id/placeholder/stream/`, // Placeholder, replaced after save
+      s3Key,
+      duration: Math.max(0, Number(duration) || 0),
+      voice: 'uploaded',
+      provider: 'uploaded',
+      folderId: folder_id || null,
+      category: folder_id || null,
+      zoneId: zone_id || null,
+      clientId: targetClientId,
+      createdById: req.user._id,
+      isRecording: false,
+      enabled: true,
+    });
+    await announcement.save();
+    // Update fileUrl to ID-based stream route
+    announcement.fileUrl = `${baseUrl}/api/v1/announcements/by_id/${announcement._id}/stream/`;
+    await announcement.save();
+    const obj = announcement.toJSON ? announcement.toJSON() : announcement;
+    return res.status(201).json({
+      id: obj._id || obj.id,
+      title: obj.title,
+      text: obj.text,
+      file_url: obj.fileUrl,
+      fileUrl: obj.fileUrl,
+      duration: obj.duration,
+      folder_id: obj.folderId,
+      category: obj.folderId,
+      zone_id: obj.zoneId,
+      client_id: obj.clientId,
+      enabled: obj.enabled,
+      created_at: obj.createdAt,
+      updated_at: obj.updatedAt,
+    });
+  } catch (error) {
+    console.error('Announcements complete error:', error);
+    return res.status(500).json({ detail: 'An error occurred while completing upload.' });
+  }
+});
+
+// Stream announcement by ID (S3-aware)
+router.get('/by_id/:id/stream/', optionalAuthenticate, async (req, res) => {
+  try {
+    const announcement = await Announcement.findById(req.params.id);
+    if (!announcement) {
+      return res.status(404).json({ detail: 'Announcement not found.' });
+    }
+    // Access control when authenticated
+    if (req.user) {
+      const effectiveClient = getEffectiveClient(req);
+      if (req.user.role !== 'admin' && announcement.clientId !== effectiveClient) {
+        return res.status(403).json({ detail: 'You do not have permission to access this announcement.' });
+      }
+    }
+    // Serve from S3 if present
+    if (announcement.s3Key) {
+      const { getPresignedDownloadUrl } = require('../services/s3');
+      try {
+        const downloadUrl = await getPresignedDownloadUrl(announcement.s3Key, 3600);
+        res.header('Access-Control-Allow-Origin', '*');
+        res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+        return res.redirect(302, downloadUrl);
+      } catch (e) {
+        console.error('S3 stream error:', e);
+        return res.status(500).json({ detail: 'Error accessing file from S3.' });
+      }
+    }
+    // Fallback local by filename in URL
+    const urlParts = (announcement.fileUrl || '').split('/');
+    const filename = urlParts[urlParts.length - 2] || ''; // try to extract filename segment before 'stream'
+    const filePath = path.join(announcementsDir, filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ detail: 'File not found.' });
+    }
+    const stat = fs.statSync(filePath);
+    res.writeHead(200, {
+      'Content-Length': stat.size,
+      'Content-Type': 'audio/mpeg',
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(filePath).pipe(res);
+  } catch (error) {
+    console.error('Announcement by_id stream error:', error);
     return res.status(500).json({ detail: 'An error occurred.' });
   }
 });

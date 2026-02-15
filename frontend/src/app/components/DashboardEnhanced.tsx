@@ -24,6 +24,8 @@ import { CreateAnnouncementDialog } from '@/app/components/CreateAnnouncementDia
 import { PremiumFeaturesCard } from '@/app/components/PremiumFeaturesCard';
 import { PWAInstaller } from '@/app/components/PWAInstaller';
 import { BackgroundAudioStatus } from '@/app/components/BackgroundAudioStatus';
+import { schedulerAPI } from '@/lib/api';
+import { announcementsAPI } from '@/lib/api';
 
 export function DashboardEnhanced() {
   const { user } = useAuth();
@@ -59,6 +61,21 @@ export function DashboardEnhanced() {
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [isSavingDucking, setIsSavingDucking] = useState(false);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+
+  // Load saved ducking settings on component mount
+  useEffect(() => {
+    const savedSettings = localStorage.getItem('duckingSettings');
+    if (savedSettings) {
+      try {
+        const settings = JSON.parse(savedSettings);
+        if (settings.ducking !== undefined) setDucking(settings.ducking);
+        if (settings.fadeSeconds !== undefined) setFadeSeconds(settings.fadeSeconds);
+        if (settings.duckMusic !== undefined) setDuckMusic(settings.duckMusic);
+      } catch (error) {
+        console.warn('Failed to load saved ducking settings:', error);
+      }
+    }
+  }, []);
 
   const clientId = user?.role === 'admin' ? null : user?.clientId;
   const availableAnnouncements = clientId 
@@ -101,20 +118,24 @@ export function DashboardEnhanced() {
 
   const handleSkipNextScheduled = async () => {
     try {
-      // TODO: Call API to skip next scheduled announcement
-      await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
-      toast.success('Skipped next scheduled announcement');
+      // Call API to trigger schedule check now
+      await schedulerAPI.checkNow();
+      toast.success('Triggered schedule check - next announcement will play soon');
     } catch (error: any) {
-      toast.error(error.message || 'Failed to skip announcement');
+      toast.error(error.message || 'Failed to trigger schedule check');
     }
   };
 
   const handleSaveDuckingSettings = async () => {
     setIsSavingDucking(true);
     try {
-      // TODO: Save ducking settings to backend
-      await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
-      toast.success('Ducking settings saved');
+      // Save ducking settings locally (no backend endpoint for this yet)
+      localStorage.setItem('duckingSettings', JSON.stringify({ 
+        ducking, 
+        fadeSeconds,
+        duckMusic 
+      }));
+      toast.success('Ducking settings saved locally');
     } catch (error: any) {
       toast.error(error.message || 'Failed to save settings');
     } finally {
@@ -131,8 +152,30 @@ export function DashboardEnhanced() {
     try {
       const announcement = availableAnnouncements.find(a => a.id === selectedAnnouncement);
       toast.info(`Previewing "${announcement?.title}" with ducking`);
-      // TODO: Play preview audio with ducking effect
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate preview
+      
+      // Play preview using the playback API
+      if (announcement?.url) {
+        playPreview(announcement.url);
+      } else {
+        // Fallback: use TTS preview if no URL
+        const preview = await announcementsAPI.previewVoice({
+          text: announcement?.title || 'Preview announcement',
+          voice: 'female1'
+        });
+        if (preview.preview_url) {
+          playPreview(preview.preview_url);
+        }
+      }
+      
+      // Simulate ducking effect by temporarily lowering volume
+      const originalVolume = volume;
+      await setVolume(Math.round(originalVolume * (ducking / 100)));
+      
+      // Restore volume after preview
+      setTimeout(async () => {
+        await setVolume(originalVolume);
+      }, 3000);
+      
     } catch (error: any) {
       toast.error(error.message || 'Preview failed');
     } finally {
@@ -142,12 +185,11 @@ export function DashboardEnhanced() {
 
   const handleJumpToTrack = async (trackId: string) => {
     try {
-      // TODO: Call API to jump to specific track in queue
+      // For now, just show a toast as there's no direct "jump to track" API
       const track = mockMusicQueue.find(t => t.id === trackId);
-      await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
-      toast.success(`Skipping to: ${track?.title}`);
+      toast.info(`Track selected: ${track?.title}. Use skip next/previous to navigate.`);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to skip to track');
+      toast.error(error.message || 'Failed to select track');
     }
   };
 

@@ -4,11 +4,25 @@ const path = require('path');
 const fs = require('fs');
 const MusicFile = require('../models/MusicFile');
 const Folder = require('../models/Folder');
+const Client = require('../models/Client');
+const Zone = require('../models/Zone');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const { getEffectiveClient } = require('../middleware/utils');
 const { getPresignedUploadUrl, getPresignedDownloadUrl, streamFile, BUCKET_NAME } = require('../services/s3');
 
 const router = express.Router();
+
+// Helper to create safe S3 path segments
+const slugify = (str) => {
+  return (str || '')
+    .toString()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9/_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^\-|\-$/g, '')
+    .toLowerCase();
+};
 
 // Determine uploads directory - use /tmp in Lambda, otherwise local uploads
 const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
@@ -218,7 +232,7 @@ router.get('/files/', authenticate, async (req, res) => {
 // Get presigned URL for S3 upload (bypasses API Gateway 10MB limit)
 router.post('/upload-url/', authenticate, async (req, res) => {
   try {
-    const { filename, contentType, fileSize } = req.body;
+    const { filename, contentType, fileSize, zone_id, folder_id } = req.body;
     
     if (!filename || !contentType) {
       return res.status(400).json({
@@ -239,11 +253,31 @@ router.post('/upload-url/', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'No client associated with this user' });
     }
 
-    // Generate unique S3 key
+    // Resolve client and zone names for hierarchical S3 path
+    let clientName = targetClientId;
+    try {
+      const client = await Client.findById(targetClientId);
+      if (client && client.name) clientName = client.name;
+    } catch {}
+    let zoneName = 'unassigned-zone';
+    if (zone_id) {
+      try {
+        const z = await Zone.findOne({ _id: zone_id, clientId: targetClientId });
+        if (z && z.name) zoneName = z.name;
+      } catch {}
+    }
+    let folderName = 'uncategorized';
+    if (folder_id) {
+      try {
+        const f = await Folder.findOne({ _id: folder_id, clientId: targetClientId });
+        if (f && f.name) folderName = f.name;
+      } catch {}
+    }
+    // Generate unique S3 key under client/zone/music/folder
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(filename);
     const name = path.basename(filename, ext);
-    const s3Key = `music/${targetClientId}/${name}-${uniqueSuffix}${ext}`;
+    const s3Key = `${slugify(clientName)}/${slugify(zoneName)}/music/${slugify(folderName)}/${slugify(name)}-${uniqueSuffix}${ext}`;
 
     // Generate presigned URL (valid for 1 hour)
     const uploadUrl = await getPresignedUploadUrl(s3Key, contentType, 3600);
@@ -594,6 +628,64 @@ router.patch('/files/:id/', authenticate, async (req, res) => {
     return res.status(500).json({
       detail: 'An error occurred.'
     });
+  }
+});
+
+// Copy a music file to another zone (duplicate record pointing to same file)
+router.post('/files/:id/copy_to_zone/', authenticate, async (req, res) => {
+  try {
+    const musicFile = await MusicFile.findById(req.params.id);
+    if (!musicFile) {
+      return res.status(404).json({ detail: 'Music file not found.' });
+    }
+    const effectiveClient = getEffectiveClient(req);
+    if (musicFile.clientId !== effectiveClient && req.user.role !== 'admin') {
+      return res.status(403).json({ detail: 'You do not have permission to copy this file.' });
+    }
+    const { zone_id, folder_id, title } = req.body;
+    if (!zone_id) {
+      return res.status(400).json({ detail: 'zone_id is required.' });
+    }
+    // Prepare new title, avoiding duplicates for this client
+    let newTitle = title || musicFile.title;
+    const existing = await MusicFile.findOne({
+      clientId: musicFile.clientId,
+      title: { $regex: new RegExp(`^${newTitle.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') }
+    });
+    if (existing) {
+      newTitle = `${newTitle} (copy)`;
+    }
+    // Build fileUrl from existing filename/s3Key
+    const filename = musicFile.filename || (musicFile.s3Key ? path.basename(musicFile.s3Key) : '');
+    const baseUrl = getBaseUrl(req);
+    const token = req.headers.authorization?.replace('Bearer ', '') || '';
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+    const fileUrl = filename ? `${baseUrl}/api/v1/music/files/${encodeURIComponent(filename)}/stream/${tokenParam}` : (musicFile.fileUrl || '');
+    // Create duplicate record
+    const duplicate = new MusicFile({
+      filename: filename || musicFile.filename,
+      fileSize: musicFile.fileSize || 0,
+      fileUrl,
+      s3Key: musicFile.s3Key || null,
+      title: newTitle,
+      artist: musicFile.artist || 'Unknown',
+      album: musicFile.album || '',
+      genre: musicFile.genre || '',
+      year: musicFile.year || null,
+      duration: musicFile.duration || 0,
+      coverArtUrl: musicFile.coverArtUrl || null,
+      coverArtS3Key: musicFile.coverArtS3Key || null,
+      clientId: musicFile.clientId,
+      uploadedById: req.user._id,
+      folderId: folder_id !== undefined ? folder_id : musicFile.folderId || null,
+      zoneId: zone_id,
+      order: 0,
+    });
+    await duplicate.save();
+    return res.status(201).json(duplicate.toJSON());
+  } catch (error) {
+    console.error('Copy music file error:', error);
+    return res.status(500).json({ detail: 'An error occurred.' });
   }
 });
 
@@ -1225,4 +1317,3 @@ router.delete('/folders/:id/', authenticate, async (req, res) => {
 });
 
 module.exports = router;
-

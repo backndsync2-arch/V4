@@ -19,11 +19,13 @@ import {
 } from 'lucide-react';
 import { formatDuration } from '@/lib/utils';
 import { useLocalPlayer } from '@/lib/localPlayer';
+import { usePlayback } from '@/lib/playback';
 import { cn } from '@/app/components/ui/utils';
 import { toast } from 'sonner';
 
 export function MiniPlayer() {
   const { track, isPlaying, currentTime, duration, volume, toggle, seek, setVolume, stop } = useLocalPlayer();
+  const { skipNext, skipPrevious } = usePlayback();
   const [isExpanded, setIsExpanded] = useState(false);
   const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
   const [isShuffled, setIsShuffled] = useState(false);
@@ -122,7 +124,7 @@ export function MiniPlayer() {
                   variant="ghost"
                   onClick={(e) => {
                     e.stopPropagation();
-                    // TODO: Implement previous track
+                    skipPrevious();
                   }}
                   className="text-gray-400 hover:text-white hover:bg-white/10 h-8 w-8 rounded-full p-0"
                 >
@@ -150,7 +152,7 @@ export function MiniPlayer() {
                   variant="ghost"
                   onClick={(e) => {
                     e.stopPropagation();
-                    // TODO: Implement next track
+                    skipNext();
                   }}
                   className="text-gray-400 hover:text-white hover:bg-white/10 h-8 w-8 rounded-full p-0"
                 >
@@ -294,7 +296,7 @@ export function MiniPlayer() {
                     className="h-10 w-10 sm:h-12 sm:w-12 rounded-full p-0 text-white hover:bg-white/10"
                     onClick={(e) => {
                       e.stopPropagation();
-                      // TODO: Implement previous track
+                      skipPrevious();
                     }}
                   >
                     <SkipBack className="h-5 w-5 sm:h-6 sm:w-6 fill-current" />
@@ -320,7 +322,7 @@ export function MiniPlayer() {
                     className="h-10 w-10 sm:h-12 sm:w-12 rounded-full p-0 text-white hover:bg-white/10"
                     onClick={(e) => {
                       e.stopPropagation();
-                      // TODO: Implement next track
+                      skipNext();
                     }}
                   >
                     <SkipForward className="h-5 w-5 sm:h-6 sm:w-6 fill-current" />

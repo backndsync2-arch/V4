@@ -264,7 +264,24 @@ def _execute_schedule_impl(schedule_id):
                 )
 
                 if announcements.exists():
-                    announcement = announcements.first()  # TODO: Implement avoidRepeat logic
+                    # Implement avoidRepeat logic
+                    avoid_repeat = config.get('avoidRepeat', False)
+                    last_played_id = getattr(schedule, '_last_played_announcement_id', None)
+                    
+                    if avoid_repeat and last_played_id:
+                        # Exclude the last played announcement and pick from remaining
+                        announcements = announcements.exclude(id=last_played_id)
+                        if not announcements.exists():
+                            # If all announcements were excluded, reset and pick any
+                            announcements = Announcement.objects.filter(
+                                id__in=announcement_ids,
+                                enabled=True
+                            )
+                    
+                    announcement = announcements.first()
+                    if announcement:
+                        # Store this announcement as last played for avoidRepeat logic
+                        schedule._last_played_announcement_id = str(announcement.id)
 
                     for zone in zones:
                         try:

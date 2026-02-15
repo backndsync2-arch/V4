@@ -37,6 +37,7 @@ export function Announcements() {
   const [newText, setNewText] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [selectedDevices, setSelectedDevices] = useState<string[]>([]);
+  const [selectedInstantAnnouncement, setSelectedInstantAnnouncement] = useState('');
 
   const clientId = user?.role === 'admin' ? null : user?.clientId;
   const filteredScripts = clientId ? scripts.filter(s => s.clientId === clientId) : scripts;
@@ -149,11 +150,14 @@ export function Announcements() {
       return;
     }
 
+    if (!selectedInstantAnnouncement) {
+      toast.error('Please select an announcement');
+      return;
+    }
+
     setIsSending(true);
     try {
-      // TODO: Get selected announcement ID from state
-      const announcementId = 'announcement_id'; // This should come from a selector
-      await announcementsAPI.playInstantAnnouncement(announcementId, selectedDevices);
+      await announcementsAPI.playInstantAnnouncement(selectedInstantAnnouncement, selectedDevices);
 
       const deviceNames = selectedDevices.map(id => 
         devices.find(d => d.id === id)?.name
@@ -162,6 +166,7 @@ export function Announcements() {
       toast.success(`Instant announcement sent to: ${deviceNames}`);
       setIsInstantOpen(false);
       setSelectedDevices([]);
+      setSelectedInstantAnnouncement('');
     } catch (error: any) {
       toast.error(error.message || 'Failed to send announcement');
       console.error('Instant announcement error:', error);
@@ -195,7 +200,7 @@ export function Announcements() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label>Select Announcement</Label>
-                  <Select>
+                  <Select value={selectedInstantAnnouncement} onValueChange={setSelectedInstantAnnouncement}>
                     <SelectTrigger>
                       <SelectValue placeholder="Choose announcement" />
                     </SelectTrigger>

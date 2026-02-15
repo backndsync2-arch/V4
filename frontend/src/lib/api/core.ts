@@ -164,6 +164,7 @@ export const normalizeMusicFile = (raw: any): MusicFile => {
 };
 
 export const normalizeAnnouncement = (raw: any): AnnouncementAudio => {
+  const url = String(raw?.file_url ?? raw?.url ?? '');
   return {
     id: String(raw?.id ?? ''),
     title: String(raw?.title ?? ''),
@@ -171,7 +172,7 @@ export const normalizeAnnouncement = (raw: any): AnnouncementAudio => {
     folderId: raw?.folder_id ?? raw?.folderId ?? undefined,
     zoneId: raw?.zone_id ?? raw?.zoneId ?? undefined,
     zone: raw?.zone_name ?? raw?.zone?.name ?? raw?.zone ?? undefined,
-    url: String(raw?.file_url ?? raw?.url ?? ''),
+    url: url.includes('placeholder.mp3') ? '' : url,
     duration: Number(raw?.duration ?? 0),
     type: raw?.type ?? (raw?.is_tts ? 'tts' : raw?.is_recording ? 'recorded' : 'uploaded'),
     enabled: Boolean(raw?.enabled ?? true),

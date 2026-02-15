@@ -7,7 +7,7 @@ import { Textarea } from '@/app/components/ui/textarea';
 import { Label } from '@/app/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 import { Badge } from '@/app/components/ui/badge';
-import { FileText, Sparkles, Upload, Mic, Play, Pause, Plus, Volume2, StopCircle } from 'lucide-react';
+import { FileText, Sparkles, Upload, Mic, Play, Pause, Plus, Volume2, StopCircle, Edit2, Save, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { announcementsAPI } from '@/lib/api';
 import { Folder, TTSVoice, GeneratedScript } from './announcements.types';
@@ -109,6 +109,8 @@ export function CreateAnnouncementDialog({
   const [recordingTime, setRecordingTime] = React.useState(0);
   const [recordedAudio, setRecordedAudio] = React.useState<Blob | null>(null);
   const [recordedAudioUrl, setRecordedAudioUrl] = React.useState<string | null>(null);
+  const [editingScriptIndex, setEditingScriptIndex] = React.useState<number | null>(null);
+  const [editedScript, setEditedScript] = React.useState<{ title: string; text: string }>({ title: '', text: '' });
   const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
   const chunksRef = React.useRef<Blob[]>([]);
   const timerRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -369,6 +371,28 @@ export function CreateAnnouncementDialog({
         i === index ? { ...script, selected: !script.selected } : script
       )
     );
+  };
+
+  const handleEditScript = (index: number, script: GeneratedScript) => {
+    setEditingScriptIndex(index);
+    setEditedScript({ title: script.title, text: script.text });
+  };
+
+  const handleSaveScript = (index: number) => {
+    if (!editedScript.title.trim() || !editedScript.text.trim()) {
+      toast.error('Title and text cannot be empty');
+      return;
+    }
+    onGeneratedScriptsChange(
+      generatedScripts.map((script, i) => 
+        i === index ? { ...script, title: editedScript.title, text: editedScript.text } : script
+      )
+    );
+    setEditingScriptIndex(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingScriptIndex(null);
   };
 
   return (
@@ -672,18 +696,57 @@ export function CreateAnnouncementDialog({
                         : 'bg-white/5 border-white/10'
                     }`}
                   >
-                    <label className="flex items-start gap-3 cursor-pointer min-h-[44px]">
-                      <input
-                        type="checkbox"
-                        checked={script.selected}
-                        onChange={() => toggleScriptSelection(index)}
-                        className="mt-1 rounded"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm mb-1 text-white">{script.title}</p>
-                        <p className="text-sm text-gray-400 line-clamp-2">{script.text}</p>
+                    {editingScriptIndex === index ? (
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-gray-400">Title</Label>
+                          <Input
+                            value={editedScript.title}
+                            onChange={(e) => setEditedScript(prev => ({ ...prev, title: e.target.value }))}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-gray-400">Script</Label>
+                          <Textarea
+                            value={editedScript.text}
+                            onChange={(e) => setEditedScript(prev => ({ ...prev, text: e.target.value }))}
+                            className="min-h-[80px] text-sm"
+                          />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="ghost" onClick={handleCancelEdit} className="h-7 px-2">
+                            <X className="h-3 w-3 mr-1" /> Cancel
+                          </Button>
+                          <Button size="sm" onClick={() => handleSaveScript(index)} className="h-7 px-2">
+                            <Save className="h-3 w-3 mr-1" /> Save
+                          </Button>
+                        </div>
                       </div>
-                    </label>
+                    ) : (
+                      <div className="flex items-start gap-3">
+                        <label className="flex items-start gap-3 cursor-pointer min-h-[44px] flex-1">
+                          <input
+                            type="checkbox"
+                            checked={script.selected}
+                            onChange={() => toggleScriptSelection(index)}
+                            className="mt-1 rounded"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm mb-1 text-white">{script.title}</p>
+                            <p className="text-sm text-gray-400 line-clamp-2">{script.text}</p>
+                          </div>
+                        </label>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-gray-400 hover:text-white"
+                          onClick={() => handleEditScript(index, script)}
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

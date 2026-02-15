@@ -40,8 +40,10 @@ export function DashboardPlayback() {
   const [musicFiles, setMusicFiles] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [announcementFolders, setAnnouncementFolders] = useState<Folder[]>([]);
+  const [musicFolders, setMusicFolders] = useState<Folder[]>([]);
   const [zones, setZones] = useState<any[]>([]);
   const [selectedAnnouncementFolderId, setSelectedAnnouncementFolderId] = useState<string | null>(null);
+  const [selectedMusicFolderId, setSelectedMusicFolderId] = useState<string | null>(null);
 
   const filteredZones = clientId ? zones.filter((z: any) => z.clientId === clientId) : zones;
 
@@ -399,15 +401,17 @@ export function DashboardPlayback() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [m, a, folders, z] = await Promise.all([
+        const [m, a, folders, z, mFolders] = await Promise.all([
           musicAPI.getMusicFiles(undefined, activeTarget || undefined),
           announcementsAPI.getAnnouncements(),
           musicAPI.getFolders('announcements', activeTarget || undefined),
           zonesAPI.getZones(),
+          musicAPI.getFolders('music', activeTarget || undefined),
         ]);
         setMusicFiles((m || []).filter((x: any) => isAudioUrl(x?.url)));
         setAnnouncements((a || []).filter((x: any) => isAudioUrl(x?.url)));
         setAnnouncementFolders(folders || []);
+        setMusicFolders(mFolders || []);
         setZones(z || []);
         
         // Clear selected folder if it's not in the current zone's folders
@@ -417,13 +421,19 @@ export function DashboardPlayback() {
             setSelectedAnnouncementFolderId(null);
           }
         }
+        if (activeTarget && selectedMusicFolderId) {
+          const folderExists = mFolders.some((f: any) => String(f.id) === String(selectedMusicFolderId));
+          if (!folderExists) {
+             setSelectedMusicFolderId(null);
+          }
+        }
       } catch (e: any) {
         console.error('Failed to load playback data:', e);
         toast.error(e?.message || 'Failed to load playback data');
       }
     };
     load();
-  }, [activeTarget, selectedAnnouncementFolderId]);
+  }, [activeTarget, selectedAnnouncementFolderId, selectedMusicFolderId]);
 
   // Sync local state with shared playback state
   useEffect(() => {
@@ -535,10 +545,54 @@ export function DashboardPlayback() {
             </div>
           )}
 
-          {/* Music Selection */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-base sm:text-lg font-bold text-white">Select Music Tracks</Label>
+      {/* Music Selection */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-base sm:text-lg font-bold text-white">Select Music Folder</Label>
+        </div>
+        {musicFolders.length === 0 ? (
+           <div className="p-4 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 text-center mb-4">
+             <p className="text-gray-400 text-sm">No music folders available</p>
+           </div>
+        ) : (
+          <Select
+            value={selectedMusicFolderId || 'none'}
+            onValueChange={(value) => {
+              if (value === 'none') {
+                setSelectedMusicFolderId(null);
+                // Don't clear selection, just let user select manually
+              } else {
+                setSelectedMusicFolderId(value);
+                // Auto-select all tracks in the selected folder (filtered by zone)
+                const folderMusic = filteredMusic.filter((m: any) => m.folderId === value);
+                setSelectedMusicIds(folderMusic.map(m => m.id));
+              }
+            }}
+          >
+            <SelectTrigger className="h-12 bg-gradient-to-r from-[#2a2a2a] to-[#1a1a1a] border-white/20 hover:border-[#1db954] focus:border-[#1db954] focus:ring-[#1db954]/20 shadow-sm text-base font-medium text-white mb-4">
+              <SelectValue placeholder="Select a music folder..." />
+            </SelectTrigger>
+            <SelectContent className="bg-[#2a2a2a] border-white/10">
+              <SelectItem value="none" className="text-base text-white hover:bg-white/10">No Folder (Manual Selection)</SelectItem>
+              {musicFolders.map((folder) => {
+                const folderMusic = filteredMusic.filter((m: any) => m.folderId === folder.id);
+                return (
+                  <SelectItem key={folder.id} value={folder.id} className="text-base text-white hover:bg-white/10">
+                    <div className="flex items-center justify-between w-full gap-4">
+                      <span className="font-medium">{folder.name}</span>
+                      <span className="text-xs text-gray-400 font-medium">
+                        ({folderMusic.length} tracks)
+                      </span>
+                    </div>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        )}
+
+        <div className="flex items-center justify-between">
+          <Label className="text-base sm:text-lg font-bold text-white">Select Music Tracks</Label>
               {filteredMusic.length > 0 && (
                 <Button
                   variant="ghost"

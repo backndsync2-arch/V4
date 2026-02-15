@@ -6,10 +6,11 @@ import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { Slider } from '@/app/components/ui/slider';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
-import { Settings, Plus, Grid3x3, Loader2, Volume2 } from 'lucide-react';
+import { Settings, Plus, Grid3x3, Loader2, Volume2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { zonesAPI } from '@/lib/api';
 import { ClientSelector } from '@/app/components/admin/ClientSelector';
+import { ConfirmationDialog } from '@/app/components/ui/confirmation-dialog';
 
 interface Zone {
   id: string;
@@ -30,6 +31,7 @@ export function Zones() {
   const [newZoneName, setNewZoneName] = useState('');
   const [newZoneDescription, setNewZoneDescription] = useState('');
   const [selectedClientId, setSelectedClientId] = useState<string>('');
+  const [deleteZoneDialog, setDeleteZoneDialog] = useState<{ open: boolean; zone: Zone | null }>({ open: false, zone: null });
 
   // Load zones
   useEffect(() => {
@@ -149,6 +151,26 @@ export function Zones() {
     } catch (error: any) {
       console.error('Failed to save zone settings:', error);
       toast.error('Failed to save zone settings');
+    }
+  };
+
+  const handleDeleteZone = (zone: Zone) => {
+    setDeleteZoneDialog({ open: true, zone });
+  };
+
+  const confirmDeleteZone = async () => {
+    if (!deleteZoneDialog.zone) return;
+    try {
+      await zonesAPI.deleteZone(deleteZoneDialog.zone.id);
+      toast.success('Zone deleted successfully');
+      loadData();
+      // Trigger a custom event to refresh GlobalHeader zones
+      window.dispatchEvent(new CustomEvent('zones-updated'));
+    } catch (error: any) {
+      console.error('Failed to delete zone:', error);
+      toast.error(error?.message || 'Failed to delete zone');
+    } finally {
+      setDeleteZoneDialog({ open: false, zone: null });
     }
   };
 
@@ -283,10 +305,20 @@ export function Zones() {
                     {zone.floor && ` • Floor: ${zone.floor.name}`}
                   </CardDescription>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => handleOpenZoneSettings(zone.name)}>
-                  <Settings className="h-4 w-4 mr-2" />
-                  Zone Settings
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => handleOpenZoneSettings(zone.name)}>
+                    <Settings className="h-4 w-4 mr-2" />
+                    Settings
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+                    onClick={() => handleDeleteZone(zone)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -360,19 +392,42 @@ export function Zones() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex justify-end gap-3 pt-4 border-t">
-                  <Button variant="outline" onClick={() => handleCloseZoneSettings(zoneName)}>
-                    Cancel
+                <div className="flex justify-between items-center pt-4 border-t">
+                  <Button 
+                    variant="ghost" 
+                    className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+                    onClick={() => {
+                      handleCloseZoneSettings(zoneName);
+                      handleDeleteZone(zone);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Zone
                   </Button>
-                  <Button onClick={() => handleSaveZoneSettings(zone.id, zoneName)}>
-                    Save Settings
-                  </Button>
+                  <div className="flex gap-3">
+                    <Button variant="outline" onClick={() => handleCloseZoneSettings(zoneName)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={() => handleSaveZoneSettings(zone.id, zoneName)}>
+                      Save Settings
+                    </Button>
+                  </div>
                 </div>
               </div>
             </DialogContent>
           </Dialog>
         );
       })}
+
+      <ConfirmationDialog
+        open={deleteZoneDialog.open}
+        onOpenChange={(open) => setDeleteZoneDialog({ open, zone: deleteZoneDialog.zone })}
+        onConfirm={confirmDeleteZone}
+        title="Delete Zone"
+        description={`Are you sure you want to delete zone "${deleteZoneDialog.zone?.name}"? This action cannot be undone.`}
+        confirmText="Delete"
+        variant="destructive"
+      />
     </div>
   );
 }

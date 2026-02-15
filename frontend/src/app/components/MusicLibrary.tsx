@@ -258,11 +258,11 @@ export function MusicLibrary() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    // Limit to 20 files
-    const filesToUpload = Array.from(files).slice(0, 20);
+    // Limit to 50 files
+    const filesToUpload = Array.from(files).slice(0, 50);
     
-    if (files.length > 20) {
-      toast.warning(`Only the first 20 files will be uploaded (${files.length} selected)`);
+    if (files.length > 50) {
+      toast.warning(`Only the first 50 files will be uploaded (${files.length} selected)`);
     }
 
     // Check for duplicates before uploading
@@ -629,7 +629,7 @@ export function MusicLibrary() {
                 <DialogHeader>
                   <DialogTitle>Upload {isAdmin ? 'Content' : 'Music'}</DialogTitle>
                   <DialogDescription>
-                    {isAdmin ? 'Upload audio files as music or announcement templates' : 'Upload audio files to your library'} (up to 20 at once)
+                    {isAdmin ? 'Upload audio files as music or announcement templates' : 'Upload audio files to your library'} (up to 50 at once)
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">

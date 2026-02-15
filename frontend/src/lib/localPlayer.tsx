@@ -35,6 +35,10 @@ export function LocalPlayerProvider({ children }: { children: React.ReactNode })
     if (!audioRef.current) {
       audioRef.current = new Audio();
       audioRef.current.preload = 'metadata';
+      // Ensure cross-origin metadata can be read
+      audioRef.current.crossOrigin = 'anonymous';
+      // iOS inline playback
+      audioRef.current.setAttribute('playsinline', 'true');
       audioRef.current.volume = volume / 100;
     }
     return audioRef.current;
@@ -55,8 +59,30 @@ export function LocalPlayerProvider({ children }: { children: React.ReactNode })
       setCurrentTime(audio.currentTime || 0);
     };
     const onLoadedMetadata = () => {
+      let d = Number.isFinite(audio.duration) ? audio.duration : 0;
+      if (!d || !Number.isFinite(d)) {
+        // Force browser to compute duration by seeking to a very large time
+        const handleForceDuration = () => {
+          const computed = Number.isFinite(audio.duration) ? audio.duration : 0;
+          setDuration(computed || 0);
+          // Reset to start
+          audio.currentTime = 0;
+          audio.removeEventListener('timeupdate', handleForceDuration);
+        };
+        audio.addEventListener('timeupdate', handleForceDuration, { once: true });
+        // Trigger duration calculation
+        try {
+          audio.currentTime = 1e7;
+        } catch {}
+      } else {
+        setDuration(d || 0);
+      }
+    };
+    const onDurationChange = () => {
       const d = Number.isFinite(audio.duration) ? audio.duration : 0;
-      setDuration(d || 0);
+      if (d && d !== duration) {
+        setDuration(d);
+      }
     };
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
@@ -73,6 +99,7 @@ export function LocalPlayerProvider({ children }: { children: React.ReactNode })
 
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
+    audio.addEventListener('durationchange', onDurationChange);
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('ended', onEnded);
@@ -81,6 +108,7 @@ export function LocalPlayerProvider({ children }: { children: React.ReactNode })
     return () => {
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
+      audio.removeEventListener('durationchange', onDurationChange);
       audio.removeEventListener('play', onPlay);
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('ended', onEnded);

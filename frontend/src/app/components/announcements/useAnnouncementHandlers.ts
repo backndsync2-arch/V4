@@ -730,7 +730,7 @@ export function useAnnouncementHandlers({
         const announcements = await announcementsAPI.getAnnouncements();
         const updatedAudio = announcements.find(a => a.id === audioId);
         
-        if (updatedAudio && updatedAudio.url) {
+        if (updatedAudio && updatedAudio.url && updatedAudio.url !== '#' && updatedAudio.url !== '') {
           setAudioFiles(prev => prev.map(a => 
             a.id === audioId 
               ? { ...a, url: updatedAudio.url }
@@ -738,11 +738,6 @@ export function useAnnouncementHandlers({
           ));
           
           const audioUrl = updatedAudio.url;
-          if (!audioUrl || audioUrl === '#' || audioUrl === '') {
-            toast.error('Audio file is not ready yet. Please wait a moment and try again.');
-            return;
-          }
-          
           const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${window.location.origin}${audioUrl}`;
           
           const audioElement = new Audio(fullUrl);
@@ -771,7 +766,15 @@ export function useAnnouncementHandlers({
             audioRef.current = null;
           }
         } else {
-          toast.error('This announcement has no audio file yet. TTS generation may still be in progress. Please wait a moment and try again.');
+          // If audio is still missing, check if we can regenerate it
+          if (updatedAudio?.type === 'tts' || updatedAudio?.ttsText) {
+             toast.info('Audio file missing. Opening generation dialog...');
+             setSelectedAnnouncementForPlay(audioId);
+             setPlayVoiceDialogVoice(selectedVoice || 'alloy');
+             setIsPlayVoiceDialogOpen(true);
+          } else {
+             toast.error('This announcement has no audio file yet. Please wait a moment or try regenerating it.');
+          }
         }
       } catch (error) {
         console.error('Error loading announcement:', error);

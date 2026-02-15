@@ -15,8 +15,8 @@ import type {
 } from '../types';
 
 // API Configuration
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://sync2gear-production.eba-cmuhbkrm.us-east-1.elasticbeanstalk.com/api/v1';
-export const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'ws://sync2gear-production.eba-cmuhbkrm.us-east-1.elasticbeanstalk.com/ws';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://02nn8drgsd.execute-api.us-east-1.amazonaws.com/api/v1';
+export const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'wss://02nn8drgsd.execute-api.us-east-1.amazonaws.com/ws';
 
 // Token management - use consistent keys
 export const TOKEN_KEYS = {

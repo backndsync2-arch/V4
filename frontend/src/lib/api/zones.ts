@@ -37,8 +37,28 @@ export const zonesAPI = {
   },
 
   // Delete zone
-  deleteZone: async (id: string): Promise<void> => {
-    return apiFetch(`/zones/zones/${id}/`, { method: 'DELETE' });
+  deleteZone: async (id: string) => {
+    // Ensure no trailing slash for delete requests to avoid 404s with some server configurations
+    const response = await fetch(`${API_BASE_URL}/zones/zones/${id}`, {
+      method: 'DELETE',
+      headers: await getAuthHeaders(),
+    });
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+         // Try with trailing slash as fallback
+         const responseWithSlash = await fetch(`${API_BASE_URL}/zones/zones/${id}/`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders(),
+         });
+         if (responseWithSlash.ok) return true;
+         throw new Error('Zone not found');
+      }
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || error.message || 'Failed to delete zone');
+    }
+    
+    return true;
   },
 
   // Get devices in zone

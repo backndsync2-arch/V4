@@ -473,8 +473,11 @@ export function useAnnouncementHandlers({
     setPreviewingVoice(voice);
     try {
       const previewText = newText.trim() || 'Hello, this is a voice preview. How does this sound?';
-      console.log('Calling previewVoice API with:', { text: previewText, voice });
+      console.log('Calling previewVoice API to generate/retrieve preview:', { text: previewText, voice });
       
+      // Always call the POST endpoint which will generate if not exists
+      // This ensures we always get a valid preview URL
+      toast.info('Generating voice preview...');
       const preview = await announcementsAPI.previewVoice({
         text: previewText,
         voice: voice,
@@ -483,9 +486,10 @@ export function useAnnouncementHandlers({
       console.log('Preview API response:', preview);
       
       // Check if we got an error response
-      if (preview.error) {
-        console.error('API returned error:', preview.error);
-        throw new Error(preview.error);
+      if (preview.error || preview.detail) {
+        const errorMsg = preview.error || preview.detail || 'Failed to generate voice preview';
+        console.error('API returned error:', errorMsg);
+        throw new Error(errorMsg);
       }
       
       if (!preview.preview_url) {
@@ -493,13 +497,47 @@ export function useAnnouncementHandlers({
         throw new Error('No preview URL returned from server');
       }
       
-      console.log('Creating audio element with URL:', preview.preview_url);
-      const audio = new Audio(preview.preview_url);
+      // Ensure the preview URL is absolute using the normalizeUrl utility
+      const { normalizeUrl } = await import('@/lib/api/core');
+      const previewUrl = normalizeUrl(preview.preview_url);
+      console.log('Normalized preview URL:', previewUrl);
+      
+      // Create audio element and set up handlers before loading
+      const audio = new Audio(previewUrl);
       setPreviewAudio(audio);
       
       // Add error handlers before playing
-      audio.addEventListener('error', (e) => {
+      audio.addEventListener('error', async (e) => {
         console.error('Audio playback error:', e, audio.error);
+        
+        // If audio fails to load (404 or other error), try to regenerate
+        if (audio.error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED || 
+            audio.error?.code === MediaError.MEDIA_ERR_NETWORK) {
+          console.log('Audio failed to load, attempting to regenerate...');
+          try {
+            toast.info('Regenerating voice preview...');
+            const regenerated = await announcementsAPI.previewVoice({
+              text: previewText,
+              voice: voice,
+            });
+            
+            if (regenerated.preview_url) {
+              const newUrl = normalizeUrl(regenerated.preview_url);
+              audio.src = newUrl;
+              audio.load();
+              try {
+                await audio.play();
+                toast.success('Voice preview playing');
+                return;
+              } catch (playErr) {
+                console.error('Failed to play regenerated audio:', playErr);
+              }
+            }
+          } catch (regenError) {
+            console.error('Failed to regenerate preview:', regenError);
+          }
+        }
+        
         toast.error('Failed to play audio. Please check your browser audio settings.');
         setPreviewingVoice(null);
         setPreviewAudio(null);
@@ -517,6 +555,7 @@ export function useAnnouncementHandlers({
       
       audio.addEventListener('canplay', () => {
         console.log('Audio can play');
+        toast.dismiss(); // Dismiss the "Generating..." toast
       });
       
       // Try to play the audio
@@ -524,6 +563,7 @@ export function useAnnouncementHandlers({
         console.log('Attempting to play audio...');
         await audio.play();
         console.log('Audio playing successfully');
+        toast.success(preview.cached ? 'Playing cached preview' : 'Voice preview playing');
       } catch (playError: any) {
         console.error('Audio play error:', playError);
         // Check if it's an autoplay policy issue
@@ -537,9 +577,16 @@ export function useAnnouncementHandlers({
       }
     } catch (error: any) {
       console.error('Preview voice error:', error);
-      const errorMessage = error?.error || error?.message || 'Failed to preview voice';
+      const errorMessage = error?.error || error?.detail || error?.message || 'Failed to preview voice';
       console.error('Error message:', errorMessage);
-      toast.error(errorMessage);
+      
+      // If it's an OpenAI key error, provide helpful message
+      if (errorMessage.includes('OpenAI API key')) {
+        toast.error('Voice preview generation is not configured. Please contact your administrator.');
+      } else {
+        toast.error(errorMessage);
+      }
+      
       setPreviewingVoice(null);
       setPreviewAudio(null);
     }
@@ -583,6 +630,7 @@ export function useAnnouncementHandlers({
     
     setIsRegeneratingVoice(true);
     try {
+      toast.info('Generating audio... This may take a few seconds.');
       const updated = await announcementsAPI.regenerateTTS(selectedAnnouncementForVoice, {
         voice: voiceDialogVoice,
         provider: 'openai',
@@ -591,11 +639,16 @@ export function useAnnouncementHandlers({
       const allAnnouncements = await announcementsAPI.getAnnouncements();
       setAudioFiles(allAnnouncements);
       
-      toast.success(`Voice updated successfully! Duration: ${formatDuration(updated.duration)}`);
+      if (updated.url && updated.url !== '#' && updated.url !== '') {
+        toast.success(`Audio generated successfully! Duration: ${formatDuration(updated.duration)}`);
+      } else {
+        toast.warning('Voice updated but audio generation may still be in progress. Please try again in a moment.');
+      }
       setIsVoiceDialogOpen(false);
       setSelectedAnnouncementForVoice(null);
     } catch (error: any) {
-      toast.error(error?.message || 'Failed to regenerate voice');
+      const errorMessage = error?.detail || error?.message || 'Failed to regenerate audio';
+      toast.error(`Failed to regenerate audio: ${errorMessage}`);
       console.error('Voice regeneration error:', error);
     } finally {
       setIsRegeneratingVoice(false);
@@ -606,73 +659,79 @@ export function useAnnouncementHandlers({
     if (!selectedAnnouncementForPlay) return;
     
     const audio = audioFiles.find(a => a.id === selectedAnnouncementForPlay);
-    if (!audio || !audio.ttsText) {
-      toast.error('Announcement text not found');
+    if (!audio) {
+      toast.error('Announcement not found');
+      return;
+    }
+    
+    // Check if announcement has text to generate from
+    if (!audio.ttsText && !audio.text) {
+      toast.error('Announcement has no text content. Cannot generate audio without text.');
       return;
     }
     
     setIsGeneratingForPlay(true);
     try {
-      toast.info('Generating audio...');
+      toast.info('Generating audio... This may take a few seconds.');
       
       const updated = await announcementsAPI.regenerateTTS(selectedAnnouncementForPlay, {
         voice: playVoiceDialogVoice,
         provider: 'openai',
       });
       
-      let attempts = 0;
-      while (attempts < 10) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const updatedAnnouncements = await announcementsAPI.getAnnouncements();
-        const announcementWithAudio = updatedAnnouncements.find(a => a.id === selectedAnnouncementForPlay);
+      // Update the audio files list
+      const allAnnouncements = await announcementsAPI.getAnnouncements();
+      setAudioFiles(allAnnouncements);
+      
+      // Check if audio was successfully generated
+      if (updated.url && updated.url !== '#' && updated.url !== '') {
+        setIsPlayVoiceDialogOpen(false);
+        setSelectedAnnouncementForPlay(null);
         
-        if (announcementWithAudio && announcementWithAudio.url && announcementWithAudio.url !== '#' && announcementWithAudio.url !== '') {
-          setAudioFiles(updatedAnnouncements);
-          setIsPlayVoiceDialogOpen(false);
-          setSelectedAnnouncementForPlay(null);
+        // Ensure audio URL is absolute using normalizeUrl
+        const { normalizeUrl } = await import('@/lib/api/core');
+        const audioUrl = normalizeUrl(updated.url);
+        
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        }
+        
+        // Small delay to ensure audio file is accessible
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const audioElement = new Audio(audioUrl);
+        audioRef.current = audioElement;
+        setPlayingAudio(selectedAnnouncementForPlay);
+        
+        try {
+          await audioElement.play();
+          toast.success(`Playing ${audio.title}`);
           
-          const audioUrl = announcementWithAudio.url.startsWith('http') 
-            ? announcementWithAudio.url 
-            : `${window.location.origin}${announcementWithAudio.url}`;
-          
-          if (audioRef.current) {
-            audioRef.current.pause();
-            audioRef.current.currentTime = 0;
-          }
-          
-          const audioElement = new Audio(audioUrl);
-          audioRef.current = audioElement;
-          setPlayingAudio(selectedAnnouncementForPlay);
-          
-          try {
-            await audioElement.play();
-            toast.success(`Playing ${audio.title}`);
-            
-            audioElement.addEventListener('ended', () => {
-              setPlayingAudio(null);
-              audioRef.current = null;
-            });
-            
-            audioElement.addEventListener('error', () => {
-              toast.error('Failed to play audio.');
-              setPlayingAudio(null);
-              audioRef.current = null;
-            });
-          } catch (playError) {
-            toast.error('Failed to play audio.');
+          audioElement.addEventListener('ended', () => {
             setPlayingAudio(null);
             audioRef.current = null;
-          }
-          return;
+          });
+          
+          audioElement.addEventListener('error', () => {
+            toast.error('Failed to play audio. The file may still be processing. Please try again in a moment.');
+            setPlayingAudio(null);
+            audioRef.current = null;
+          });
+        } catch (playError: any) {
+          console.error('Play error:', playError);
+          toast.error('Audio generated but playback failed. Please try playing again.');
+          setPlayingAudio(null);
+          audioRef.current = null;
         }
-        attempts++;
+      } else {
+        toast.warning('Audio generation may still be in progress. Please try playing again in a moment.');
+        setIsPlayVoiceDialogOpen(false);
+        setSelectedAnnouncementForPlay(null);
       }
-      
-      toast.warning('Audio is still generating. Please try playing again in a moment.');
-      setIsPlayVoiceDialogOpen(false);
-      setSelectedAnnouncementForPlay(null);
     } catch (error: any) {
-      toast.error(error?.message || 'Failed to generate audio');
+      const errorMessage = error?.detail || error?.message || 'Failed to generate audio';
+      toast.error(`Failed to generate audio: ${errorMessage}`);
       console.error('TTS generation error:', error);
     } finally {
       setIsGeneratingForPlay(false);
@@ -737,10 +796,11 @@ export function useAnnouncementHandlers({
               : a
           ));
           
-          const audioUrl = updatedAudio.url;
-          const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${window.location.origin}${audioUrl}`;
+          // Ensure audio URL is absolute using normalizeUrl
+          const { normalizeUrl } = await import('@/lib/api/core');
+          const audioUrl = normalizeUrl(updatedAudio.url);
           
-          const audioElement = new Audio(fullUrl);
+          const audioElement = new Audio(audioUrl);
           audioRef.current = audioElement;
           setPlayingAudio(audioId);
           
@@ -754,11 +814,11 @@ export function useAnnouncementHandlers({
             });
             
             audioElement.addEventListener('error', (e) => {
-          console.error('Audio playback error:', e, 'URL:', fullUrl);
-          toast.error('Unable to play this announcement. The audio file may need to be regenerated.');
-          setPlayingAudio(null);
-          audioRef.current = null;
-        });
+              console.error('Audio playback error:', e, 'URL:', audioUrl);
+              toast.error('Unable to play this announcement. Use "Regenerate Audio" from the menu to fix this.');
+              setPlayingAudio(null);
+              audioRef.current = null;
+            });
           } catch (playError) {
             console.error('Playback error:', playError, 'URL:', fullUrl);
             toast.error('Failed to play audio. Please try again.');
@@ -798,11 +858,24 @@ export function useAnnouncementHandlers({
     } else {
       // Validate audio URL before attempting to play
       if (!audio.url || audio.url === '#' || audio.url === '') {
-        toast.error('This announcement has no audio file. Please generate the audio first.');
+        if (audio.ttsText) {
+          const shouldRegenerate = window.confirm(
+            'This announcement has no audio file. Would you like to regenerate it now?'
+          );
+          if (shouldRegenerate) {
+            setSelectedAnnouncementForPlay(audioId);
+            setPlayVoiceDialogVoice(selectedVoice || 'alloy');
+            setIsPlayVoiceDialogOpen(true);
+          }
+        } else {
+          toast.error('This announcement has no audio file or text. Please regenerate it or delete it.');
+        }
         return;
       }
       
-      const audioUrl = audio.url.startsWith('http') ? audio.url : `${window.location.origin}${audio.url}`;
+      // Ensure audio URL is absolute using normalizeUrl
+      const { normalizeUrl } = await import('@/lib/api/core');
+      const audioUrl = normalizeUrl(audio.url);
       
       const audioElement = new Audio(audioUrl);
       audioRef.current = audioElement;
@@ -819,7 +892,7 @@ export function useAnnouncementHandlers({
         
         audioElement.addEventListener('error', (e) => {
           console.error('Audio playback error:', e, 'URL:', audioUrl);
-          toast.error('Failed to play audio. The file may be missing or corrupted.');
+          toast.error('Failed to play audio. The file may be missing or corrupted. Use "Regenerate Audio" from the menu to fix this.');
           setPlayingAudio(null);
           audioRef.current = null;
         });
@@ -866,9 +939,9 @@ export function useAnnouncementHandlers({
           audioRef.current.currentTime = 0;
         }
         
-        const audioUrl = announcement.url.startsWith('http') 
-          ? announcement.url 
-          : `${window.location.origin}${announcement.url}`;
+        // Ensure audio URL is absolute using normalizeUrl
+        const { normalizeUrl } = await import('@/lib/api/core');
+        const audioUrl = normalizeUrl(announcement.url);
         
         const audioElement = new Audio(audioUrl);
         audioRef.current = audioElement;

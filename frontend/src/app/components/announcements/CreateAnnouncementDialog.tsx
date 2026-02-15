@@ -343,24 +343,69 @@ export function CreateAnnouncementDialog({
     
     onPreviewVoice(selectedVoice);
     try {
+      toast.info('Generating voice preview...');
       const preview = await announcementsAPI.previewVoice({
         text: newText.trim() || 'Hello, this is a voice preview. How does this sound?',
         voice: selectedVoice,
       });
       
-      const audio = new Audio(preview.preview_url);
-      await audio.play();
+      if (preview.error || preview.detail) {
+        throw new Error(preview.error || preview.detail || 'Failed to generate preview');
+      }
+      
+      if (!preview.preview_url) {
+        throw new Error('No preview URL returned from server');
+      }
+      
+      // Ensure the preview URL is absolute using the normalizeUrl utility
+      const { normalizeUrl } = await import('@/lib/api/core');
+      const previewUrl = normalizeUrl(preview.preview_url);
+      const audio = new Audio(previewUrl);
+      
+      audio.addEventListener('canplay', () => {
+        toast.dismiss();
+        toast.success(preview.cached ? 'Playing cached preview' : 'Voice preview playing');
+      });
       
       audio.addEventListener('ended', () => {
         onStopPreview();
       });
       
-      audio.addEventListener('error', () => {
+      audio.addEventListener('error', async () => {
+        // Try to regenerate if audio fails
+        try {
+          toast.info('Regenerating voice preview...');
+          const regenerated = await announcementsAPI.previewVoice({
+            text: newText.trim() || 'Hello, this is a voice preview. How does this sound?',
+            voice: selectedVoice,
+          });
+          
+          if (regenerated.preview_url) {
+            const newUrl = normalizeUrl(regenerated.preview_url);
+            audio.src = newUrl;
+            audio.load();
+            await audio.play();
+            toast.success('Voice preview playing');
+            return;
+          }
+        } catch (regenError) {
+          console.error('Failed to regenerate:', regenError);
+        }
+        
         toast.error('Failed to play voice preview');
         onStopPreview();
       });
+      
+      await audio.play();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to preview voice');
+      const errorMessage = error?.error || error?.detail || error?.message || 'Failed to preview voice';
+      
+      if (errorMessage.includes('OpenAI API key')) {
+        toast.error('Voice preview generation is not configured. Please contact your administrator.');
+      } else {
+        toast.error(errorMessage);
+      }
+      
       onStopPreview();
     }
   };

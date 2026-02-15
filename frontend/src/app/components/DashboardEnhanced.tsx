@@ -163,7 +163,17 @@ export function DashboardEnhanced() {
           voice: 'female1'
         });
         if (preview.preview_url) {
-          playPreview(preview.preview_url);
+          // Ensure the preview URL is absolute
+          let previewUrl = preview.preview_url;
+          if (!previewUrl.startsWith('http://') && !previewUrl.startsWith('https://')) {
+            const { API_BASE_URL } = await import('@/lib/api/core');
+            if (previewUrl.startsWith('/')) {
+              previewUrl = `${API_BASE_URL.replace(/\/api\/v1$/, '')}${previewUrl}`;
+            } else {
+              previewUrl = `${API_BASE_URL.replace(/\/api\/v1$/, '')}/${previewUrl}`;
+            }
+          }
+          playPreview(previewUrl);
         }
       }
       

@@ -58,21 +58,34 @@ export function VoiceManagementDialog({
     // Start preview for the clicked voice
     setPreviewingVoice(voiceId);
     try {
+      toast.info('Generating voice preview...');
       const result = await announcementsAPI.previewVoice({
         text: previewText,
         voice: voiceId,
       });
       
       // Check for error response
-      if (result.error) {
-        throw new Error(result.error);
+      if (result.error || result.detail) {
+        throw new Error(result.error || result.detail || 'Failed to generate preview');
       }
       
       if (!result.preview_url) {
         throw new Error('No preview URL returned from server');
       }
       
-      const audio = new Audio(result.preview_url);
+      // Ensure the preview URL is absolute using the normalizeUrl utility
+      const { normalizeUrl } = await import('@/lib/api/core');
+      console.log('Original preview URL from API:', result.preview_url);
+      const previewUrl = normalizeUrl(result.preview_url);
+      console.log('Normalized preview URL:', previewUrl);
+      
+      // Double-check it's not localhost
+      if (previewUrl.includes('localhost:8000') || previewUrl.includes('127.0.0.1:8000')) {
+        console.error('ERROR: URL still contains localhost after normalization!', previewUrl);
+        throw new Error('Invalid preview URL returned from server');
+      }
+      
+      const audio = new Audio(previewUrl);
       setPreviewAudio(audio);
       
       audio.addEventListener('ended', () => {
@@ -80,8 +93,42 @@ export function VoiceManagementDialog({
         setPreviewAudio(null);
       });
       
-      audio.addEventListener('error', (e) => {
-        console.error('Audio playback error:', e);
+      audio.addEventListener('canplay', () => {
+        toast.dismiss(); // Dismiss "Generating..." toast
+        toast.success(result.cached ? 'Playing cached preview' : 'Voice preview playing');
+      });
+      
+      audio.addEventListener('error', async (e) => {
+        console.error('Audio playback error:', e, audio.error);
+        
+        // If audio fails to load, try to regenerate
+        if (audio.error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED || 
+            audio.error?.code === MediaError.MEDIA_ERR_NETWORK) {
+          console.log('Audio failed to load, attempting to regenerate...');
+          try {
+            toast.info('Regenerating voice preview...');
+            const regenerated = await announcementsAPI.previewVoice({
+              text: previewText,
+              voice: voiceId,
+            });
+            
+            if (regenerated.preview_url) {
+              const newUrl = normalizeUrl(regenerated.preview_url);
+              audio.src = newUrl;
+              audio.load();
+              try {
+                await audio.play();
+                toast.success('Voice preview playing');
+                return;
+              } catch (playErr) {
+                console.error('Failed to play regenerated audio:', playErr);
+              }
+            }
+          } catch (regenError) {
+            console.error('Failed to regenerate preview:', regenError);
+          }
+        }
+        
         toast.error('Failed to play audio. Please check your browser audio settings.');
         setPreviewingVoice(null);
         setPreviewAudio(null);
@@ -101,8 +148,15 @@ export function VoiceManagementDialog({
       }
     } catch (error: any) {
       console.error('Preview error:', error);
-      const errorMessage = error?.error || error?.message || 'Failed to preview voice';
-      toast.error(errorMessage);
+      const errorMessage = error?.error || error?.detail || error?.message || 'Failed to preview voice';
+      
+      // If it's an OpenAI key error, provide helpful message
+      if (errorMessage.includes('OpenAI API key')) {
+        toast.error('Voice preview generation is not configured. Please contact your administrator.');
+      } else {
+        toast.error(errorMessage);
+      }
+      
       setPreviewingVoice(null);
       setPreviewAudio(null);
     }

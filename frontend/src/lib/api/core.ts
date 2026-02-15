@@ -163,6 +163,50 @@ export const normalizeMusicFile = (raw: any): MusicFile => {
   } as any;
 };
 
+// Helper function to normalize URLs to absolute URLs
+export const normalizeUrl = (url: string, baseUrl?: string): string => {
+  if (!url || url === '' || url === '#') return '';
+  
+  // Clean up malformed URLs (e.g., starting with :8000 or localhost:8000)
+  // Remove any leading colon with port number
+  url = url.replace(/^:[0-9]+/, '');
+  
+  // Remove localhost references that shouldn't be there
+  if (url.includes('localhost:8000') || url.includes('127.0.0.1:8000')) {
+    // Extract the path part after localhost:8000
+    const pathMatch = url.match(/localhost:8000(.*)$/i) || url.match(/127\.0\.0\.1:8000(.*)$/i);
+    if (pathMatch && pathMatch[1]) {
+      url = pathMatch[1];
+    } else {
+      // If it's just localhost:8000, replace with empty
+      url = url.replace(/^https?:\/\/localhost:8000/i, '').replace(/^https?:\/\/127\.0\.0\.1:8000/i, '');
+    }
+  }
+  
+  // If already absolute and valid, return as-is
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    // Double-check it's not localhost
+    if (url.includes('localhost:8000') || url.includes('127.0.0.1:8000')) {
+      // Extract path and rebuild with correct base
+      const pathMatch = url.match(/localhost:8000(.*)$/i) || url.match(/127\.0\.0\.1:8000(.*)$/i);
+      if (pathMatch && pathMatch[1]) {
+        url = pathMatch[1];
+      }
+    } else {
+      return url;
+    }
+  }
+  
+  // If relative, make it absolute using the deployed backend
+  const apiBase = baseUrl || API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+  
+  // Ensure we have a clean path
+  if (url.startsWith('/')) {
+    return `${apiBase}${url}`;
+  }
+  return `${apiBase}/${url}`;
+};
+
 export const normalizeAnnouncement = (raw: any): AnnouncementAudio => {
   const url = String(raw?.file_url ?? raw?.url ?? '');
   return {
@@ -172,7 +216,7 @@ export const normalizeAnnouncement = (raw: any): AnnouncementAudio => {
     folderId: raw?.folder_id ?? raw?.folderId ?? undefined,
     zoneId: raw?.zone_id ?? raw?.zoneId ?? undefined,
     zone: raw?.zone_name ?? raw?.zone?.name ?? raw?.zone ?? undefined,
-    url: url.includes('placeholder.mp3') ? '' : url,
+    url: url.includes('placeholder.mp3') ? '' : normalizeUrl(url),
     duration: Number(raw?.duration ?? 0),
     type: raw?.type ?? (raw?.is_tts ? 'tts' : raw?.is_recording ? 'recorded' : 'uploaded'),
     enabled: Boolean(raw?.enabled ?? true),
@@ -180,8 +224,8 @@ export const normalizeAnnouncement = (raw: any): AnnouncementAudio => {
     createdAt: toDate(raw?.created_at ?? raw?.createdAt),
     createdBy: String(raw?.created_by_name ?? raw?.createdBy ?? ''),
     scriptId: undefined,
-    ttsText: raw?.tts_text ?? raw?.ttsText ?? undefined,
-    coverArtUrl: raw?.cover_art_url ?? raw?.coverArtUrl ?? undefined,
+    ttsText: raw?.tts_text ?? raw?.ttsText ?? raw?.text ?? undefined,
+    coverArtUrl: raw?.cover_art_url ? normalizeUrl(raw.cover_art_url) : raw?.coverArtUrl ? normalizeUrl(raw.coverArtUrl) : undefined,
   };
 };
 

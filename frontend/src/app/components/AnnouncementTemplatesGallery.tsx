@@ -878,7 +878,17 @@ export function AnnouncementTemplatesGallery({ onUseTemplate, onAnnouncementsCre
                           voice: selectedVoice,
                         });
                         if (result.preview_url) {
-                          const audio = new Audio(result.preview_url);
+                          // Ensure the preview URL is absolute
+                          let previewUrl = result.preview_url;
+                          if (!previewUrl.startsWith('http://') && !previewUrl.startsWith('https://')) {
+                            const { API_BASE_URL } = await import('@/lib/api/core');
+                            if (previewUrl.startsWith('/')) {
+                              previewUrl = `${API_BASE_URL.replace(/\/api\/v1$/, '')}${previewUrl}`;
+                            } else {
+                              previewUrl = `${API_BASE_URL.replace(/\/api\/v1$/, '')}/${previewUrl}`;
+                            }
+                          }
+                          const audio = new Audio(previewUrl);
                           await audio.play();
                           toast.success('Playing voice preview...');
                         }

@@ -83,6 +83,13 @@ export function AnnouncementsGridView({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-[#2a2a2a] border-white/10">
+                      {/* Show Regenerate Audio option when audio is missing or invalid */}
+                      {(!audio.url || audio.url === '#' || audio.url === '') && audio.ttsText && (
+                        <DropdownMenuItem onClick={() => onRegenerateVoice(audio.id)} className="text-yellow-400 hover:bg-yellow-500/20">
+                          <Volume2 className="h-4 w-4 mr-2" />
+                          Regenerate Audio
+                        </DropdownMenuItem>
+                      )}
                       {audio.type === 'tts' && (
                         <>
                           <DropdownMenuItem onClick={() => onRegenerateVoice(audio.id)} className="text-white hover:bg-white/10">
@@ -121,6 +128,16 @@ export function AnnouncementsGridView({
                     : "text-[10px] bg-white/5 text-gray-300 border-white/10 px-1.5 py-0.5 h-5"}>
                     {audio.type.toUpperCase()}
                   </Badge>
+                  {(!audio.url || audio.url === '#' || audio.url === '') && audio.ttsText && (
+                    <Badge variant="outline" className="text-[10px] bg-yellow-500/20 text-yellow-400 border-yellow-500/30 px-1.5 py-0.5 h-5">
+                      NO AUDIO
+                    </Badge>
+                  )}
+                  {(!audio.url || audio.url === '#' || audio.url === '') && !audio.ttsText && (
+                    <Badge variant="outline" className="text-[10px] bg-red-500/20 text-red-400 border-red-500/30 px-1.5 py-0.5 h-5">
+                      NO VOICE
+                    </Badge>
+                  )}
                   <Badge variant="outline" className="text-[10px] bg-white/5 text-gray-300 border-white/10 px-1.5 py-0.5 h-5">
                     {formatDuration(audio.duration)}
                   </Badge>

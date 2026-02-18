@@ -608,7 +608,7 @@ export function Users() {
     }
   };
 
-  const handleResetPassword = () => {
+  const handleResetPassword = async () => {
     if (!userToReset) return;
 
     const finalPassword = resetPasswordForm.autoGenerate 
@@ -620,22 +620,31 @@ export function Users() {
       return;
     }
 
-    setIsResetPasswordDialogOpen(false);
-    setResetPasswordForm({
-      password: '',
-      autoGenerate: true,
-    });
-    
-    toast.success(`Password reset for ${userToReset.name}`, {
-      description: resetPasswordForm.autoGenerate 
-        ? `New password: ${finalPassword} (copied to clipboard)` 
-        : `Password updated successfully`,
-      duration: 8000,
-    });
-    
-    // Auto-copy generated password to clipboard
-    if (resetPasswordForm.autoGenerate) {
-      copyToClipboard(finalPassword);
+    try {
+      // Actually call the API to update the password
+      await adminAPI.updateUser(userToReset.id, { password: finalPassword });
+
+      setIsResetPasswordDialogOpen(false);
+      setResetPasswordForm({
+        password: '',
+        autoGenerate: true,
+      });
+      
+      toast.success(`Password reset for ${userToReset.name}`, {
+        description: resetPasswordForm.autoGenerate 
+          ? `New password: ${finalPassword} (copied to clipboard)` 
+          : `Password updated successfully`,
+        duration: 8000,
+      });
+      
+      // Auto-copy generated password to clipboard
+      if (resetPasswordForm.autoGenerate) {
+        copyToClipboard(finalPassword);
+      }
+    } catch (error: any) {
+      toast.error('Failed to reset password', {
+        description: error?.message || 'Please try again',
+      });
     }
     
     setUserToReset(null);

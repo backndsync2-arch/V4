@@ -93,7 +93,7 @@ export function GlobalHeader() {
                   </div>
                   <span className="text-sm font-medium text-white truncate">
                     {impersonatingClient
-                      ? (clients.find(c => c.id === impersonatingClient)?.name || clients.find(c => c.id === impersonatingClient)?.business_name || 'Client')
+                      ? (clients.find(c => c.id === impersonatingClient)?.name || clients.find(c => c.id === impersonatingClient)?.businessName || 'Client')
                       : 'Admin View'}
                   </span>
                   <ChevronDown className="h-3.5 w-3.5 text-gray-400 ml-auto shrink-0" />
@@ -114,7 +114,7 @@ export function GlobalHeader() {
                       <div className="p-1 bg-orange-500 rounded">
                         <Building2 className="h-3 w-3 text-white" />
                       </div>
-                      <span>{client.name || client.business_name}</span>
+                      <span>{client.name || client.businessName}</span>
                     </div>
                   </SelectItem>
                 ))}

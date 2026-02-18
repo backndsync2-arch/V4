@@ -199,7 +199,7 @@ export function Admin() {
   };
 
   // Handle password reset
-  const handleResetPassword = () => {
+  const handleResetPassword = async () => {
     if (!userToResetPassword) return;
 
     const finalPassword = resetPasswordAutoGenerate 
@@ -211,35 +211,30 @@ export function Admin() {
       return;
     }
 
-    setIsResetPasswordDialogOpen(false);
-    setResetPasswordValue('');
-    setResetPasswordAutoGenerate(true);
-    
-    toast.success(`Password reset for ${userToResetPassword.name}`, {
-      description: resetPasswordAutoGenerate 
-        ? `New password: ${finalPassword} (copied to clipboard)` 
-        : `Password updated successfully`,
-      duration: 8000,
-    });
-    
-    // Auto-copy generated password to clipboard
-    if (resetPasswordAutoGenerate) {
-      copyToClipboard(finalPassword);
-    }
+    try {
+      // Actually call the API to save the new password
+      await adminAPI.updateUser(userToResetPassword.id, { password: finalPassword });
 
-    // Add audit log
-    const log = {
-      id: `log_${Date.now()}`,
-      userId: 'user1',
-      userName: 'Admin User',
-      action: 'reset_password',
-      resource: 'user',
-      resourceId: userToResetPassword.id,
-      clientId: userToResetPassword.clientId,
-      details: `Reset password for user: ${userToResetPassword.name}`,
-      timestamp: new Date(),
-    };
-    setAuditLogs([log, ...auditLogs]);
+      setIsResetPasswordDialogOpen(false);
+      setResetPasswordValue('');
+      setResetPasswordAutoGenerate(true);
+      
+      toast.success(`Password reset for ${userToResetPassword.name}`, {
+        description: resetPasswordAutoGenerate 
+          ? `New password: ${finalPassword} (copied to clipboard)` 
+          : `Password updated successfully`,
+        duration: 8000,
+      });
+      
+      // Auto-copy generated password to clipboard
+      if (resetPasswordAutoGenerate) {
+        copyToClipboard(finalPassword);
+      }
+    } catch (error: any) {
+      toast.error('Failed to reset password', {
+        description: error?.message || 'Please try again',
+      });
+    }
     
     setUserToResetPassword(null);
   };

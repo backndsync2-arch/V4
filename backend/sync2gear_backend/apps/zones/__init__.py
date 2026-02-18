@@ -1,1 +1,0 @@
-# Zones and Devices app

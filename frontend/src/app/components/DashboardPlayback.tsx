@@ -121,6 +121,18 @@ export function DashboardPlayback() {
   const [timeUntilNextAnnouncement, setTimeUntilNextAnnouncement] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
 
+  // isInPlaybackModeRef: true when the user hit "Start" and hasn't hit "Stop".
+  // This is different from localIsPlaying (which goes false when a track ends naturally).
+  // We use it to prevent the auto-advance logic from being killed by the end of a track.
+  const isInPlaybackModeRef = useRef(false);
+
+  // Stable refs for announcement state so closures inside setTimeout / onEnded
+  // always see the latest values even when the folder changes mid-session.
+  const selectedAnnouncementIdsRef = useRef(selectedAnnouncementIds);
+  const announcementIntervalRef = useRef(announcementInterval);
+  useEffect(() => { selectedAnnouncementIdsRef.current = selectedAnnouncementIds; }, [selectedAnnouncementIds]);
+  useEffect(() => { announcementIntervalRef.current = announcementInterval; }, [announcementInterval]);
+
   // Audio refs (announcements only; music uses the global LocalPlayer)
   const announcementAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -131,6 +143,14 @@ export function DashboardPlayback() {
   // Get current music and announcement
   const currentMusic = selectedMusicIds[currentMusicIndex] 
     ? filteredMusic.find(m => m.id === selectedMusicIds[currentMusicIndex])
+    : null;
+
+  // Next song in the queue (for "Up Next" display)
+  const nextMusicIndex = selectedMusicIds.length > 1
+    ? (currentMusicIndex + 1) % selectedMusicIds.length
+    : -1;
+  const nextMusic = nextMusicIndex >= 0 && selectedMusicIds[nextMusicIndex]
+    ? filteredMusic.find(m => m.id === selectedMusicIds[nextMusicIndex])
     : null;
 
   // Get current announcement based on index (cycles through selected announcements)
@@ -180,7 +200,12 @@ export function DashboardPlayback() {
         await playbackAPI.play(zoneId, [], false, selectedMusicIds);
       }
 
+      // Mark that we're in an active playback session.
+      // This prevents the track-ended auto-advance from being gated by a false
+      // "not playing" state that occurs between tracks.
+      isInPlaybackModeRef.current = true;
       setLocalIsPlayingState(true);
+      setCurrentMusicIndex(0); // Always start from first selected track
       // Only start announcement countdown if announcements are selected from folder
       // Announcements will play turnwise from the selected folder
       setTimeUntilNextAnnouncement(selectedAnnouncementIds.length > 0 ? announcementInterval : 0);
@@ -216,6 +241,8 @@ export function DashboardPlayback() {
         await playbackAPI.pause(activeTarget);
       }
 
+      // Clear playback mode so the system won't try to auto-advance after stop
+      isInPlaybackModeRef.current = false;
       setLocalIsPlayingState(false);
       setIsPlayingAnnouncement(false);
       setTimeUntilNextAnnouncement(0);
@@ -338,10 +365,12 @@ export function DashboardPlayback() {
         }
 
         setIsPlayingAnnouncement(false);
-        // Cycle to next announcement in the queue (continuous loop)
-        setCurrentAnnouncementIndex((prev) => (prev + 1) % selectedAnnouncementIds.length);
-        // Reset timer for next announcement
-        setTimeUntilNextAnnouncement(announcementInterval);
+        // Cycle to next announcement in the queue (continuous loop).
+        // Use stable refs so a folder change mid-cycle uses the latest list length.
+        const latestLen = selectedAnnouncementIdsRef.current.length;
+        setCurrentAnnouncementIndex((prev) => latestLen > 0 ? (prev + 1) % latestLen : 0);
+        // Reset timer for next announcement (use latest interval in case it was changed)
+        setTimeUntilNextAnnouncement(announcementIntervalRef.current);
       };
 
       ann.addEventListener('ended', onEnded);
@@ -445,20 +474,25 @@ export function DashboardPlayback() {
     }
   }, [playbackState, playbackNowPlaying?.isPlaying]);
 
-  // Sync with local player state
+  // Sync with local player state.
+  // IMPORTANT: only set localIsPlayingState = false when the user explicitly stops/pauses
+  // (isInPlaybackModeRef.current === false). When a track ends naturally, localIsPlaying
+  // becomes false momentarily before the next track loads — we must NOT flip the session
+  // off during that gap or the auto-advance useEffect below will be gated out.
   useEffect(() => {
-    // If local player is playing, update local state
     if (localIsPlaying) {
       setLocalIsPlayingState(true);
-    } else if (!isBackendPlaying) {
-      // Only set to false if backend is also not playing
+    } else if (!isBackendPlaying && !isInPlaybackModeRef.current) {
+      // Safe to set false only when there is genuinely no active session
       setLocalIsPlayingState(false);
     }
   }, [localIsPlaying, isBackendPlaying]);
 
-  // Play next track when the index changes (allowed once playback has started)
+  // Play next track when the index changes (auto-advance loop).
+  // Uses isInPlaybackModeRef instead of `isPlaying` to avoid the momentary false
+  // state that occurs between tracks.
   useEffect(() => {
-    if (!isPlaying) return;
+    if (!isInPlaybackModeRef.current) return;
     if (!currentMusic?.url) return;
     playLocal({
       id: String(currentMusic.id),
@@ -471,27 +505,24 @@ export function DashboardPlayback() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMusicIndex]);
 
-  // Handle track ended - auto-advance to next song in queue
+  // Handle track ended - auto-advance to next song and loop back to start.
+  // Relies on the localPlayer fix (trackRef) so event.detail.trackId is always correct.
+  // We no longer check trackId strictly — any track-ended event while in playback mode
+  // and not playing an announcement means we should advance (music player only fires this).
   useEffect(() => {
-    const handleTrackEnded = (event: CustomEvent) => {
-      // Only auto-advance if we're playing and not playing an announcement
-      if (!isPlaying || isPlayingAnnouncement) return;
-      
-      // Check if this is the current track
-      if (event.detail?.trackId === currentMusic?.id) {
-        // Advance to next track in queue
-        if (selectedMusicIds.length > 0) {
-          setCurrentMusicIndex((prev) => {
-            const nextIndex = (prev + 1) % selectedMusicIds.length;
-            return nextIndex;
+    const handleTrackEnded = (_event: CustomEvent) => {
+      // Guard: only advance when an active session is running and no announcement overlay
+      if (!isInPlaybackModeRef.current || isPlayingAnnouncement) return;
+
+      if (selectedMusicIds.length > 0) {
+        // Advance to next track; wraps back to 0 after the last track → continuous loop
+        setCurrentMusicIndex((prev) => (prev + 1) % selectedMusicIds.length);
+
+        // Also signal the backend
+        if (activeTarget) {
+          playbackAPI.next(activeTarget).catch((e) => {
+            console.error('Failed to advance backend track:', e);
           });
-          
-          // Also advance backend playback
-          if (activeTarget) {
-            playbackAPI.next(activeTarget).catch((e) => {
-              console.error('Failed to advance backend track:', e);
-            });
-          }
         }
       }
     };
@@ -500,7 +531,8 @@ export function DashboardPlayback() {
     return () => {
       window.removeEventListener('track-ended', handleTrackEnded as EventListener);
     };
-  }, [isPlaying, isPlayingAnnouncement, currentMusic?.id, selectedMusicIds.length, activeTarget, filteredZones]);
+    // Re-register when any of these change so the handler is always fresh
+  }, [isPlayingAnnouncement, selectedMusicIds.length, activeTarget]);
 
   // Format time
   const formatTime = (seconds: number) => {
@@ -565,7 +597,17 @@ export function DashboardPlayback() {
                 setSelectedMusicFolderId(value);
                 // Auto-select all tracks in the selected folder (filtered by zone)
                 const folderMusic = filteredMusic.filter((m: any) => m.folderId === value);
-                setSelectedMusicIds(folderMusic.map(m => m.id));
+                const newIds = folderMusic.map((m: any) => m.id);
+                setSelectedMusicIds(newIds);
+                setCurrentMusicIndex(0); // Always restart from the first track in the new folder
+                // If a session is active, immediately start playing the first track of the new folder
+                if (isInPlaybackModeRef.current && folderMusic.length > 0 && folderMusic[0]?.url) {
+                  playLocal({
+                    id: String(folderMusic[0].id),
+                    title: String(folderMusic[0].name),
+                    url: String(folderMusic[0].url),
+                  }).catch((e: any) => console.error('Folder switch play failed:', e));
+                }
               }
             }}
           >
@@ -764,14 +806,18 @@ export function DashboardPlayback() {
                             return String(a.zoneId || '') === String(activeTarget || '') || a.zone === activeTarget;
                           })
                         : announcements;
-                      setSelectedAnnouncementIds(zoneFiltered.filter((a: any) => a.enabled).map(a => a.id));
+                      setSelectedAnnouncementIds(zoneFiltered.filter((a: any) => a.enabled).map((a: any) => a.id));
+                      // Reset rotation index so next announcement starts from the beginning
+                      setCurrentAnnouncementIndex(0);
                     } else {
                       setSelectedAnnouncementFolderId(value);
                       // Auto-select all announcements in the selected folder (already filtered by zone)
                       const folderAnnouncements = filteredAnnouncements.filter((a: any) => 
                         (a.category === value || a.folderId === value) && a.enabled
                       );
-                      setSelectedAnnouncementIds(folderAnnouncements.map(a => a.id));
+                      setSelectedAnnouncementIds(folderAnnouncements.map((a: any) => a.id));
+                      // Reset rotation index so new folder starts from its first announcement
+                      setCurrentAnnouncementIndex(0);
                     }
                   }}
                 >
@@ -1067,11 +1113,22 @@ export function DashboardPlayback() {
                     <p className="font-bold text-lg text-white truncate">{currentMusic.name}</p>
                     <p className="text-sm text-gray-400 mt-1.5 font-medium">
                       Track {currentMusicIndex + 1} of {selectedMusicIds.length}
+                      {selectedMusicIds.length > 1 && ' · Looping'}
                     </p>
                   </div>
+                  {/* Up Next */}
+                  {nextMusic && (
+                    <div className="flex items-center gap-2 p-2.5 bg-white/5 rounded-lg border border-white/10">
+                      <SkipForward className="h-4 w-4 text-gray-400 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-gray-400 font-medium">Up Next</p>
+                        <p className="text-sm text-gray-300 font-semibold truncate">{nextMusic.name}</p>
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 text-sm text-gray-300 p-2.5 bg-white/5 rounded-lg border border-white/10">
                     <Clock className="h-4 w-4 text-[#1db954]" />
-                    <span className="font-medium">Playing for {formatTime(elapsedTime)}</span>
+                    <span className="font-medium">Session time: {formatTime(elapsedTime)}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-300 p-2.5 bg-white/5 rounded-lg border border-white/10">
                     <Volume2 className="h-4 w-4 text-[#1db954]" />

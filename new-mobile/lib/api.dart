@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -84,7 +85,13 @@ Future<String?> getProfileAvatar() async {
 
 Future<Map<String, dynamic>> login(String email, String password) async {
   final url = Uri.parse('$apiBase/auth/login/');
-  final res = await http.post(url, headers: {'Content-Type': 'application/json'}, body: jsonEncode({'email': email, 'password': password}));
+  final res = await http.post(
+    url, 
+    headers: {'Content-Type': 'application/json'}, 
+    body: jsonEncode({'email': email, 'password': password})
+  ).timeout(const Duration(seconds: 15), onTimeout: () {
+    throw Exception('Login request timeout - check your internet connection');
+  });
   if (res.statusCode >= 200 && res.statusCode < 300) {
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     final access = data['access'] as String? ?? '';
@@ -94,7 +101,72 @@ Future<Map<String, dynamic>> login(String email, String password) async {
     }
     return data;
   }
-  throw Exception('Login failed');
+  throw Exception('Login failed: ${res.statusCode}');
+}
+
+// --- NEW S3 UPLOAD FUNCTIONS ---
+
+Future<Map<String, dynamic>> getPresignedUploadUrl(String filename, String contentType, {String? folderId, String? zoneId}) async {
+  final url = Uri.parse('$apiBase/music/upload-url/');
+  final body = {
+    'filename': filename,
+    'contentType': contentType,
+    if (folderId != null) 'folder_id': folderId,
+    if (zoneId != null) 'zone_id': zoneId,
+  };
+  
+  final res = await http.post(url, headers: await _authHeaders(), body: jsonEncode(body));
+  if (res.statusCode >= 200 && res.statusCode < 300) {
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+  throw Exception('Failed to get upload URL: ${res.body}');
+}
+
+Future<Map<String, dynamic>> completeS3Upload(String s3Key, String title, {String? artist, String? album, String? genre, String? year, String? folderId, String? zoneId, int? duration, int? fileSize}) async {
+  final url = Uri.parse('$apiBase/music/files/complete/');
+  final body = {
+    's3Key': s3Key,
+    'title': title,
+    if (artist != null) 'artist': artist,
+    if (album != null) 'album': album,
+    if (genre != null) 'genre': genre,
+    if (year != null) 'year': year,
+    if (folderId != null) 'folder_id': folderId,
+    if (zoneId != null) 'zone_id': zoneId,
+    if (duration != null) 'duration': duration,
+    if (fileSize != null) 'fileSize': fileSize,
+  };
+  
+  final res = await http.post(url, headers: await _authHeaders(), body: jsonEncode(body));
+  if (res.statusCode >= 200 && res.statusCode < 300) {
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+  throw Exception('Failed to complete upload: ${res.body}');
+}
+
+// Upload file using S3 presigned URL (for large files)
+Future<Map<String, dynamic>> uploadFileToS3(String filePath, String filename, {String? folderId, String? zoneId, String? title}) async {
+  // Step 1: Get presigned upload URL
+  final uploadInfo = await getPresignedUploadUrl(filename, 'audio/mpeg', folderId: folderId, zoneId: zoneId);
+  final uploadUrl = uploadInfo['uploadUrl'] as String;
+  final s3Key = uploadInfo['s3Key'] as String;
+  
+  // Step 2: Upload file directly to S3
+  final file = File(filePath);
+  final fileBytes = await file.readAsBytes();
+  
+  final uploadRes = await http.put(
+    Uri.parse(uploadUrl),
+    headers: {'Content-Type': 'audio/mpeg'},
+    body: fileBytes,
+  );
+  
+  if (uploadRes.statusCode != 200) {
+    throw Exception('Failed to upload to S3: ${uploadRes.statusCode}');
+  }
+  
+  // Step 3: Complete upload in database
+  return await completeS3Upload(s3Key, title ?? filename, folderId: folderId, zoneId: zoneId, fileSize: fileBytes.length);
 }
 
 // --- Music & Folders ---
@@ -116,6 +188,26 @@ Future<List<dynamic>> getMusicFiles({String? folderId, String? zoneId, String? s
     return [];
   }
   throw Exception('Failed to load music');
+}
+
+// Keep existing upload function for backward compatibility
+Future<void> uploadFile(String filePath, String type, {String? folderId, String? title}) async {
+  final url = Uri.parse('$apiBase/music/files/');
+  final token = await getAccessToken();
+  final request = http.MultipartRequest('POST', url);
+  if (token != null) request.headers['Authorization'] = 'Bearer $token';
+
+  request.fields['type'] = type; // 'music' or 'announcement'
+  if (folderId != null) request.fields['folder'] = folderId;
+  if (title != null) request.fields['title'] = title;
+  
+  request.files.add(await http.MultipartFile.fromPath('file', filePath));
+
+  final streamedRes = await request.send();
+  final res = await http.Response.fromStream(streamedRes);
+  if (res.statusCode < 200 || res.statusCode >= 300) {
+    throw Exception('Upload failed: ${res.body}');
+  }
 }
 
 Future<List<dynamic>> getFolders({String type = 'music', String? parentId, String? zoneId}) async {
@@ -146,25 +238,6 @@ Future<void> createFolder(String name, String type, {String? parentId, String? d
   
   if (res.statusCode < 200 || res.statusCode >= 300) {
     throw Exception('Failed to create folder: ${res.body}');
-  }
-}
-
-Future<void> uploadFile(String filePath, String type, {String? folderId, String? title}) async {
-  final url = Uri.parse('$apiBase/music/files/');
-  final token = await getAccessToken();
-  final request = http.MultipartRequest('POST', url);
-  if (token != null) request.headers['Authorization'] = 'Bearer $token';
-
-  request.fields['type'] = type; // 'music' or 'announcement'
-  if (folderId != null) request.fields['folder'] = folderId;
-  if (title != null) request.fields['title'] = title;
-  
-  request.files.add(await http.MultipartFile.fromPath('file', filePath));
-
-  final streamedRes = await request.send();
-  final res = await http.Response.fromStream(streamedRes);
-  if (res.statusCode < 200 || res.statusCode >= 300) {
-    throw Exception('Upload failed: ${res.body}');
   }
 }
 

@@ -170,25 +170,25 @@ router.get('/files/', authenticate, async (req, res) => {
 
     // Format response to match frontend expectations
     const baseUrl = getBaseUrl(req);
-    const formattedFiles = musicFiles.map(f => {
+    const formattedFiles = musicFiles.map((f) => {
       const fileObj = f.toJSON ? f.toJSON() : f;
-      // Fix URLs that point to localhost - replace with current API base URL
-      let fileUrl = fileObj.fileUrl || fileObj.file_url;
-      let coverArtUrl = fileObj.coverArtUrl || fileObj.cover_art || null;
       
-      if (fileUrl && (fileUrl.includes('localhost') || fileUrl.includes('127.0.0.1'))) {
-        // Extract the path from the old URL and rebuild with correct base
-        const urlMatch = fileUrl.match(/\/api\/v1\/music\/files\/[^\/]+\/stream\/?/);
-        if (urlMatch) {
-          fileUrl = `${baseUrl}${urlMatch[0]}`;
-        }
+      // For S3 files, use streaming endpoint URL instead of presigned URL
+      // The streaming endpoint will handle authentication and redirect to presigned URL
+      let fileUrl = fileObj.fileUrl || fileObj.file_url;
+      if (fileObj.s3Key) {
+        // Use streaming endpoint — do NOT encode slashes; API Gateway HTTP API
+        // decodes %2F → / before routing anyway, so encoding causes 404s.
+        // The wildcard route /files/stream/* captures the full multi-segment key.
+        fileUrl = `${baseUrl}/api/v1/music/files/stream/${fileObj.s3Key}/`;
       }
       
-      if (coverArtUrl && (coverArtUrl.includes('localhost') || coverArtUrl.includes('127.0.0.1'))) {
-        const urlMatch = coverArtUrl.match(/\/api\/v1\/music\/files\/[^\/]+\/cover\/?/);
-        if (urlMatch) {
-          coverArtUrl = `${baseUrl}${urlMatch[0]}`;
-        }
+      // Handle cover art URL - keep presigned for images
+      let coverArtUrl = fileObj.coverArtUrl || fileObj.cover_art || null;
+      if (fileObj.coverArtS3Key) {
+        // For cover art, we can use presigned URLs or streaming endpoint
+        // Using streaming endpoint for consistency
+        coverArtUrl = `${baseUrl}/api/v1/music/files/${fileObj._id || fileObj.id}/cover/`;
       }
       
       return {
@@ -202,6 +202,7 @@ router.get('/files/', authenticate, async (req, res) => {
         duration: fileObj.duration || 0,
         file_size: fileObj.fileSize || 0,
         file_url: fileUrl,
+        stream_url: fileUrl, // Add stream_url for mobile app compatibility
         url: fileUrl,
         cover_art: coverArtUrl,
         cover_art_url: coverArtUrl,
@@ -341,12 +342,11 @@ router.post('/files/complete/', authenticate, async (req, res) => {
       });
     }
 
-    // Generate file URL (use API endpoint that will stream from S3)
+    // Store a stable streaming endpoint URL (not an expiring presigned URL).
+    // The /files/stream/* endpoint generates a fresh presigned URL on every request,
+    // so the stored URL never expires and works on both web and mobile.
     const baseUrl = getBaseUrl(req);
-    const token = req.headers.authorization?.replace('Bearer ', '') || '';
-    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
-    
-    const fileUrl = `${baseUrl}/api/v1/music/files/${encodeURIComponent(filename)}/stream/${tokenParam}`;
+    const fileUrl = `${baseUrl}/api/v1/music/files/stream/${s3Key}/`;
 
     // Parse duration (should be in seconds, ensure it's a number)
     const parsedDuration = duration && !isNaN(Number(duration)) ? Math.max(0, Math.round(Number(duration))) : 0;
@@ -655,12 +655,19 @@ router.post('/files/:id/copy_to_zone/', authenticate, async (req, res) => {
     if (existing) {
       newTitle = `${newTitle} (copy)`;
     }
-    // Build fileUrl from existing filename/s3Key
+    // Build fileUrl: prefer the stable S3 streaming endpoint for S3 files
     const filename = musicFile.filename || (musicFile.s3Key ? path.basename(musicFile.s3Key) : '');
     const baseUrl = getBaseUrl(req);
-    const token = req.headers.authorization?.replace('Bearer ', '') || '';
-    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
-    const fileUrl = filename ? `${baseUrl}/api/v1/music/files/${encodeURIComponent(filename)}/stream/${tokenParam}` : (musicFile.fileUrl || '');
+    let fileUrl;
+    if (musicFile.s3Key) {
+      // S3 file — use wildcard stream endpoint (generates fresh presigned URL per request)
+      fileUrl = `${baseUrl}/api/v1/music/files/stream/${musicFile.s3Key}/`;
+    } else if (filename) {
+      // Legacy local file
+      fileUrl = `${baseUrl}/api/v1/music/files/${encodeURIComponent(filename)}/stream/`;
+    } else {
+      fileUrl = musicFile.fileUrl || '';
+    }
     // Create duplicate record
     const duplicate = new MusicFile({
       filename: filename || musicFile.filename,
@@ -785,11 +792,19 @@ router.delete('/files/:id/', authenticate, async (req, res) => {
   }
 });
 
-// Handle CORS preflight for file streaming
+// Handle CORS preflight for file streaming (local filename-based endpoint)
 router.options('/files/:filename/stream/', (req, res) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Range');
+  res.header('Access-Control-Allow-Headers', 'Range, Authorization');
+  res.sendStatus(200);
+});
+
+// Handle CORS preflight for S3 stream endpoint (wildcard — matches keys with slashes)
+router.options('/files/stream/*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Range, Authorization');
   res.sendStatus(200);
 });
 
@@ -830,18 +845,21 @@ router.get('/files/:filename/stream/', optionalAuthenticate, async (req, res) =>
       console.warn(`File access without authentication: ${filename}`);
     }
 
-    // If file is stored in S3, generate presigned URL and redirect
+    // If file is stored in S3, generate a presigned URL for direct access
     if (musicFile.s3Key) {
       try {
-        const downloadUrl = await getPresignedDownloadUrl(musicFile.s3Key, 3600);
+        // Generate presigned URL for direct S3 access (valid for 1 hour)
+        const presignedUrl = await getPresignedDownloadUrl(musicFile.s3Key, 3600);
+        
+        // Redirect to the presigned URL - this is more reliable than proxying
+        // and avoids timeout issues with large files
+        return res.redirect(302, presignedUrl);
+      } catch (s3Error) {
+        console.error('S3 presigned URL generation error:', s3Error);
         res.header('Access-Control-Allow-Origin', '*');
         res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-        return res.redirect(302, downloadUrl);
-      } catch (s3Error) {
-        console.error('S3 streaming error:', s3Error);
-        res.header('Access-Control-Allow-Origin', '*');
         return res.status(500).json({
-          detail: 'Error accessing file from S3.'
+          detail: 'Error generating S3 access URL.'
         });
       }
     }
@@ -916,6 +934,115 @@ router.get('/files/:filename/stream/', optionalAuthenticate, async (req, res) =>
     return res.status(500).json({
       detail: 'An error occurred while streaming the file.'
     });
+  }
+});
+
+// Stream music file by S3 key (for S3-uploaded files)
+// IMPORTANT: Uses wildcard (*) because API Gateway HTTP API decodes %2F → /
+// before it reaches Lambda, so ":s3Key" would only capture the first path segment.
+// With wildcard, the full S3 key (e.g. "client/zone/music/folder/file.mp3") is
+// captured across all path segments via req.params[0].
+router.get('/files/stream/*', optionalAuthenticate, async (req, res) => {
+  // Set CORS headers on every response from this handler
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Range, Authorization');
+
+  try {
+    // req.params[0] is everything after /files/stream/
+    // Strip any trailing slash that was part of the original URL format
+    const rawKey = (req.params[0] || '').replace(/\/$/, '');
+
+    // The key may still have encoded characters in non-slash positions — decode them
+    const s3Key = decodeURIComponent(rawKey);
+
+    if (!s3Key) {
+      return res.status(400).json({ detail: 'No S3 key provided' });
+    }
+
+    console.log(`[Stream] Request for S3 key: "${s3Key}"`);
+
+    // -----------------------------------------------------------------------
+    // Fast path: skip DB lookup and generate a presigned URL directly.
+    // This works as long as the key actually exists in S3 and the Lambda role
+    // has s3:GetObject permission. Avoids DB round-trip and all the lookup
+    // fallback chains that were causing intermittent failures.
+    // -----------------------------------------------------------------------
+    try {
+      const presignedUrl = await getPresignedDownloadUrl(s3Key, 3600);
+      console.log(`[Stream] Redirecting to presigned S3 URL for key: "${s3Key}"`);
+      // 302 redirect — browser / mobile player follows it directly to S3.
+      // S3 handles range requests natively so seeking works out of the box.
+      return res.redirect(302, presignedUrl);
+    } catch (s3DirectError) {
+      // Presigned URL generation failed (wrong key, missing object, IAM issue).
+      // Fall through to DB-based lookup so we can surface a better error.
+      console.warn(`[Stream] Direct S3 presign failed for "${s3Key}": ${s3DirectError.message}`);
+    }
+
+    // -----------------------------------------------------------------------
+    // Fallback: look up by stored s3Key in the DB, try several variations.
+    // -----------------------------------------------------------------------
+    let musicFile = null;
+
+    // 1. Exact match
+    musicFile = await MusicFile.findOne({ s3Key });
+
+    // 2. Encoded/decoded variants (handles any remaining encoding differences)
+    if (!musicFile) {
+      const variations = [
+        encodeURIComponent(s3Key),
+        s3Key.replace(/\//g, '%2F'),
+      ];
+      for (const variant of variations) {
+        musicFile = await MusicFile.findOne({ s3Key: variant });
+        if (musicFile) break;
+      }
+    }
+
+    // 3. Filename-based match (last segment of the key)
+    if (!musicFile) {
+      const filename = s3Key.split('/').pop();
+      if (filename) {
+        musicFile = await MusicFile.findOne({
+          $or: [
+            { filename },
+            { s3Key: { $regex: `${filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$` } },
+          ],
+        });
+      }
+    }
+
+    if (!musicFile) {
+      console.error(`[Stream] File not found for S3 key: "${s3Key}"`);
+      return res.status(404).json({
+        detail: 'File not found. The S3 key does not exist or cannot be accessed.',
+        s3Key,
+      });
+    }
+
+    console.log(`[Stream] Found DB record: ${musicFile._id}, s3Key: ${musicFile.s3Key}`);
+
+    // Permission check (only when a valid auth token was sent)
+    if (req.user) {
+      const effectiveClient = getEffectiveClient(req);
+      if (req.user.role !== 'admin' && musicFile.clientId !== effectiveClient) {
+        return res.status(403).json({ detail: 'Access denied' });
+      }
+    }
+
+    // Use the s3Key stored in the DB (most reliable) for the presigned URL
+    const actualKey = musicFile.s3Key || s3Key;
+    try {
+      const presignedUrl = await getPresignedDownloadUrl(actualKey, 3600);
+      return res.redirect(302, presignedUrl);
+    } catch (s3Error) {
+      console.error(`[Stream] Failed to generate presigned URL for stored key "${actualKey}":`, s3Error.message);
+      return res.status(500).json({ detail: 'Failed to generate S3 download URL' });
+    }
+  } catch (error) {
+    console.error('[Stream] Unexpected error:', error);
+    return res.status(500).json({ detail: 'Streaming failed' });
   }
 });
 

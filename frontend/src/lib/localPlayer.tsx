@@ -26,6 +26,9 @@ const LocalPlayerContext = createContext<LocalPlayerContextType | undefined>(und
 export function LocalPlayerProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [track, setTrack] = useState<LocalTrack | null>(null);
+  // trackRef always holds the latest track so closures in audio event listeners
+  // (which are attached once with [] deps) never see a stale value.
+  const trackRef = useRef<LocalTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -43,6 +46,11 @@ export function LocalPlayerProvider({ children }: { children: React.ReactNode })
     }
     return audioRef.current;
   };
+
+  // Keep trackRef in sync so audio event-listener closures always have the current id
+  useEffect(() => {
+    trackRef.current = track;
+  }, [track]);
 
   // Keep audio volume in sync
   useEffect(() => {
@@ -89,8 +97,9 @@ export function LocalPlayerProvider({ children }: { children: React.ReactNode })
     const onEnded = () => {
       setIsPlaying(false);
       setCurrentTime(0);
-      // Emit custom event for track ended so components can handle queue advancement
-      window.dispatchEvent(new CustomEvent('track-ended', { detail: { trackId: track?.id } }));
+      // Use trackRef (not the stale `track` closure) so the correct id is dispatched
+      // even though this listener was registered once with an empty-deps effect.
+      window.dispatchEvent(new CustomEvent('track-ended', { detail: { trackId: trackRef.current?.id } }));
     };
     const onError = () => {
       setIsPlaying(false);

@@ -1,0 +1,8 @@
+- [ ] APK built with S3 upload implementation
+- [ ] APK installed on physical device successfully
+- [ ] Music upload works without "Upload failed" error
+- [ ] Announcement upload works with S3 flow
+- [ ] Files appear in backend after upload
+- [ ] Upload success message shows "Uploaded successfully to S3"
+- [ ] Error messages show specific details for debugging
+- [ ] Multi-device access confirmed working

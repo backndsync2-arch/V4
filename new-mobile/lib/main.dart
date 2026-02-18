@@ -12,15 +12,25 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'package:http/http.dart' as http;
 import 'api.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.sync2gear.playback',
-    androidNotificationChannelName: 'Media Playback',
-    androidNotificationOngoing: true,
-  );
+  // Make JustAudioBackground completely optional - don't block app startup
+  try {
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.sync2gear.playback',
+      androidNotificationChannelName: 'Media Playback',
+      androidNotificationOngoing: true,
+    ).timeout(const Duration(seconds: 2), onTimeout: () {
+      print('JustAudioBackground init timeout - continuing anyway');
+    });
+  } catch (e) {
+    print('JustAudioBackground init error: $e - continuing anyway');
+    // Continue even if it fails completely
+  }
+  // Run app regardless of JustAudioBackground status
   runApp(const App());
 }
 
@@ -31,7 +41,10 @@ class ZoneModel extends ChangeNotifier {
 
   Future<void> loadZones() async {
     try {
-      zones = await getZones();
+      zones = await getZones().timeout(const Duration(seconds: 10), onTimeout: () {
+        print('Load zones timeout');
+        return <dynamic>[];
+      });
       if (zones.isNotEmpty && _selectedZoneId == null) {
         _selectedZoneId = (zones.first['id'] ?? zones.first['zone_id']).toString();
         await setSelectedZoneId(_selectedZoneId);
@@ -39,6 +52,8 @@ class ZoneModel extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       print('Failed to load zones: $e');
+      zones = [];
+      notifyListeners();
     }
   }
 
@@ -65,9 +80,9 @@ class App extends StatelessWidget {
       child: MaterialApp(
         title: 'Sync2Gear',
         debugShowCheckedModeBanner: false,
-        theme: _lightTheme,
+        theme: _darkTheme, // Force dark theme always
         darkTheme: _darkTheme,
-        themeMode: context.watch<ThemeModel>().mode,
+        themeMode: ThemeMode.dark, // Force dark mode
         home: const Root(),
       ),
     );
@@ -97,6 +112,28 @@ class AuthModel extends ChangeNotifier {
   String? email;
   bool get isAdmin => email?.toLowerCase().contains('admin') ?? false;
 
+  AuthModel() {
+    _checkAuthStatus();
+  }
+
+  Future<void> _checkAuthStatus() async {
+    try {
+      final token = await getAccessToken();
+      if (token != null && token.isNotEmpty) {
+        // Token exists, but don't auto-login - let user login manually
+        // This prevents hanging on invalid tokens
+        isLoggedIn = false;
+      } else {
+        isLoggedIn = false;
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Auth check error: $e');
+      isLoggedIn = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> loginWith(String e, String p) async {
     await login(e, p);
     email = e;
@@ -106,6 +143,7 @@ class AuthModel extends ChangeNotifier {
   Future<void> logout() async {
     await clearTokens();
     isLoggedIn = false;
+    email = null;
     notifyListeners();
   }
 }
@@ -178,35 +216,66 @@ class PlayerModel extends ChangeNotifier {
   }
 
   Future<void> _init() async {
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.music());
-    await player.setVolume(volume);
-    await player.setLoopMode(loopMode);
-    await player.setShuffleModeEnabled(shuffleEnabled);
-    await player.setSpeed(speed);
-    player.playbackEventStream.listen((event) {
-      duration = event.duration ?? Duration.zero;
-      playing = player.playing;
-      notifyListeners();
-    });
-    player.positionStream.listen((pos) {
-      position = pos;
-      notifyListeners();
-    });
-    player.currentIndexStream.listen((i) {
-      if (i != null && i >= 0 && i < _playlistTitles.length) {
-        currentTitle = _playlistTitles[i];
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+      await player.setVolume(volume);
+      await player.setLoopMode(loopMode);
+      await player.setShuffleModeEnabled(shuffleEnabled);
+      await player.setSpeed(speed);
+      
+      // Add error handling and state monitoring
+      player.playerStateStream.listen((state) {
+        print('Player state: $state, processingState: ${state.processingState}');
+        if (state.processingState == ProcessingState.idle && state.playing) {
+          print('WARNING: Player is idle but marked as playing - may indicate loading issue');
+        }
+      });
+      
+      // Listen for playback errors
+      player.playbackEventStream.listen((event) {
+        duration = event.duration ?? Duration.zero;
+        playing = player.playing;
+        if (event.processingState == ProcessingState.idle && !playing) {
+          print('WARNING: Player is idle and not playing - may indicate error');
+        }
         notifyListeners();
-      }
-    });
+      }, onError: (error) {
+        print('ERROR in playbackEventStream: $error');
+      });
+      player.positionStream.listen((pos) {
+        position = pos;
+        notifyListeners();
+      });
+      player.currentIndexStream.listen((i) {
+        if (i != null && i >= 0 && i < _playlistTitles.length) {
+          currentTitle = _playlistTitles[i];
+          notifyListeners();
+        }
+      });
+    } catch (e) {
+      print('Error initializing player: $e');
+    }
   }
 
   List<String> get playlistTitles => _playlistTitles;
 
   Future<void> playUrl(String url, String title) async {
     currentTitle = title;
+    final token = await getAccessToken();
+    final headers = <String, String>{};
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    
+    // Check if this is an API endpoint URL (needs auth) or presigned S3 URL (doesn't need auth)
+    final isApiEndpoint = url.contains('/api/v1/') || url.contains('execute-api');
+    final isPresignedS3 = url.contains('X-Amz-') || (url.contains('amazonaws.com') && !url.contains('/api/'));
+    final useHeaders = isApiEndpoint && !isPresignedS3 && headers.isNotEmpty;
+    
     final source = AudioSource.uri(
       Uri.parse(url),
+      headers: useHeaders ? headers : null,
       tag: MediaItem(
         id: url,
         title: title,
@@ -218,25 +287,159 @@ class PlayerModel extends ChangeNotifier {
   }
 
   Future<void> playUrls(List<Map<String, String>> items) async {
-    _playlistTitles = items.map((e) => e['title'] ?? '').toList();
-    final sources = items.map((e) {
-      final u = (e['url'] ?? '').toString();
-      final t = (e['title'] ?? '').toString();
-      if (u.isEmpty) return null;
-      return AudioSource.uri(
-        Uri.parse(u),
-        tag: MediaItem(
-          id: u,
-          title: t.isEmpty ? 'Audio' : t,
-          artUri: Uri.parse('asset:///assets/logo.png'),
-        ),
-      );
-    }).whereType<AudioSource>().toList();
-    if (sources.isEmpty) return;
-    final playlist = ConcatenatingAudioSource(children: sources);
-    await player.setAudioSource(playlist);
-    currentTitle = _playlistTitles.isNotEmpty ? _playlistTitles.first : null;
-    await player.play();
+    try {
+      print('playUrls called with ${items.length} items');
+      _playlistTitles = items.map((e) => e['title'] ?? '').toList();
+      
+      // Get token for headers
+      final token = await getAccessToken();
+      final headers = <String, String>{};
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+      
+      // Use URLs directly - they should already be presigned S3 URLs
+      // Skip redirect resolution to avoid hanging/timeouts
+      final resolvedItems = items.map((e) {
+        final u = (e['url'] ?? '').toString();
+        if (u.isEmpty) return null;
+        print('Using URL: $u');
+        return {
+          'url': u,
+          'title': e['title'] ?? '',
+        };
+      }).whereType<Map<String, String>>().toList();
+      
+      // Resolve redirects for API endpoints to get final S3 URLs
+      final resolvedUrls = await Future.wait(resolvedItems.map((e) async {
+        final u = (e['url'] ?? '').toString();
+        if (u.isEmpty) return {'url': u, 'title': e['title'] ?? ''};
+        
+        final isApiEndpoint = u.contains('/api/v1/') || u.contains('execute-api');
+        final isPresignedS3 = u.contains('X-Amz-') || (u.contains('amazonaws.com') && !u.contains('/api/'));
+        
+        // For API endpoints that redirect to S3, resolve the redirect
+        String finalUrl = u;
+        if (isApiEndpoint && !isPresignedS3 && headers.isNotEmpty) {
+          try {
+            print('Resolving redirect for API endpoint: $u');
+            final response = await http.head(Uri.parse(u), headers: headers).timeout(const Duration(seconds: 10));
+            if (response.statusCode == 302 || response.statusCode == 301) {
+              final location = response.headers['location'];
+              if (location != null && location.isNotEmpty) {
+                finalUrl = location;
+                print('Redirect resolved to: $finalUrl');
+              }
+            }
+          } catch (e) {
+            print('Error resolving redirect: $e, using original URL');
+          }
+        }
+        
+        return {'url': finalUrl, 'title': e['title'] ?? ''};
+      }));
+      
+      final sources = resolvedUrls.map((e) {
+        final u = (e['url'] ?? '').toString();
+        final t = (e['title'] ?? '').toString();
+        print('Processing final URL: $u');
+        if (u.isEmpty) {
+          print('Skipping empty URL');
+          return null;
+        }
+        try {
+          final uri = Uri.parse(u);
+          print('Parsed URI: $uri');
+          
+          // Check if this is an API endpoint URL (needs auth) or presigned S3 URL (doesn't need auth)
+          final isApiEndpoint = u.contains('/api/v1/') || u.contains('execute-api');
+          final isPresignedS3 = u.contains('X-Amz-') || (u.contains('amazonaws.com') && !u.contains('/api/'));
+          
+          // Use headers only for API endpoints that don't redirect (direct streaming)
+          // For presigned S3 URLs (including resolved redirects), no headers needed
+          final useHeaders = isApiEndpoint && !isPresignedS3 && headers.isNotEmpty;
+          
+          print('URL type - API endpoint: $isApiEndpoint, Presigned S3: $isPresignedS3, Using headers: $useHeaders');
+          
+          return AudioSource.uri(
+            uri,
+            headers: useHeaders ? headers : null,
+            tag: MediaItem(
+              id: u,
+              title: t.isEmpty ? 'Audio' : t,
+              artUri: Uri.parse('asset:///assets/logo.png'),
+            ),
+          );
+        } catch (e) {
+          print('Error creating AudioSource for $u: $e');
+          return null;
+        }
+      }).whereType<AudioSource>().toList();
+      
+      if (sources.isEmpty) {
+        print('No valid audio sources found');
+        return;
+      }
+      
+      print('Setting audio source with ${sources.length} sources');
+      final playlist = ConcatenatingAudioSource(children: sources);
+      
+      print('About to set audio source...');
+      try {
+        await player.setAudioSource(playlist);
+        print('Audio source set successfully');
+      } catch (e) {
+        print('ERROR setting audio source: $e');
+        rethrow;
+      }
+      
+      currentTitle = _playlistTitles.isNotEmpty ? _playlistTitles.first : null;
+      
+      // Wait for source to start loading
+      print('Waiting for source to load...');
+      int waitCount = 0;
+      while (player.playerState.processingState == ProcessingState.idle && waitCount < 10) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        waitCount++;
+        print('Waiting for load... state: ${player.playerState.processingState}');
+      }
+      
+      print('Current state before play: ${player.playerState.processingState}');
+      print('Calling player.play()');
+      
+      try {
+        await player.play();
+        print('player.play() call completed');
+      } catch (e) {
+        print('ERROR calling player.play(): $e');
+        rethrow;
+      }
+      
+      // Wait and check state
+      await Future.delayed(const Duration(milliseconds: 1500));
+      final finalState = player.playerState;
+      final isPlaying = player.playing;
+      print('After play() - playing: $isPlaying, state: $finalState');
+      print('Processing state: ${finalState.processingState}');
+      
+      // If not playing, check for errors
+      if (!isPlaying) {
+        print('WARNING: Player not playing after play() call');
+        if (finalState.processingState == ProcessingState.idle) {
+          print('ERROR: Player is idle - source may not have loaded or URL is invalid');
+        } else if (finalState.processingState == ProcessingState.loading) {
+          print('INFO: Player is still loading, may need more time');
+        } else if (finalState.processingState == ProcessingState.idle && !isPlaying) {
+          print('ERROR: Player is idle and not playing - likely an error');
+        }
+      } else {
+        print('SUCCESS: Player is playing!');
+      }
+    } catch (e, stackTrace) {
+      print('Error in playUrls: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
   }
 
   Future<void> pause() async {
@@ -279,6 +482,12 @@ class PlayerModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setLoopMode(LoopMode mode) async {
+    loopMode = mode;
+    await player.setLoopMode(loopMode);
+    notifyListeners();
+  }
+
   Future<void> setPlaybackSpeed(double s) async {
     speed = s;
     await player.setSpeed(speed);
@@ -306,15 +515,9 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.black, // Force black
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF121212), Color(0xFF000000)],
-          ),
-        ),
+        color: Colors.black, // Force black
         padding: const EdgeInsets.symmetric(horizontal: 32),
         child: Center(
           child: SingleChildScrollView(
@@ -326,31 +529,69 @@ class _LoginPageState extends State<LoginPage> {
                   child: Image.asset(
                     'assets/logo.png',
                     height: 80,
-                    errorBuilder: (c, e, s) => const Icon(Icons.music_note, size: 80, color: Colors.white),
+                    errorBuilder: (c, e, s) => Icon(Icons.music_note, size: 80, color: Theme.of(context).colorScheme.onSurface),
                   ),
                 ),
                 const SizedBox(height: 24),
-                const Text(
+                Text(
                   'Sync2Gear',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface),
                 ),
                 const SizedBox(height: 40),
-                const Text('Email or Username', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('Email or Username', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                 const SizedBox(height: 8),
-                TextField(
-                  controller: emailCtrl, 
-                  decoration: const InputDecoration(hintText: 'Email or Username'),
-                  style: const TextStyle(color: Colors.white),
+                Material(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF1DB954), width: 1),
+                    ),
+                    child: TextField(
+                      controller: emailCtrl, 
+                      decoration: const InputDecoration(
+                        hintText: 'Email or Username',
+                        hintStyle: TextStyle(color: Colors.white54),
+                        filled: false,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      ),
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
-                const Text('Password', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('Password', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                 const SizedBox(height: 8),
-                TextField(
-                  controller: passCtrl, 
-                  decoration: const InputDecoration(hintText: 'Password'), 
-                  obscureText: true,
-                  style: const TextStyle(color: Colors.white),
+                Material(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF1DB954), width: 1),
+                    ),
+                    child: TextField(
+                      controller: passCtrl, 
+                      decoration: const InputDecoration(
+                        hintText: 'Password',
+                        hintStyle: TextStyle(color: Colors.white54),
+                        filled: false,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      ), 
+                      obscureText: true,
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 32),
                 FilledButton(
@@ -377,7 +618,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   child: Column(
                     children: [
-                      const Text('Quick Access (Tap to Copy)', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                      Text('Quick Access (Tap to Copy)', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7), fontSize: 12)),
                       const SizedBox(height: 12),
                       _demoRow('Admin', 'admin@sync2gear.com'),
                       const SizedBox(height: 8),
@@ -401,10 +642,10 @@ class _LoginPageState extends State<LoginPage> {
       },
       child: Row(
         children: [
-          Text('$label:', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+          Text('$label:', style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
           const SizedBox(width: 8),
-          Expanded(child: Text(email, style: const TextStyle(color: Color(0xFFB3B3B3), fontSize: 12))),
-          const Icon(Icons.touch_app, size: 16, color: Color(0xFF1DB954)),
+          Expanded(child: Text(email, style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7), fontSize: 12))),
+          Icon(Icons.touch_app, size: 16, color: Theme.of(context).colorScheme.primary),
         ],
       ),
     );
@@ -456,10 +697,10 @@ class _MainScreenState extends State<MainScreen> {
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: zoneModel.selectedZoneId,
-                  icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-                  dropdownColor: const Color(0xFF2A2A2A),
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                  hint: const Text('Select Zone', style: TextStyle(color: Colors.white)),
+                  icon: Icon(Icons.arrow_drop_down, color: Theme.of(context).colorScheme.onSurface),
+                  dropdownColor: Theme.of(context).cardColor,
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold, fontSize: 16),
+                  hint: Text('Select Zone', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                   items: zoneModel.zones.map<DropdownMenuItem<String>>((z) {
                     final id = (z['id'] ?? z['zone_id']).toString();
                     return DropdownMenuItem<String>(value: id, child: Text(z['name'] ?? 'Unknown Zone'));
@@ -502,10 +743,10 @@ class _MainScreenState extends State<MainScreen> {
                     return DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         value: selected,
-                        icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-                        dropdownColor: const Color(0xFF2A2A2A),
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                        hint: const Text('Select Client', style: TextStyle(color: Colors.white)),
+                        icon: Icon(Icons.arrow_drop_down, color: Theme.of(context).colorScheme.onSurface),
+                        dropdownColor: Theme.of(context).cardColor,
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold, fontSize: 16),
+                        hint: Text('Select Client', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                         items: clients.map<DropdownMenuItem<String>>((c) {
                           final id = (c['id'] ?? '').toString();
                           final name = (c['name'] ?? c['business_name'] ?? 'Client').toString();
@@ -579,11 +820,13 @@ class _DashboardPageState extends State<DashboardPage> {
   List<dynamic> _allMusic = [];
   List<dynamic> _announcements = [];
   List<dynamic> _announcementFolders = [];
+  List<dynamic> _musicFolders = [];
   List<dynamic> _schedules = [];
   
   // Selection State
   final Set<String> _selectedMusicIds = {};
   String? _selectedAnnouncementFolderId;
+  String? _selectedMusicFolderId;
   
   // Sliders
   double _announcementInterval = 300; // seconds
@@ -593,9 +836,11 @@ class _DashboardPageState extends State<DashboardPage> {
 
   // Announcement Logic
   Timer? _announcementTimer;
+  Timer? _playbackStateTimer;
   int _nextAnnouncementIndex = 0;
-  final AudioPlayer _metaPlayer = AudioPlayer();
   final Map<String, int> _durationCache = {};
+  bool _wasPlayingBeforeAnnouncement = false;
+  int? _previousIndex;
 
   @override
   void initState() {
@@ -606,7 +851,7 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void dispose() {
     _announcementTimer?.cancel();
-    _metaPlayer.dispose();
+    _playbackStateTimer?.cancel();
     super.dispose();
   }
 
@@ -621,12 +866,26 @@ class _DashboardPageState extends State<DashboardPage> {
           _loadPlaybackState(),
           _loadContent(),
         ]);
+        // Start real-time playback state polling
+        _startPlaybackStatePolling();
       }
     } catch (e) {
       print(e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _startPlaybackStatePolling() {
+    _playbackStateTimer?.cancel();
+    // Poll every 2 seconds for real-time updates
+    _playbackStateTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (mounted) {
+        _loadPlaybackState();
+      } else {
+        timer.cancel();
+      }
+    });
   }
 
   Future<void> _loadPlaybackState() async {
@@ -651,17 +910,34 @@ class _DashboardPageState extends State<DashboardPage> {
       final zoneId = zm.selectedZoneId ?? _selectedZoneId;
       final m = await getMusicFiles(zoneId: zoneId);
       final a = await getAnnouncements(zoneId: zoneId);
-      final f = await getFolders(type: 'announcements', zoneId: zoneId);
+      final af = await getFolders(type: 'announcements', zoneId: zoneId);
+      final mf = await getFolders(type: 'music', zoneId: zoneId);
       final s = await getSchedules();
       if (mounted) {
         setState(() {
           _allMusic = m;
           _announcements = a;
-          _announcementFolders = f;
+          _announcementFolders = af;
+          _musicFolders = mf;
           _schedules = s;
         });
+        // Auto-select music when folder is selected
+        _updateMusicSelectionFromFolder();
       }
     } catch (_) {}
+  }
+
+  void _updateMusicSelectionFromFolder() {
+    if (_selectedMusicFolderId != null) {
+      final folderMusic = _allMusic.where((m) {
+        final folderId = (m['folder'] ?? m['folder_id'] ?? '').toString();
+        return folderId == _selectedMusicFolderId;
+      }).toList();
+      setState(() {
+        _selectedMusicIds.clear();
+        _selectedMusicIds.addAll(folderMusic.map((m) => (m['id'] ?? m['file_id'] ?? m['music_file_id'] ?? '').toString()));
+      });
+    }
   }
 
   Future<void> _togglePlayback() async {
@@ -678,24 +954,56 @@ class _DashboardPageState extends State<DashboardPage> {
         _announcementTimer?.cancel();
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Playback paused (local)')));
       } else {
+        // Get authentication token to append to URLs
+        final token = await getAccessToken();
+        
         final items = _allMusic.where((m) => _selectedMusicIds.contains((m['id'] ?? m['file_id'] ?? m['music_file_id'] ?? '').toString()))
-          .map((m) => {
-            'url': (m['stream_url'] ?? m['file_url'] ?? m['url'] ?? '').toString(),
-            'title': (m['name'] ?? m['title'] ?? 'Unknown').toString(),
+          .map((m) {
+            String url = (m['stream_url'] ?? m['file_url'] ?? m['url'] ?? '').toString();
+            // Don't add token to URL - playUrls() will handle auth via headers
+            return {
+              'url': url,
+              'title': (m['name'] ?? m['title'] ?? 'Unknown').toString(),
+            };
           }).where((e) => (e['url'] ?? '').isNotEmpty).toList();
         if (items.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selected tracks have no URLs')));
           return;
         }
-        await pm.playUrls(items);
-        if (mounted) setState(() => _playbackState = {'is_playing': true});
-        _startAnnouncementLoop();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Local playback started')));
+        
+        print('Starting playback with ${items.length} tracks');
+        if (items.isNotEmpty) {
+          print('First track URL: ${items.first['url']}');
+        }
+        
+        try {
+          await pm.playUrls(items);
+          // Enable continuous looping - set to LoopMode.all for continuous playback
+          await pm.setLoopMode(LoopMode.all);
+          
+          // Wait a bit and check if actually playing
+          await Future.delayed(const Duration(milliseconds: 500));
+          final isActuallyPlaying = pm.player.playing;
+          print('After playUrls, player.playing: $isActuallyPlaying');
+          
+          if (mounted) setState(() => _playbackState = {'is_playing': isActuallyPlaying});
+          if (isActuallyPlaying) {
+            _startAnnouncementLoop();
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Local playback started')));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Playback started but not playing - check URLs')));
+          }
+        } catch (e) {
+          print('Error starting playback: $e');
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to start playback: $e')));
+        }
       }
       // Refresh state
       await Future.delayed(const Duration(seconds: 1));
       await _loadPlaybackState();
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('Playback error: $e');
+      print('Stack trace: $stackTrace');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Action failed: $e')));
     }
   }
@@ -709,7 +1017,7 @@ class _DashboardPageState extends State<DashboardPage> {
         return AlertDialog(
           title: const Text('Select Target Zone'),
           content: DropdownButtonFormField<String>(
-            value: selected,
+            initialValue: selected,
             items: zones.map<DropdownMenuItem<String>>((z) {
               final id = (z['id'] ?? z['zone_id']).toString();
               return DropdownMenuItem(value: id, child: Text(z['name'] ?? 'Zone'));
@@ -833,7 +1141,18 @@ class _DashboardPageState extends State<DashboardPage> {
       // Local announcement: duck music volume, play announcement, then restore
       final url = (ann['file_url'] ?? ann['url'] ?? '').toString();
       final title = (ann['title'] ?? 'Announcement').toString();
-      if (url.isEmpty) return;
+      if (url.isEmpty) {
+        print('Announcement URL is empty');
+        return;
+      }
+      
+      // Get authentication token for announcement headers
+      final token = await getAccessToken();
+      String announcementUrl = url;
+      // Don't add token to URL - headers will be used in AudioSource.uri below
+      
+      print('Playing announcement: $title, URL: $announcementUrl');
+      
       try {
         final pm = context.read<PlayerModel>();
         final originalVol = pm.volume;
@@ -851,11 +1170,39 @@ class _DashboardPageState extends State<DashboardPage> {
         } else {
           await pm.setVol(musicVol);
         }
-        await _metaPlayer.setUrl(url);
-        await _metaPlayer.setVolume(annVol);
-        await _metaPlayer.play();
+        print('Setting announcement URL: $announcementUrl');
+        
+        // Save current playback state
+        _wasPlayingBeforeAnnouncement = pm.player.playing;
+        _previousIndex = pm.player.currentIndex;
+        
+        // Pause music and play announcement using the same player
+        await pm.pause();
+        
+        // Create announcement source with headers
+        final annHeaders = <String, String>{};
+        if (token != null && token.isNotEmpty) {
+          annHeaders['Authorization'] = 'Bearer $token';
+        }
+        final annSource = AudioSource.uri(
+          Uri.parse(announcementUrl),
+          headers: annHeaders.isNotEmpty ? annHeaders : null,
+          tag: MediaItem(
+            id: announcementUrl,
+            title: title,
+            artUri: Uri.parse('asset:///assets/logo.png'),
+          ),
+        );
+        
+        // Play announcement
+        await pm.player.setAudioSource(annSource);
+        await pm.player.setVolume(annVol);
+        print('Playing announcement audio');
+        await pm.player.play();
+        print('Announcement play() called, checking if playing...');
+        
         // Wait until announcement completes
-        await _metaPlayer.playerStateStream.firstWhere((s) => s.processingState == ProcessingState.completed);
+        await pm.player.playerStateStream.firstWhere((s) => s.processingState == ProcessingState.completed);
         // Restore volume with fade up
         if (fade > 0) {
           final steps = 6;
@@ -867,7 +1214,30 @@ class _DashboardPageState extends State<DashboardPage> {
         } else {
           await pm.setVol(originalVol);
         }
-        await context.read<PlayerModel>().player.play();
+        
+        // Restore music playback if it was playing before
+        if (_wasPlayingBeforeAnnouncement) {
+          // Reload the original playlist
+          final items = _allMusic.where((m) => _selectedMusicIds.contains((m['id'] ?? m['file_id'] ?? m['music_file_id'] ?? '').toString()))
+            .map((m) {
+              String url = (m['stream_url'] ?? m['file_url'] ?? m['url'] ?? '').toString();
+              // Don't add token to URL - playUrls() will handle auth via headers
+              return {
+                'url': url,
+                'title': (m['name'] ?? m['title'] ?? 'Unknown').toString(),
+              };
+            }).where((e) => (e['url'] ?? '').isNotEmpty).toList();
+          
+          if (items.isNotEmpty) {
+            await pm.playUrls(items);
+            await pm.setLoopMode(LoopMode.all);
+            // Seek to previous position if available
+            if (_previousIndex != null && _previousIndex! > 0) {
+              await pm.player.seek(Duration.zero, index: _previousIndex);
+            }
+          }
+        }
+        
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Playing Announcement: $title'),
@@ -876,8 +1246,26 @@ class _DashboardPageState extends State<DashboardPage> {
           ));
         }
       } catch (e) {
+        print('Error playing announcement: $e');
         // Resume music if announcement fails
-        await context.read<PlayerModel>().player.play();
+        if (_wasPlayingBeforeAnnouncement) {
+          try {
+            final items = _allMusic.where((m) => _selectedMusicIds.contains((m['id'] ?? m['file_id'] ?? m['music_file_id'] ?? '').toString()))
+              .map((m) {
+                String url = (m['stream_url'] ?? m['file_url'] ?? m['url'] ?? '').toString();
+                // Don't add token to URL - playUrls() will handle auth via headers
+                return {
+                  'url': url,
+                  'title': (m['name'] ?? m['title'] ?? 'Unknown').toString(),
+                };
+              }).where((e) => (e['url'] ?? '').isNotEmpty).toList();
+            if (items.isNotEmpty) {
+              final pm = context.read<PlayerModel>();
+              await pm.playUrls(items);
+              await pm.setLoopMode(LoopMode.all);
+            }
+          } catch (_) {}
+        }
       }
       return;
     }
@@ -915,15 +1303,8 @@ class _DashboardPageState extends State<DashboardPage> {
   }
   Future<void> _probeDuration(String id, String url) async {
     if (id.isEmpty || url.isEmpty || _durationCache.containsKey(id)) return;
-    try {
-      await _metaPlayer.setUrl(url);
-      final d = _metaPlayer.duration;
-      if (d != null && mounted) {
-        setState(() {
-          _durationCache[id] = d.inSeconds;
-        });
-      }
-    } catch (_) {}
+    // Skip duration probing to avoid creating multiple player instances
+    // Duration will be available once playback starts via playbackEventStream
   }
 
   @override
@@ -937,6 +1318,7 @@ class _DashboardPageState extends State<DashboardPage> {
       _loadPlaybackState();
       _selectedMusicIds.clear();
       _selectedAnnouncementFolderId = null;
+      _selectedMusicFolderId = null;
       _loadContent();
     }
 
@@ -948,6 +1330,24 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     return Scaffold(
+      appBar: AppBar(
+        title: Text(zoneName),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () async {
+              await _loadContent();
+              await _loadPlaybackState();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Refreshed music list'), duration: Duration(seconds: 1)),
+                );
+              }
+            },
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -1021,6 +1421,27 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                     const SizedBox(height: 24),
 
+                    // Music Folder Selection
+                    const Text('Select Music Folder', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(filled: true, fillColor: Color(0xFF2A2A2A)),
+                      initialValue: _selectedMusicFolderId,
+                      items: [
+                        const DropdownMenuItem(value: null, child: Text('No Folder (Select Individual Tracks)')),
+                        ..._musicFolders.map((f) => DropdownMenuItem(
+                          value: (f['id'] ?? '').toString(),
+                          child: Text(f['name'] ?? 'Unknown'),
+                        )),
+                      ],
+                      onChanged: (v) {
+                        setState(() => _selectedMusicFolderId = v);
+                        _updateMusicSelectionFromFolder();
+                      },
+                      hint: const Text('No Folder (Select Individual Tracks)'),
+                    ),
+                    const SizedBox(height: 16),
+
                     // Music Selection
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1065,20 +1486,29 @@ class _DashboardPageState extends State<DashboardPage> {
                         ),
                       ],
                     ),
-                    Container(
-                      height: 200,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2A2A2A),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.white10),
-                      ),
-                      child: _allMusic.isEmpty 
-                        ? const Center(child: Text('No music found', style: TextStyle(color: Colors.grey)))
-                        : ListView.separated(
-                            itemCount: _allMusic.length,
-                            separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
-                            itemBuilder: (ctx, i) {
-                              final m = _allMusic[i];
+                    Builder(
+                      builder: (context) {
+                        // Filter music by folder if folder is selected
+                        final displayMusic = _selectedMusicFolderId != null
+                          ? _allMusic.where((m) {
+                              final folderId = (m['folder'] ?? m['folder_id'] ?? '').toString();
+                              return folderId == _selectedMusicFolderId;
+                            }).toList()
+                          : _allMusic;
+                        return Container(
+                          height: 200,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A2A2A),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.white10),
+                          ),
+                          child: displayMusic.isEmpty 
+                            ? const Center(child: Text('No music found', style: TextStyle(color: Colors.grey)))
+                            : ListView.separated(
+                                itemCount: displayMusic.length,
+                                separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
+                                itemBuilder: (ctx, i) {
+                                  final m = displayMusic[i];
                             final id = (m['id'] ?? m['file_id'] ?? m['music_file_id'] ?? '').toString();
                               final url = (m['file_url'] ?? m['url'] ?? '').toString();
                               final isSelected = _selectedMusicIds.contains(id);
@@ -1114,8 +1544,10 @@ class _DashboardPageState extends State<DashboardPage> {
                                   });
                                 },
                               );
-                            },
-                          ),
+                                },
+                              ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 24),
 
@@ -1134,33 +1566,6 @@ class _DashboardPageState extends State<DashboardPage> {
                       ],
                       onChanged: (v) => setState(() => _selectedAnnouncementFolderId = v),
                       hint: const Text('No Folder (All Enabled)'),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            if (_selectedAnnouncementFolderId == null) return;
-                            final targetZoneId = await _pickZone(context);
-                            if (targetZoneId == null) return;
-                            await _transferAnnouncementsFolderToZone(targetZoneId, _selectedAnnouncementFolderId!);
-                          },
-                          icon: const Icon(Icons.redo, size: 18),
-                          label: const Text('Transfer Folder to Zone'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            if (_selectedAnnouncementFolderId == null) return;
-                            final targetZoneId = await _pickZone(context);
-                            if (targetZoneId == null) return;
-                            await _copyAnnouncementsFolderToZone(targetZoneId, _selectedAnnouncementFolderId!);
-                          },
-                          icon: const Icon(Icons.copy_all, size: 18),
-                          label: const Text('Copy Folder to Zone'),
-                        ),
-                      ],
                     ),
                     const SizedBox(height: 24),
 
@@ -1456,20 +1861,21 @@ class _MusicPageState extends State<MusicPage> {
     final result = await FilePicker.platform.pickFiles(type: FileType.audio);
     if (result != null && result.files.single.path != null) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploading...')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploading to S3...')));
       try {
-        await uploadFile(
+        // Use S3 upload flow instead of direct upload
+        await uploadFileToS3(
           result.files.single.path!, 
-          'music', 
+          result.files.single.name,
           folderId: context.read<MusicModel>().currentFolderId,
           title: result.files.single.name,
         );
         if (context.mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploaded successfully')));
+           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploaded successfully to S3')));
            context.read<MusicModel>().load(folderId: context.read<MusicModel>().currentFolderId);
         }
       } catch (e) {
-        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload failed')));
+        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: ${e.toString()}')));
       }
     }
   }
@@ -1695,15 +2101,15 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
       builder: (ctx) => _RecorderDialog(
         onSave: (path, title) async {
           Navigator.pop(ctx);
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploading Recording...')));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploading Recording to S3...')));
           try {
-             await uploadFile(path, 'announcement', folderId: context.read<AnnouncementsModel>().currentFolderId, title: title);
+             await uploadFileToS3(path, 'announcement_${DateTime.now().millisecondsSinceEpoch}.mp3', folderId: context.read<AnnouncementsModel>().currentFolderId, title: title);
              if (context.mounted) {
-               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploaded successfully')));
+               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploaded successfully to S3')));
                context.read<AnnouncementsModel>().load(folderId: context.read<AnnouncementsModel>().currentFolderId);
              }
           } catch(e) {
-             if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to upload')));
+             if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to upload: ${e.toString()}')));
           }
         }
       )
@@ -1714,20 +2120,20 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
     final result = await FilePicker.platform.pickFiles(type: FileType.audio);
     if (result != null && result.files.single.path != null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploading...')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploading to S3...')));
       try {
-        await uploadFile(
+        await uploadFileToS3(
           result.files.single.path!, 
-          'announcement', 
+          'announcement_${DateTime.now().millisecondsSinceEpoch}.mp3', 
           folderId: context.read<AnnouncementsModel>().currentFolderId,
           title: result.files.single.name,
         );
         if (mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploaded successfully')));
+           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploaded successfully to S3')));
            context.read<AnnouncementsModel>().load(folderId: context.read<AnnouncementsModel>().currentFolderId);
         }
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload failed')));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: ${e.toString()}')));
       }
     }
   }
@@ -2128,10 +2534,10 @@ class SchedulerPage extends StatelessWidget {
                                           final id = (f['id'] ?? f['folder_id'] ?? '').toString();
                                           final name = (f['name'] ?? 'Folder').toString();
                                           return DropdownMenuItem(value: id, child: Text(name));
-                                        }).toList(),
+                                        }),
                                       ];
                                       return DropdownButtonFormField<String>(
-                                        value: selectedFolderId ?? '',
+                                        initialValue: selectedFolderId ?? '',
                                         items: items,
                                         onChanged: (v) => selectedFolderId = (v != null && v.isNotEmpty) ? v : null,
                                         decoration: const InputDecoration(labelText: 'Announcement Folder'),
@@ -2203,14 +2609,14 @@ class ProfilePage extends StatelessWidget {
         child: FutureBuilder<List<String?>>(
           future: Future.wait([nameFuture, avatarFuture]),
           builder: (ctx, snap) {
-            final profileName = (snap.data?[0] ?? auth.email ?? 'User')!;
+            final profileName = snap.data?[0] ?? auth.email ?? 'User';
             final avatarData = snap.data?[1];
             ImageProvider<Object>? avatarImage;
             if (avatarData != null) {
               if (avatarData.startsWith('data:')) {
-                avatarImage = MemoryImage(base64Decode(avatarData.split(',').last));
+                avatarImage = MemoryImage(base64Decode(avatarData.split(',').last)) as ImageProvider<Object>;
               } else if (avatarData.startsWith('http')) {
-                avatarImage = NetworkImage(avatarData);
+                avatarImage = NetworkImage(avatarData) as ImageProvider<Object>;
               }
             }
             return Column(
@@ -2220,12 +2626,12 @@ class ProfilePage extends StatelessWidget {
                 Text(profileName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
                 const SizedBox(height: 8),
                 Text(auth.email ?? '', style: const TextStyle(color: Colors.grey)),
-            const SizedBox(height: 32),
-            FilledButton(
-              onPressed: () async {
-                final nameCtrl = TextEditingController(text: profileName);
-                String? newAvatar = avatarData;
-                await showDialog(
+                const SizedBox(height: 32),
+                FilledButton(
+                  onPressed: () async {
+                    final nameCtrl = TextEditingController(text: profileName);
+                    String? newAvatar = avatarData;
+                    await showDialog(
                   context: context,
                   builder: (dctx) => StatefulBuilder(
                     builder: (dctx, setState) => AlertDialog(
@@ -2242,9 +2648,9 @@ class ProfilePage extends StatelessWidget {
                                 radius: 20,
                                 backgroundColor: const Color(0xFF2A2A2A),
                                 backgroundImage: (newAvatar != null && newAvatar!.startsWith('data:'))
-                                  ? MemoryImage(base64Decode(newAvatar!.split(',').last))
+                                  ? MemoryImage(base64Decode(newAvatar!.split(',').last)) as ImageProvider<Object>?
                                   : (newAvatar != null && newAvatar!.startsWith('http'))
-                                    ? NetworkImage(newAvatar!)
+                                    ? NetworkImage(newAvatar!) as ImageProvider<Object>?
                                     : null,
                                 child: (newAvatar == null) ? const Icon(Icons.person, color: Colors.white) : null,
                               ),
@@ -2280,8 +2686,8 @@ class ProfilePage extends StatelessWidget {
                                 final me = users.firstWhere((u) => (u['email'] ?? '').toString().toLowerCase() == auth.email!.toLowerCase(), orElse: () => {});
                                 final myId = (me['id'] ?? '').toString();
                                 if (myId.isNotEmpty) {
-                                  final payload = {'name': nameCtrl.text.trim()};
-                                  if (newAvatar != null) { payload['avatar'] = newAvatar; }
+                                  final payload = <String, dynamic>{'name': nameCtrl.text.trim()};
+                                  if (newAvatar != null) { payload['avatar'] = newAvatar!; }
                                   await updateAdminUser(myId, payload);
                                 }
                               } catch (_) {}
@@ -2294,10 +2700,10 @@ class ProfilePage extends StatelessWidget {
                     ),
                   ),
                 );
-              },
-              child: const Text('Edit Profile'),
-            ),
-            const SizedBox(height: 24),
+                  },
+                  child: const Text('Edit Profile'),
+                ),
+                const SizedBox(height: 24),
             
             // Admin Features
             if (auth.isAdmin) ...[
@@ -2328,6 +2734,8 @@ class ProfilePage extends StatelessWidget {
               onTap: () => auth.logout(),
             ),
           ],
+            );
+          },
         ),
       ),
     );
@@ -2521,7 +2929,7 @@ class _TeamMembersPageState extends State<TeamMembersPage> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: role,
+                initialValue: role,
                 dropdownColor: const Color(0xFF2A2A2A),
                 style: const TextStyle(color: Colors.white),
                 items: const [
@@ -2542,7 +2950,7 @@ class _TeamMembersPageState extends State<TeamMembersPage> {
                     }
                     final clients = snap.data ?? [];
                     return DropdownButtonFormField<String>(
-                      value: clientId,
+                      initialValue: clientId,
                       dropdownColor: const Color(0xFF2A2A2A),
                       style: const TextStyle(color: Colors.white),
                       items: clients.map((c) {
@@ -2745,7 +3153,7 @@ class _TeamMembersPageState extends State<TeamMembersPage> {
                     });
                   }
                     return DropdownButtonFormField<String>(
-                      value: selected,
+                      initialValue: selected,
                       dropdownColor: const Color(0xFF2A2A2A),
                       style: const TextStyle(color: Colors.white),
                       items: clients.map((c) {
@@ -3208,30 +3616,12 @@ class _MiniPlayer extends StatelessWidget {
 }
 
 class ThemeModel extends ChangeNotifier {
-  ThemeMode mode = ThemeMode.dark;
-  Timer? _timer;
+  ThemeMode mode = ThemeMode.dark; // Always dark theme for consistent UI
+  
   ThemeModel() {
-    _apply();
-  }
-  void _apply() {
-    final h = DateTime.now().hour;
-    mode = (h >= 7 && h < 19) ? ThemeMode.light : ThemeMode.dark;
-    _scheduleNext();
+    // Keep dark theme always - no auto-switching
+    mode = ThemeMode.dark;
     notifyListeners();
-  }
-  void _scheduleNext() {
-    _timer?.cancel();
-    final now = DateTime.now();
-    final next = () {
-      if (mode == ThemeMode.light) {
-        return DateTime(now.year, now.month, now.day, 19);
-      } else {
-        final tomorrow = now.add(const Duration(days: 1));
-        return DateTime(tomorrow.year, tomorrow.month, tomorrow.day, 7);
-      }
-    }();
-    final diff = next.difference(now);
-    _timer = Timer(diff, _apply);
   }
 }
 
@@ -3286,34 +3676,34 @@ final ThemeData _lightTheme = ThemeData(
 final ThemeData _darkTheme = ThemeData(
   useMaterial3: true,
   brightness: Brightness.dark,
-  scaffoldBackgroundColor: const Color(0xFF121212),
-  primaryColor: const Color(0xFF1DB954),
+  scaffoldBackgroundColor: Colors.black, // Pure black
+  primaryColor: const Color(0xFF1DB954), // Green
   colorScheme: const ColorScheme.dark(
-    primary: Color(0xFF1DB954),
+    primary: Color(0xFF1DB954), // Green accent
     onPrimary: Colors.black,
-    secondary: Color(0xFF1DB954),
+    secondary: Color(0xFF1DB954), // Green
     onSecondary: Colors.black,
-    surface: Color(0xFF121212),
-    onSurface: Colors.white,
-    error: Color(0xFFE22134),
+    surface: Colors.black, // Pure black surfaces
+    onSurface: Colors.white, // White text on black
+    error: Color(0xFFE22134), // Black background
   ),
-  cardColor: const Color(0xFF181818),
+  cardColor: Colors.black, // Black cards
   appBarTheme: const AppBarTheme(
-    backgroundColor: Color(0xFF121212),
+    backgroundColor: Colors.black, // Black app bar
     elevation: 0,
     titleTextStyle: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
     iconTheme: IconThemeData(color: Colors.white),
   ),
   bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-    backgroundColor: Color(0xFA121212),
-    selectedItemColor: Color(0xFF1DB954),
-    unselectedItemColor: Color(0xFFB3B3B3),
+    backgroundColor: Colors.black, // Black nav bar
+    selectedItemColor: Color(0xFF1DB954), // Green selected
+    unselectedItemColor: Colors.white70, // Light gray unselected
     type: BottomNavigationBarType.fixed,
   ),
   filledButtonTheme: FilledButtonThemeData(
     style: FilledButton.styleFrom(
-      backgroundColor: const Color(0xFF1DB954),
-      foregroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1DB954), // Green buttons
+      foregroundColor: Colors.black, // Black text on green
       textStyle: const TextStyle(fontWeight: FontWeight.bold),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(500)),
       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -3321,12 +3711,23 @@ final ThemeData _darkTheme = ThemeData(
   ),
   inputDecorationTheme: InputDecorationTheme(
     filled: true,
-    fillColor: const Color(0xFF2A2A2A),
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(8),
-      borderSide: BorderSide.none,
-    ),
-    hintStyle: const TextStyle(color: Color(0xFFB3B3B3)),
+    fillColor: Colors.transparent, // Transparent so Container color shows
+    border: InputBorder.none, // No border, using Container border
+    enabledBorder: InputBorder.none,
+    focusedBorder: InputBorder.none,
+    hintStyle: const TextStyle(color: Colors.white54), // Light gray hints
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+  ),
+  dialogTheme: DialogThemeData(
+    backgroundColor: Colors.black, // Black dialogs
+    titleTextStyle: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+    contentTextStyle: const TextStyle(color: Colors.white),
+  ),
+  listTileTheme: const ListTileThemeData(
+    textColor: Colors.white, // White text
+    iconColor: Colors.white, // White icons
+  ),
+  dividerTheme: const DividerThemeData(
+    color: Colors.white24, // Subtle white dividers
   ),
 );

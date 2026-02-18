@@ -479,14 +479,57 @@ router.get('/by_id/:id/stream/', optionalAuthenticate, async (req, res) => {
         return res.status(403).json({ detail: 'You do not have permission to access this announcement.' });
       }
     }
-    // Serve from S3 if present
+    // Serve from S3 if present - stream directly instead of redirecting
     if (announcement.s3Key) {
-      const { getPresignedDownloadUrl } = require('../services/s3');
       try {
-        const downloadUrl = await getPresignedDownloadUrl(announcement.s3Key, 3600);
-        res.header('Access-Control-Allow-Origin', '*');
-        res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-        return res.redirect(302, downloadUrl);
+        const { GetObjectCommand } = require('@aws-sdk/client-s3');
+        const { S3Client } = require('@aws-sdk/client-s3');
+        const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
+        
+        // Handle range requests for seeking
+        const range = req.headers.range;
+        if (range) {
+          const getObjectCommand = new GetObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: announcement.s3Key,
+            Range: range,
+          });
+          
+          const s3Response = await s3Client.send(getObjectCommand);
+          const contentLength = s3Response.ContentLength || 0;
+          const contentRange = s3Response.ContentRange || '';
+          
+          res.writeHead(206, {
+            'Content-Range': contentRange,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': contentLength,
+            'Content-Type': 'audio/mpeg',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          });
+          
+          s3Response.Body.pipe(res);
+        } else {
+          // Stream entire file
+          const getObjectCommand = new GetObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: announcement.s3Key,
+          });
+          
+          const s3Response = await s3Client.send(getObjectCommand);
+          const contentLength = s3Response.ContentLength || 0;
+          
+          res.writeHead(200, {
+            'Content-Length': contentLength,
+            'Content-Type': 'audio/mpeg',
+            'Accept-Ranges': 'bytes',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          });
+          
+          s3Response.Body.pipe(res);
+        }
+        return;
       } catch (e) {
         console.error('S3 stream error:', e);
         return res.status(500).json({ detail: 'Error accessing file from S3.' });
@@ -756,35 +799,106 @@ router.post('/:id/regenerate_tts/', authenticate, async (req, res) => {
       return res.status(403).json({ detail: 'You do not have permission to regenerate this announcement.' });
     }
 
+    // Check if announcement has text to generate audio from
+    if (!announcement.text || announcement.text.trim() === '') {
+      return res.status(400).json({ detail: 'Announcement has no text content. Cannot generate audio without text.' });
+    }
+
     const { voice, provider } = req.body;
+    const targetVoice = voice || announcement.voice || 'fable';
+    const targetProvider = provider || announcement.provider || 'openai';
 
-    if (voice) announcement.voice = voice;
-    if (provider) announcement.provider = provider;
+    // Update voice/provider
+    announcement.voice = targetVoice;
+    announcement.provider = targetProvider;
 
-    // In production, call TTS API here
-    // For now, just update the voice/provider
-    await announcement.save();
+    // Generate audio using OpenAI TTS
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (!openaiKey) {
+      return res.status(500).json({ 
+        detail: 'OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.' 
+      });
+    }
 
-    const obj = announcement.toJSON ? announcement.toJSON() : announcement;
-    return res.status(200).json({
-      id: obj._id || obj.id,
-      title: obj.title,
-      text: obj.text,
-      file_url: obj.fileUrl,
-      fileUrl: obj.fileUrl,
-      duration: obj.duration,
-      voice: obj.voice,
-      folder_id: obj.folderId,
-      category: obj.folderId,
-      zone_id: obj.zoneId,
-      client_id: obj.clientId,
-      enabled: obj.enabled,
-      created_at: obj.createdAt,
-      updated_at: obj.updatedAt,
-    });
+    try {
+      const OpenAI = require('openai');
+      const openai = new OpenAI({ apiKey: openaiKey });
+
+      // Map voice IDs to OpenAI TTS voice names
+      const voiceMap = {
+        'fable': 'alloy',
+        'alloy': 'nova',
+        'echo': 'echo',
+        'shimmer': 'shimmer',
+        'nova': 'nova',
+        'onyx': 'onyx',
+      };
+
+      const openaiVoice = voiceMap[targetVoice] || 'onyx';
+
+      // Generate audio using OpenAI TTS
+      const response = await openai.audio.speech.create({
+        model: 'tts-1',
+        voice: openaiVoice,
+        input: announcement.text,
+      });
+
+      // Convert response to buffer
+      const buffer = Buffer.from(await response.arrayBuffer());
+
+      // Upload to S3
+      const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
+      
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const s3Key = `announcements/${announcement._id}-${uniqueSuffix}.mp3`;
+      
+      await s3Client.send(new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: s3Key,
+        Body: buffer,
+        ContentType: 'audio/mpeg',
+      }));
+
+      // Update announcement with new audio URL
+      const baseUrl = getBaseUrl(req);
+      announcement.fileUrl = `${baseUrl}/api/v1/announcements/by_id/${announcement._id}/stream/`;
+      announcement.s3Key = s3Key;
+      
+      // Estimate duration (rough: 10 chars per second)
+      announcement.duration = Math.ceil(announcement.text.length / 10);
+
+      await announcement.save();
+
+      const obj = announcement.toJSON ? announcement.toJSON() : announcement;
+      return res.status(200).json({
+        id: obj._id || obj.id,
+        title: obj.title,
+        text: obj.text || '',
+        tts_text: obj.text || '', // Alias for frontend compatibility
+        file_url: obj.fileUrl,
+        fileUrl: obj.fileUrl,
+        duration: obj.duration,
+        voice: obj.voice,
+        provider: obj.provider,
+        folder_id: obj.folderId,
+        category: obj.folderId,
+        zone_id: obj.zoneId,
+        client_id: obj.clientId,
+        enabled: obj.enabled,
+        created_at: obj.createdAt,
+        updated_at: obj.updatedAt,
+      });
+    } catch (openaiError) {
+      console.error('OpenAI TTS generation error:', openaiError);
+      return res.status(500).json({ 
+        detail: 'Failed to generate audio. Please check your OpenAI API key and try again.',
+        error: openaiError.message,
+      });
+    }
   } catch (error) {
     console.error('Regenerate TTS error:', error);
-    return res.status(500).json({ detail: 'An error occurred.' });
+    return res.status(500).json({ detail: 'An error occurred while regenerating audio.' });
   }
 });
 
@@ -959,13 +1073,39 @@ router.post('/preview-voice/', authenticate, async (req, res) => {
 
     const baseUrl = getBaseUrl(req);
     
+    // Ensure baseUrl is valid (not malformed like :8000)
+    let validBaseUrl = baseUrl;
+    if (!validBaseUrl || validBaseUrl.startsWith(':') || validBaseUrl.includes('localhost:8000')) {
+      // Fallback to environment variable or default to deployed URL
+      validBaseUrl = process.env.API_BASE_URL || 'https://02nn8drgsd.execute-api.us-east-1.amazonaws.com';
+    }
+    // Remove /api/v1 if present in baseUrl
+    validBaseUrl = validBaseUrl.replace(/\/api\/v1\/?$/, '');
+    
     // Check if preview already exists in database
     let voicePreview = await VoicePreview.findOne({ voice });
     
     if (voicePreview) {
-      // Preview exists, return its URL
+      // Preview exists, but ensure URL is valid
+      let previewUrl = voicePreview.fileUrl;
+      // If it's a relative URL or malformed, fix it
+      if (!previewUrl.startsWith('http://') && !previewUrl.startsWith('https://')) {
+        if (previewUrl.startsWith('/')) {
+          previewUrl = `${validBaseUrl}${previewUrl}`;
+        } else {
+          previewUrl = `${validBaseUrl}/${previewUrl}`;
+        }
+      }
+      // Check for localhost and replace
+      if (previewUrl.includes('localhost:8000') || previewUrl.includes('127.0.0.1:8000')) {
+        const pathMatch = previewUrl.match(/(\/api\/v1\/.*)$/);
+        if (pathMatch) {
+          previewUrl = `${validBaseUrl}${pathMatch[1]}`;
+        }
+      }
+      
       return res.status(200).json({ 
-        preview_url: voicePreview.fileUrl,
+        preview_url: previewUrl,
         cached: true,
       });
     }
@@ -1046,9 +1186,19 @@ router.post('/preview-voice/', authenticate, async (req, res) => {
         fileUrl = `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${s3Key}`;
       } else {
         // Use local file URL - serve via the GET endpoint
-        fileUrl = `${baseUrl}/api/v1/announcements/preview/${voice}`;
+        // Ensure we use validBaseUrl instead of potentially malformed baseUrl
+        fileUrl = `${validBaseUrl}/api/v1/announcements/preview/${voice}`;
       }
 
+      // Ensure fileUrl is absolute and valid before saving
+      if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://')) {
+        if (fileUrl.startsWith('/')) {
+          fileUrl = `${validBaseUrl}${fileUrl}`;
+        } else {
+          fileUrl = `${validBaseUrl}/${fileUrl}`;
+        }
+      }
+      
       // Save to database
       voicePreview = new VoicePreview({
         voice,

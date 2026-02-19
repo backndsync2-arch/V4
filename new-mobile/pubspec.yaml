@@ -1,7 +1,7 @@
 name: sync2gear
 description: Sync2Gear mobile app
 publish_to: "none"
-version: 1.0.0+1
+version: 2.0.2+3
 environment:
   sdk: ">=3.3.0 <4.0.0"
 dependencies:
@@ -11,8 +11,9 @@ dependencies:
   http: ^1.2.2
   provider: ^6.1.2
   just_audio: ^0.9.36
+  just_audio_background: ^0.0.1-beta.17
   audio_session: ^0.1.21
-  just_audio_background: any
+  package_info_plus: ^8.0.2
   shared_preferences: ^2.3.2
   file_picker: ^10.3.10
   record: ^6.2.0

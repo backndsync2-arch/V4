@@ -2,6 +2,7 @@ const express = require('express');
 const Client = require('../models/Client');
 const User = require('../models/User');
 const { authenticate } = require('../middleware/auth');
+const { logAuditEvent } = require('../middleware/audit');
 
 const router = express.Router();
 
@@ -804,20 +805,15 @@ router.post('/users/', authenticate, isUserManager, async (req, res) => {
     }
     
     // Generate password if not provided (temporary password)
-    const bcrypt = require('bcryptjs');
+    // NOTE: Do NOT manually hash here — User model pre-save hook handles hashing
     let hashedPassword = password;
     if (!hashedPassword) {
-      // Generate a random temporary password
+      // Generate a random temporary password (plain text - hook will hash it)
       const crypto = require('crypto');
-      const tempPassword = crypto.randomBytes(12).toString('hex');
-      const salt = await bcrypt.genSalt(10);
-      hashedPassword = await bcrypt.hash(tempPassword, salt);
-      // In production, you'd send this via email
-      console.log(`Temporary password for ${email}: ${tempPassword}`);
-    } else {
-      const salt = await bcrypt.genSalt(10);
-      hashedPassword = await bcrypt.hash(password, salt);
+      hashedPassword = crypto.randomBytes(8).toString('hex'); // 16 char hex
+      console.log(`Temporary password for ${email}: ${hashedPassword}`);
     }
+    // hashedPassword is plain text here — pre-save hook will bcrypt it
     
     // Create user
     const user = new User({
@@ -939,11 +935,9 @@ router.patch('/users/:id/', authenticate, isUserManager, async (req, res) => {
     if (req.body.settings !== undefined) updateFields.settings = req.body.settings;
     if (req.body.avatar !== undefined) updateFields.avatar = req.body.avatar;
     
-    // Handle password update
+    // Handle password update - store plain text, pre-save hook will hash it
     if (req.body.password) {
-      const bcrypt = require('bcryptjs');
-      const salt = await bcrypt.genSalt(10);
-      updateFields.password = await bcrypt.hash(req.body.password, salt);
+      updateFields.password = req.body.password;
     }
     
     // Capture changes for audit log

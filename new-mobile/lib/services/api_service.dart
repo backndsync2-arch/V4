@@ -1,9 +1,49 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'storage_service.dart';
 
 const apiBase = 'https://02nn8drgsd.execute-api.us-east-1.amazonaws.com/api/v1';
+
+// Helper function to normalize URLs - removes spaces, duplicates, and ensures proper format
+String _normalizeUrl(String? url) {
+  if (url == null || url.isEmpty) return '';
+  
+  // Remove leading/trailing whitespace and URL-encoded spaces
+  url = url.trim().replaceAll('%20', '').replaceAll(' ', '');
+  
+  // If URL already contains the base URL, check for duplication
+  if (url.contains(apiBase)) {
+    // Find all occurrences of the base URL
+    final baseUrlPattern = apiBase.replaceAll('/', r'\/');
+    final matches = RegExp(baseUrlPattern).allMatches(url);
+    
+    // If there are multiple occurrences, keep only the last one
+    if (matches.length > 1) {
+      final lastMatch = matches.last;
+      url = url.substring(lastMatch.start);
+    }
+  }
+  
+  // If it's a relative URL starting with /api/, prepend base URL
+  if (url.startsWith('/api/')) {
+    return '$apiBase${url.substring(4)}';
+  }
+  
+  // If it's a relative URL, prepend base URL
+  if (url.startsWith('/')) {
+    return '$apiBase$url';
+  }
+  
+  // If it's already a full URL, return as-is
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  
+  // Otherwise return as-is (might be a path)
+  return url;
+}
 
 Future<Map<String, String>> _authHeaders() async {
   final token = await getAccessToken();
@@ -14,94 +54,54 @@ Future<Map<String, String>> _authHeaders() async {
   return h;
 }
 
-Future<void> setTokens(String access, String refresh) async {
-  final sp = await SharedPreferences.getInstance();
-  await sp.setString('sync2gear_access_token', access);
-  await sp.setString('sync2gear_refresh_token', refresh);
-}
-
-Future<String?> getAccessToken() async {
-  final sp = await SharedPreferences.getInstance();
-  return sp.getString('sync2gear_access_token');
-}
-
-Future<void> clearTokens() async {
-  final sp = await SharedPreferences.getInstance();
-  await sp.remove('sync2gear_access_token');
-  await sp.remove('sync2gear_refresh_token');
-}
-
-Future<void> setImpersonateClientId(String? clientId) async {
-  final sp = await SharedPreferences.getInstance();
-  if (clientId == null || clientId.isEmpty) {
-    await sp.remove('impersonate_client_id');
-  } else {
-    await sp.setString('impersonate_client_id', clientId);
-  }
-}
-
-Future<String?> getImpersonateClientId() async {
-  final sp = await SharedPreferences.getInstance();
-  return sp.getString('impersonate_client_id');
-}
-
-Future<void> setSelectedZoneId(String? zoneId) async {
-  final sp = await SharedPreferences.getInstance();
-  if (zoneId == null || zoneId.isEmpty) {
-    await sp.remove('selected_zone_id');
-  } else {
-    await sp.setString('selected_zone_id', zoneId);
-  }
-}
-
-Future<String?> getSelectedZoneId() async {
-  final sp = await SharedPreferences.getInstance();
-  return sp.getString('selected_zone_id');
-}
-
-Future<void> setProfileName(String name) async {
-  final sp = await SharedPreferences.getInstance();
-  await sp.setString('profile_name', name);
-}
-
-Future<String?> getProfileName() async {
-  final sp = await SharedPreferences.getInstance();
-  return sp.getString('profile_name');
-}
-
-Future<void> setProfileAvatar(String? dataUrl) async {
-  final sp = await SharedPreferences.getInstance();
-  if (dataUrl == null || dataUrl.isEmpty) {
-    await sp.remove('profile_avatar');
-  } else {
-    await sp.setString('profile_avatar', dataUrl);
-  }
-}
-
-Future<String?> getProfileAvatar() async {
-  final sp = await SharedPreferences.getInstance();
-  return sp.getString('profile_avatar');
-}
-
 Future<Map<String, dynamic>> login(String email, String password) async {
   final url = Uri.parse('$apiBase/auth/login/');
-  final res = await http.post(
-    url, 
-    headers: {'Content-Type': 'application/json'}, 
-    body: jsonEncode({'email': email, 'password': password})
-  ).timeout(const Duration(seconds: 15), onTimeout: () {
-    throw Exception('Login request timeout - check your internet connection');
-  });
-  if (res.statusCode >= 200 && res.statusCode < 300) {
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
-    final access = data['access'] as String? ?? '';
-    final refresh = data['refresh'] as String? ?? '';
-    if (access.isNotEmpty && refresh.isNotEmpty) {
-      await setTokens(access, refresh);
+  try {
+    final res = await http.post(
+      url, 
+      headers: {'Content-Type': 'application/json'}, 
+      body: jsonEncode({'email': email, 'password': password})
+    ).timeout(const Duration(seconds: 15), onTimeout: () {
+      throw Exception('Login request timeout - check your internet connection');
+    });
+    
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final access = data['access'] as String? ?? '';
+      final refresh = data['refresh'] as String? ?? '';
+      if (access.isNotEmpty && refresh.isNotEmpty) {
+        await setTokens(access, refresh);
+      }
+      return data;
     }
-    return data;
+    
+    // Parse error response for better error messages
+    String errorMsg = 'Login failed: ${res.statusCode}';
+    try {
+      final errorData = jsonDecode(res.body) as Map<String, dynamic>;
+      if (errorData.containsKey('detail')) {
+        errorMsg = errorData['detail'].toString();
+      } else if (errorData.containsKey('message')) {
+        errorMsg = errorData['message'].toString();
+      } else if (errorData.containsKey('error')) {
+        errorMsg = errorData['error'].toString();
+      } else {
+        errorMsg = 'Login failed: ${res.statusCode} - ${res.body}';
+      }
+    } catch (_) {
+      errorMsg = 'Login failed: ${res.statusCode} - ${res.body}';
+    }
+    throw Exception(errorMsg);
+  } on SocketException catch (e) {
+    throw Exception('Network error: Unable to connect to server. Please check your internet connection. ${e.message}');
+  } on FormatException catch (e) {
+    throw Exception('Invalid response from server: ${e.message}');
+  } catch (e) {
+    if (e.toString().contains('timeout')) {
+      rethrow;
+    }
+    throw Exception('Login failed: ${e.toString()}');
   }
-  throw Exception('Login failed: ${res.statusCode}');
 }
 
 // --- NEW S3 UPLOAD FUNCTIONS ---
@@ -226,13 +226,15 @@ Future<List<dynamic>> getFolders({String type = 'music', String? parentId, Strin
   return [];
 }
 
-Future<void> createFolder(String name, String type, {String? parentId, String? description}) async {
+Future<void> createFolder(String name, String type, {String? parentId, String? description, String? zoneId}) async {
   final url = Uri.parse('$apiBase/music/folders/');
+  zoneId ??= await getSelectedZoneId();
   final body = {
     'name': name,
     'type': type,
     if (parentId != null) 'parent': parentId,
     if (description != null) 'description': description,
+    if (zoneId != null && zoneId.isNotEmpty) 'zone_id': zoneId,
   };
   final res = await http.post(url, headers: await _authHeaders(), body: jsonEncode(body));
   
@@ -248,53 +250,123 @@ Future<List<dynamic>> getAnnouncements({String? folderId, String? zoneId}) async
   final params = <String>[];
   zoneId ??= await getSelectedZoneId();
   if (zoneId != null && zoneId.isNotEmpty) params.add('zone_id=$zoneId');
-  if (folderId != null && folderId.isNotEmpty) params.add('folder_id=$folderId');
+  // If folderId is null or empty, we want announcements with no folder (null folderId)
+  // If folderId is provided, filter by that folder
+  if (folderId != null && folderId.isNotEmpty) {
+    params.add('folder_id=$folderId');
+  } else {
+    // When folderId is null, we want to show announcements with no folder
+    // Backend should return announcements where folderId is null
+    // We'll filter on frontend if needed
+  }
   if (params.isNotEmpty) urlStr += '?${params.join('&')}';
   final url = Uri.parse(urlStr);
   final res = await http.get(url, headers: await _authHeaders());
   if (res.statusCode >= 200 && res.statusCode < 300) {
     final data = jsonDecode(res.body);
-    if (data is List) return data;
-    if (data is Map && data['results'] is List) return data['results'] as List<dynamic>;
-    return [];
+    List<dynamic> announcements = [];
+    if (data is List) {
+      announcements = data;
+    } else if (data is Map && data['results'] is List) {
+      announcements = data['results'] as List<dynamic>;
+    }
+    // If folderId is null, filter to show only announcements with no folder
+    if (folderId == null || folderId.isEmpty) {
+      announcements = announcements.where((a) {
+        final annFolderId = (a['folder_id'] ?? a['folderId'] ?? a['category'] ?? '').toString();
+        return annFolderId.isEmpty || annFolderId == 'null';
+      }).toList();
+    }
+    return announcements;
   }
   throw Exception('Failed to load announcements');
 }
 
-Future<List<Map<String, String>>> generateAIAnnouncement(String topic, String tone, String keyPoints) async {
+Future<List<Map<String, String>>> generateAIAnnouncement(String topic, String tone, String keyPoints, {int quantity = 3}) async {
   final url = Uri.parse('$apiBase/announcements/generate-ai-text/');
   final body = {
     'topic': topic,
     'tone': tone,
     'key_points': keyPoints,
-    'quantity': 3
+    'quantity': quantity
   };
-  final res = await http.post(url, headers: await _authHeaders(), body: jsonEncode(body));
-  if (res.statusCode >= 200 && res.statusCode < 300) {
-    final data = jsonDecode(res.body);
-    if (data is Map && data['scripts'] is List) {
-      return (data['scripts'] as List).map<Map<String, String>>((e) => {
-        'title': (e['title'] ?? '').toString(),
-        'text': (e['text'] ?? '').toString(),
-      }).toList();
+  try {
+    final res = await http.post(url, headers: await _authHeaders(), body: jsonEncode(body)).timeout(const Duration(seconds: 30));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final data = jsonDecode(res.body);
+      if (data is Map && data['scripts'] is List) {
+        return (data['scripts'] as List).map<Map<String, String>>((e) => {
+          'title': (e['title'] ?? '').toString(),
+          'text': (e['text'] ?? '').toString(),
+        }).toList();
+      }
+      throw Exception('Invalid response format: expected scripts array');
     }
+    // Parse error response
+    String errorMsg = 'Failed to generate AI text: ${res.statusCode}';
+    try {
+      final errorData = jsonDecode(res.body) as Map<String, dynamic>;
+      if (errorData.containsKey('detail')) {
+        errorMsg = errorData['detail'].toString();
+      } else {
+        errorMsg = 'Failed to generate AI text: ${res.statusCode} - ${res.body}';
+      }
+    } catch (_) {
+      errorMsg = 'Failed to generate AI text: ${res.statusCode} - ${res.body}';
+    }
+    throw Exception(errorMsg);
+  } on SocketException catch (e) {
+    throw Exception('Network error: Unable to connect to server. Please check your internet connection. ${e.message}');
+  } on TimeoutException catch (e) {
+    throw Exception('Request timeout: The AI generation is taking too long. Please try again.');
+  } catch (e) {
+    if (e.toString().contains('Exception:')) {
+      rethrow;
+    }
+    throw Exception('Failed to generate AI text: ${e.toString()}');
   }
-  throw Exception('Failed to generate AI text');
 }
 
-Future<void> createTTSAnnouncement(String title, String text, {String? voice, String? folderId, String? zoneId}) async {
+Future<Map<String, dynamic>> createTTSAnnouncement(String title, String text, {String? voice, String? folderId, String? zoneId}) async {
   final url = Uri.parse('$apiBase/announcements/tts/');
   final body = {
     'title': title,
     'text': text,
     if (voice != null) 'voice': voice,
-    if (folderId != null) 'folder': folderId,
+    if (folderId != null && folderId.isNotEmpty) 'folder_id': folderId, // Use folder_id (backend expects this)
     if (zoneId != null) 'zone_id': zoneId,
   };
+  print('Creating TTS announcement - body: ${jsonEncode(body)}');
   final res = await http.post(url, headers: await _authHeaders(), body: jsonEncode(body));
   if (res.statusCode < 200 || res.statusCode >= 300) {
     throw Exception('Failed to create TTS announcement: ${res.body}');
   }
+  // Parse response to get announcement ID
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  return data;
+}
+
+Future<Map<String, dynamic>> regenerateTTSAnnouncement(String announcementId, {String? voice, String? provider}) async {
+  final url = Uri.parse('$apiBase/announcements/$announcementId/regenerate_tts/');
+  final body = <String, dynamic>{};
+  if (voice != null) body['voice'] = voice;
+  if (provider != null) body['provider'] = provider;
+  
+  final res = await http.post(url, headers: await _authHeaders(), body: jsonEncode(body)).timeout(const Duration(seconds: 60));
+  if (res.statusCode < 200 || res.statusCode >= 300) {
+    String errorMsg = 'Failed to generate audio: ${res.statusCode}';
+    try {
+      final errorData = jsonDecode(res.body) as Map<String, dynamic>;
+      if (errorData.containsKey('detail')) {
+        errorMsg = errorData['detail'].toString();
+      }
+    } catch (_) {
+      errorMsg = 'Failed to generate audio: ${res.statusCode} - ${res.body}';
+    }
+    throw Exception(errorMsg);
+  }
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  return data;
 }
 
 Future<List<Map<String, dynamic>>> getAnnouncementTemplates({String category = 'general', int quantity = 8, String tone = 'professional'}) async {
@@ -616,3 +688,25 @@ Future<void> deleteSchedule(String id) async {
   final res = await http.delete(Uri.parse('$apiBase/schedules/schedules/$id/'), headers: await _authHeaders());
   if (res.statusCode < 200 || res.statusCode >= 300) throw Exception('Failed to delete schedule');
 }
+
+// Get TTS voices
+Future<List<Map<String, dynamic>>> getTTSVoices() async {
+  final url = Uri.parse('$apiBase/announcements/tts-voices/');
+  final res = await http.get(url, headers: await _authHeaders());
+  if (res.statusCode >= 200 && res.statusCode < 300) {
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    if (data['voices'] is List) {
+      return (data['voices'] as List).map((v) => v as Map<String, dynamic>).toList();
+    }
+  }
+  // Return default voices if API fails
+  return [
+    {'id': 'fable', 'name': 'Fable', 'gender': 'male', 'accent': 'UK English'},
+    {'id': 'echo', 'name': 'Echo', 'gender': 'male', 'accent': 'US English'},
+    {'id': 'shimmer', 'name': 'Shimmer', 'gender': 'female', 'accent': 'US English'},
+    {'id': 'nova', 'name': 'Nova', 'gender': 'female', 'accent': 'US English'},
+    {'id': 'onyx', 'name': 'Onyx', 'gender': 'male', 'accent': 'US English'},
+    {'id': 'alloy', 'name': 'Alloy', 'gender': 'female', 'accent': 'US English'},
+  ];
+}
+

@@ -50,10 +50,41 @@ class PlayerModel extends ChangeNotifier {
       await player.setSpeed(speed);
       
       // Add error handling and state monitoring
+      // CRITICAL: Listen for playlist completion and restart if loop mode is all
       player.playerStateStream.listen((state) {
         print('Player state: $state, processingState: ${state.processingState}');
         if (state.processingState == ProcessingState.idle && state.playing) {
           print('WARNING: Player is idle but marked as playing - may indicate loading issue');
+        }
+        // When playlist completes and loop mode is all, restart playback
+        if (state.processingState == ProcessingState.completed && 
+            loopMode == LoopMode.all && 
+            !state.playing) {
+          print('Playlist completed with LoopMode.all - restarting playback');
+          // Restart from beginning immediately
+          Future.microtask(() async {
+            try {
+              await player.seek(Duration.zero, index: 0);
+              await player.play();
+              print('Playlist restarted successfully');
+            } catch (e) {
+              print('Error restarting playlist: $e');
+            }
+          });
+        }
+      });
+      
+      // ALSO listen to sequenceStream to catch when playlist ends
+      player.sequenceStateStream?.listen((sequenceState) {
+        if (sequenceState != null) {
+          final currentIndex = sequenceState.currentIndex;
+          final sequence = sequenceState.sequence;
+          if (currentIndex != null && 
+              sequence != null && 
+              currentIndex >= sequence.length - 1 &&
+              loopMode == LoopMode.all) {
+            print('Reached end of playlist with LoopMode.all - will restart');
+          }
         }
       });
       

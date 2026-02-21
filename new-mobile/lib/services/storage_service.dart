@@ -69,3 +69,33 @@ Future<String?> getProfileAvatar() async {
   return sp.getString('profile_avatar');
 }
 
+// Role storage
+Future<void> setUserRole(String? role) async {
+  final sp = await SharedPreferences.getInstance();
+  if (role == null || role.isEmpty) {
+    await sp.remove('user_role');
+  } else {
+    await sp.setString('user_role', role);
+  }
+}
+
+Future<String?> getUserRole() async {
+  final sp = await SharedPreferences.getInstance();
+  return sp.getString('user_role');
+}
+
+// Client ID storage (user's own clientId, not impersonation)
+Future<void> setUserClientId(String? clientId) async {
+  final sp = await SharedPreferences.getInstance();
+  if (clientId == null || clientId.isEmpty) {
+    await sp.remove('user_client_id');
+  } else {
+    await sp.setString('user_client_id', clientId);
+  }
+}
+
+Future<String?> getUserClientId() async {
+  final sp = await SharedPreferences.getInstance();
+  return sp.getString('user_client_id');
+}
+

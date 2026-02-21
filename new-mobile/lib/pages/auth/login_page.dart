@@ -90,10 +90,14 @@ class _LoginPageState extends State<LoginPage> {
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
+                        errorBorder: InputBorder.none, // No error border
+                        focusedErrorBorder: InputBorder.none, // No error border when focused
+                        errorText: null, // Explicitly no error text
                         contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                       ), 
                       obscureText: true,
                       style: const TextStyle(color: Colors.white, fontSize: 16),
+                      // No validator - login page should not validate password format
                     ),
                   ),
                 ),

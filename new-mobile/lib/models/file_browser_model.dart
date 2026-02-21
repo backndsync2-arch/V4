@@ -19,14 +19,18 @@ class FileBrowserModel extends ChangeNotifier {
     try {
       final zoneId = await getSelectedZoneId();
       print('[$type] Loading files and folders - folderId: $folderId, zoneId: $zoneId');
-      if (type == 'music') {
-        files = await getMusicFiles(folderId: folderId, zoneId: zoneId);
-      } else {
-        files = await getAnnouncements(folderId: folderId, zoneId: zoneId);
-      }
-      // Get all folders first, then filter by parentId on frontend
-      // (Backend doesn't filter by parent, so we do it here)
-      final allFolders = await getFolders(type: type, parentId: null, zoneId: zoneId);
+      
+      // Load files and folders in parallel instead of sequentially for faster loading
+      final results = await Future.wait([
+        type == 'music' 
+          ? getMusicFiles(folderId: folderId, zoneId: zoneId)
+          : getAnnouncements(folderId: folderId, zoneId: zoneId),
+        getFolders(type: type, parentId: null, zoneId: zoneId),
+      ]);
+      
+      files = results[0] as List<dynamic>;
+      final allFolders = results[1] as List<dynamic>;
+      
       // Filter folders by parentId
       if (folderId == null || folderId.isEmpty) {
         // At root level: show only folders with no parent

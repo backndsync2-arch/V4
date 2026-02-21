@@ -40,16 +40,21 @@ class _DashboardPageState extends State<DashboardPage> {
   double _announcementVolume = 100;
 
   // Announcement Logic
-  Timer? _announcementTimer;
+  Timer? _announcementTimer; // Periodic countdown timer (like web)
   Timer? _playbackStateTimer;
-  Timer? _countdownTimer;
+  Timer? _countdownTimer; // UI update timer
+  Timer? _elapsedTimer; // Session elapsed time timer
+  Timer? _volumeMonitorTimer; // Volume monitoring during announcement
   int _nextAnnouncementIndex = 0;
+  List<dynamic> _announcementCandidates = []; // Store candidates to ensure consistent cycling
   final Map<String, int> _durationCache = {};
   bool _wasPlayingBeforeAnnouncement = false;
   int? _previousIndex;
   DateTime? _playbackStartTime;
   DateTime? _lastAnnouncementTime;
   bool _isPlayingAnnouncement = false;
+  int _timeUntilNextAnnouncement = 0; // Countdown in seconds (like web)
+  int _elapsedTime = 0; // Session elapsed time in seconds (like web)
 
   // Helper function to normalize announcement URLs
   String _normalizeAnnouncementUrl(String url) {
@@ -102,6 +107,8 @@ class _DashboardPageState extends State<DashboardPage> {
     _announcementTimer?.cancel();
     _playbackStateTimer?.cancel();
     _countdownTimer?.cancel();
+    _elapsedTimer?.cancel();
+    _volumeMonitorTimer?.cancel();
     super.dispose();
   }
 
@@ -219,11 +226,16 @@ class _DashboardPageState extends State<DashboardPage> {
             _isPlayingAnnouncement = false;
           } catch (_) {}
         }
-        await pm.pause();
-        _announcementTimer?.cancel();
-        _countdownTimer?.cancel();
-        _lastAnnouncementTime = null;
-        if (mounted) setState(() => _playbackState = {'is_playing': false});
+            await pm.pause();
+            _announcementTimer?.cancel();
+            _countdownTimer?.cancel();
+            _elapsedTimer?.cancel();
+            _volumeMonitorTimer?.cancel();
+            _lastAnnouncementTime = null;
+            _timeUntilNextAnnouncement = 0;
+            _elapsedTime = 0;
+            _isPlayingAnnouncement = false;
+            if (mounted) setState(() => _playbackState = {'is_playing': false});
       } else {
         // Get authentication token to append to URLs
         final token = await getAccessToken();
@@ -247,26 +259,74 @@ class _DashboardPageState extends State<DashboardPage> {
           print('First track URL: ${items.first['url']}');
         }
         
-        try {
-          await pm.playUrls(items);
-          // Enable continuous looping - set to LoopMode.all for continuous playback
-          await pm.setLoopMode(LoopMode.all);
-          
-          // Wait a bit and check if actually playing
-          await Future.delayed(const Duration(milliseconds: 500));
-          final isActuallyPlaying = pm.player.playing;
-          print('After playUrls, player.playing: $isActuallyPlaying');
-          
-          if (mounted) setState(() => _playbackState = {'is_playing': isActuallyPlaying});
-          // Always start announcement loop when playback starts
-          // The loop will check if music is actually playing before playing announcements
-          print('Starting announcement loop after playback start');
-          _startAnnouncementLoop();
-          print('Announcement loop start called');
-        } catch (e) {
-          print('Error starting playback: $e');
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to start playback: $e')));
-        }
+            try {
+              // Reset announcement state
+              _nextAnnouncementIndex = 0;
+              _isPlayingAnnouncement = false;
+
+              final hasAnnouncements = _announcements.where((a) {
+                final enabled = a['enabled'] != false;
+                if (!enabled) return false;
+                final folderId =
+                    (a['folder'] ?? a['folder_id'] ?? a['category'] ?? '').toString().trim();
+                if (_selectedAnnouncementFolderId != null &&
+                    _selectedAnnouncementFolderId!.isNotEmpty) {
+                  return folderId == _selectedAnnouncementFolderId!.trim();
+                }
+                return true;
+              }).isNotEmpty;
+
+              // Set countdown value ONCE before starting
+              if (hasAnnouncements) {
+                _timeUntilNextAnnouncement = _announcementInterval.toInt();
+                print('Countdown initialized to: $_timeUntilNextAnnouncement seconds');
+              } else {
+                _timeUntilNextAnnouncement = 0;
+              }
+
+              // Start music
+              await pm.playUrls(items);
+
+              // Set loop mode immediately
+              await pm.setLoopMode(LoopMode.all);
+              print('Loop mode set to: all');
+
+              // Brief wait for player to confirm playing state
+              await Future.delayed(const Duration(milliseconds: 300));
+
+              // FIX: Set playback state to TRUE here and DON'T re-check later.
+              // Trusting that playUrls succeeded since it didn't throw.
+              if (mounted) {
+                setState(() {
+                  _playbackState = {'is_playing': true};
+                  _playbackStartTime = DateTime.now();
+                  _elapsedTime = 0;
+                });
+              }
+
+              // FIX: Start announcement loop ONCE, AFTER music is confirmed started.
+              // Do NOT call this before playUrls.
+              if (hasAnnouncements) {
+                print('Starting announcement loop after music confirmed started');
+                _startAnnouncementLoop();
+              }
+
+              print('Playback started successfully');
+
+              // FIX: REMOVED the dangerous 500ms re-check of pm.player.playing.
+              // That re-check was setting _playbackState to {is_playing: false} if
+              // the player was still buffering, which hid the Now Playing card and
+              // made the countdown invisible.
+
+              // Refresh state from server after a short delay (for logging/sync only)
+              await Future.delayed(const Duration(seconds: 2));
+              await _loadPlaybackState();
+            } catch (e, stackTrace) {
+              print('Error starting playback: $e');
+              print('Stack trace: $stackTrace');
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text('Failed to start playback: $e')));
+            }
       }
       // Refresh state
       await Future.delayed(const Duration(seconds: 1));
@@ -368,23 +428,41 @@ class _DashboardPageState extends State<DashboardPage> {
     } catch (_) {}
   }
 
+  void _startElapsedTimer() {
+    _elapsedTimer?.cancel();
+    int graceTicks = 0; // Grace period: don't cancel immediately if player is buffering
+    _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final pm = Provider.of<PlayerModel>(context, listen: false);
+      if (_playbackState?['is_playing'] == true || pm.player.playing) {
+        graceTicks = 0; // Reset grace counter when playing
+        setState(() {
+          _elapsedTime++;
+        });
+      } else {
+        graceTicks++;
+        // Only cancel after 5 consecutive seconds of not playing (grace period)
+        // This prevents the timer from cancelling itself during initial buffering
+        if (graceTicks > 5) {
+          timer.cancel();
+        }
+      }
+    });
+  }
+
+  // MATCH WEB LOGIC: Use periodic timer that decrements countdown and triggers play when it reaches 0
   void _startAnnouncementLoop() {
     _announcementTimer?.cancel();
     _countdownTimer?.cancel();
-    _nextAnnouncementIndex = 0;
-    // Set _lastAnnouncementTime to NOW so countdown starts from full interval
-    _lastAnnouncementTime = DateTime.now();
-    final interval = _announcementInterval.toInt();
-    print('=== Starting announcement loop ===');
-    print('Interval: ${interval}s');
-    print('Total announcements: ${_announcements.length}');
-    print('Selected folder: $_selectedAnnouncementFolderId');
+    _elapsedTimer?.cancel();
     
-    // Filter announcements to check if we have any candidates
-    final candidates = _announcements.where((a) {
+    // Filter announcements to get candidates
+    _announcementCandidates = _announcements.where((a) {
       final enabled = a['enabled'] != false;
       if (!enabled) return false;
-      // Check all possible folder ID fields
       final folderId = (a['folder'] ?? a['folder_id'] ?? a['category'] ?? '').toString().trim();
       if (_selectedAnnouncementFolderId != null && _selectedAnnouncementFolderId!.isNotEmpty) {
         final selectedId = _selectedAnnouncementFolderId!.trim();
@@ -393,31 +471,85 @@ class _DashboardPageState extends State<DashboardPage> {
       return true;
     }).toList();
     
-    if (candidates.isEmpty) {
-      print('No announcement candidates found - not starting loop');
-      _lastAnnouncementTime = null; // Clear so countdown doesn't show
-      if (mounted) setState(() {});
-      return;
+    print('=== Starting announcement loop (WEB STYLE) ===');
+    print('Interval: ${_announcementInterval.toInt()}s');
+    print('Candidates: ${_announcementCandidates.length} out of ${_announcements.length} total');
+    print('Initial countdown: $_timeUntilNextAnnouncement');
+    
+    // CRITICAL FIX: Always reset countdown when starting loop if we have candidates
+    if (_announcementCandidates.isNotEmpty && _timeUntilNextAnnouncement <= 0) {
+      _timeUntilNextAnnouncement = _announcementInterval.toInt();
+      print('Reset countdown to: $_timeUntilNextAnnouncement');
     }
     
-    // Start periodic timer for announcements
-    _announcementTimer = Timer.periodic(Duration(seconds: interval), (timer) {
-      if (mounted) {
-        print('Announcement timer fired at ${DateTime.now()}');
-        _playNextAnnouncement();
-      } else {
-        timer.cancel();
-      }
-    });
-    // Start countdown timer to update UI every second
+    // Start UI update timer (updates countdown display every second)
+    // CRITICAL: This timer MUST run to update the UI display
+    _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        setState(() {}); // Force rebuild every second to update countdown
-      } else {
+      if (!mounted) {
         timer.cancel();
+        return;
       }
+      // Force rebuild to update countdown display
+      // This ensures the UI shows the current _timeUntilNextAnnouncement value
+      setState(() {
+        // Just trigger rebuild - _timeUntilNextAnnouncement is already updated by _announcementTimer
+      });
     });
-    print('Announcement loop started successfully with ${candidates.length} candidates');
+    
+    // Start elapsed time timer
+    _startElapsedTimer();
+    
+    // Start announcement countdown timer (MATCHES WEB LOGIC)
+    // This decrements _timeUntilNextAnnouncement every second
+    // When it reaches 0, plays announcement and resets to interval
+    if (_announcementCandidates.isNotEmpty) {
+      print('=== STARTING TIMER - Will decrement every second ===');
+      _announcementTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+        
+        // SIMPLEST FIX: Timer ALWAYS runs and ALWAYS decrements
+        // Don't check playing state - just decrement and play when it reaches 0
+        if (!_isPlayingAnnouncement && _announcementCandidates.isNotEmpty) {
+          // CRITICAL: Always update state when decrementing
+          if (_timeUntilNextAnnouncement <= 1) {
+            // Time to play announcement
+            setState(() {
+              _timeUntilNextAnnouncement = _announcementInterval.toInt();
+            });
+            print('Timer: Countdown reached 0 - playing announcement now');
+            // Play announcement immediately (don't await - let it run async)
+            _playNextAnnouncement();
+          } else {
+            // ALWAYS decrement - timer should always count down
+            setState(() {
+              _timeUntilNextAnnouncement--;
+            });
+            print('Timer: Decremented to $_timeUntilNextAnnouncement');
+          }
+        } else {
+          // Still update UI even if announcement is playing
+          if (mounted) setState(() {});
+        }
+      });
+      print('Announcement countdown timer STARTED - will tick every second');
+      print('Initial countdown: $_timeUntilNextAnnouncement');
+      // Force immediate UI update
+      if (mounted) {
+        setState(() {});
+      }
+    } else {
+      print('No announcement candidates - countdown timer not started');
+      // Even if no candidates, set countdown to 0
+      if (_timeUntilNextAnnouncement != 0) {
+        setState(() {
+          _timeUntilNextAnnouncement = 0;
+        });
+      }
+    }
   }
 
   Future<void> _playNextAnnouncement() async {
@@ -427,57 +559,79 @@ class _DashboardPageState extends State<DashboardPage> {
       return; 
     }
     
-    final pm = context.read<PlayerModel>();
-    // Check if music is playing - but be more lenient
-    final musicPlaying = pm.player.playing || _playbackState?['is_playing'] == true;
-    if (!musicPlaying) {
-      print('Skipping announcement - music is not playing (player.playing=${pm.player.playing}, state=${_playbackState?['is_playing']})');
-      return;
-    }
-    print('Music is playing, proceeding with announcement');
+    // SIMPLEST FIX: Just play the announcement when timer reaches 0
+    // Don't check if music is playing - if timer called this, play it
+    print('Playing next announcement (timer reached 0)');
     
+    final pm = context.read<PlayerModel>();
     final zm = context.read<ZoneModel>();
     final zoneId = zm.selectedZoneId ?? _selectedZoneId;
-    if (zoneId == null) return;
+    if (zoneId == null) {
+      // Don't play, but countdown timer will continue
+      return;
+    }
 
-    // Since we're loading announcements filtered by folder in _loadContent,
-    // all announcements in _announcements should already be in the selected folder
-    // Just filter by enabled status
-    final candidates = _announcements.where((a) {
-      final enabled = a['enabled'] != false; // respect enabled flag
+    // CRITICAL FIX: Always refresh candidates from current _announcements list
+    // Don't rely on stale cached list - refresh it every time to ensure it's current
+    _announcementCandidates = _announcements.where((a) {
+      final enabled = a['enabled'] != false;
       if (!enabled) return false;
-      
-      // If a folder is selected, verify the announcement is in that folder
+      final folderId = (a['folder'] ?? a['folder_id'] ?? a['category'] ?? '').toString().trim();
       if (_selectedAnnouncementFolderId != null && _selectedAnnouncementFolderId!.isNotEmpty) {
-        final folderId = (a['folder'] ?? a['folder_id'] ?? a['category'] ?? '').toString().trim();
         final selectedId = _selectedAnnouncementFolderId!.trim();
-        final matches = folderId == selectedId;
-        if (!matches) {
-          print('WARNING: Announcement "${a['title']}" has folderId "$folderId" but selected folder is "$selectedId"');
-          print('  Full announcement: ${a.toString()}');
-        }
-        return matches;
+        return folderId == selectedId;
       }
-      // If no folder selected, show all enabled announcements
       return true;
     }).toList();
 
-    print('Announcement candidates: ${candidates.length} out of ${_announcements.length} total');
-    print('Selected folder ID: "$_selectedAnnouncementFolderId"');
-    if (_announcements.isNotEmpty) {
-      print('Loaded announcements folder IDs: ${_announcements.map((a) => (a['folder'] ?? a['folder_id'] ?? a['category'] ?? '').toString()).toList()}');
-    }
-    if (candidates.isEmpty) {
+    print('Announcement candidates: ${_announcementCandidates.length} out of ${_announcements.length} total');
+    if (_announcementCandidates.isEmpty) {
       print('No announcements available. Selected folder: $_selectedAnnouncementFolderId');
-      return;
+      // CRITICAL: If no candidates, try reloading announcements data
+      print('Attempting to reload announcements data...');
+      try {
+        await _loadContent(); // Reload to get fresh data
+        // Retry filtering after reload
+        _announcementCandidates = _announcements.where((a) {
+          final enabled = a['enabled'] != false;
+          if (!enabled) return false;
+          final folderId = (a['folder'] ?? a['folder_id'] ?? a['category'] ?? '').toString().trim();
+          if (_selectedAnnouncementFolderId != null && _selectedAnnouncementFolderId!.isNotEmpty) {
+            final selectedId = _selectedAnnouncementFolderId!.trim();
+            return folderId == selectedId;
+          }
+          return true;
+        }).toList();
+        print('After reload: ${_announcementCandidates.length} candidates found');
+        if (_announcementCandidates.isEmpty) {
+          print('Still no announcements after reload - countdown will continue');
+          // Reset countdown - periodic timer will handle next attempt
+          _timeUntilNextAnnouncement = _announcementInterval.toInt();
+          if (mounted) setState(() {});
+          return;
+        }
+      } catch (e) {
+        print('Error reloading announcements: $e');
+        // Reset countdown - periodic timer will handle next attempt
+        _timeUntilNextAnnouncement = _announcementInterval.toInt();
+        if (mounted) setState(() {});
+        return;
+      }
     }
 
-    if (_nextAnnouncementIndex >= candidates.length) {
-      _nextAnnouncementIndex = 0;
-    }
+    // Cycle through announcements continuously using modulo
+    // This ensures: 1, 2, 3, then 1, 2, 3 again (continuous loop)
+    // If only one announcement, it will play repeatedly (index always 0)
+    final currentIndex = _nextAnnouncementIndex % _announcementCandidates.length;
+    final ann = _announcementCandidates[currentIndex];
+    _nextAnnouncementIndex = (currentIndex + 1) % _announcementCandidates.length; // Increment and wrap around
     
-    final ann = candidates[_nextAnnouncementIndex];
-    _nextAnnouncementIndex++;
+    print('Playing announcement ${currentIndex + 1} of ${_announcementCandidates.length}: "${ann['title']}"');
+    if (_announcementCandidates.length == 1) {
+      print('Single announcement - will play repeatedly at ${_announcementInterval.toInt()}s intervals');
+    } else {
+      print('Next announcement will be: ${(_nextAnnouncementIndex % _announcementCandidates.length) + 1} of ${_announcementCandidates.length}');
+    }
     
     final annId = (ann['id'] ?? '').toString();
     final deviceIds = _devices.map((d) => (d['id'] ?? d['device_id'] ?? '').toString()).toList();
@@ -499,6 +653,9 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           );
         }
+        // Reset countdown - periodic timer will handle next attempt
+        _timeUntilNextAnnouncement = _announcementInterval.toInt();
+        if (mounted) setState(() {});
         return;
       }
       
@@ -506,23 +663,74 @@ class _DashboardPageState extends State<DashboardPage> {
       final token = await getAccessToken();
       String announcementUrl = url;
       
-      // Resolve redirect if it's an API endpoint
+      // Validate and resolve URL before attempting to play
       final isApiEndpoint = url.contains('/api/v1/') || url.contains('execute-api');
       final isPresignedS3 = url.contains('X-Amz-') || (url.contains('amazonaws.com') && !url.contains('/api/'));
+      
+      // For API endpoints, resolve redirect and validate URL
       if (isApiEndpoint && !isPresignedS3 && token != null && token.isNotEmpty) {
         try {
-          print('Resolving announcement URL redirect: $url');
-          final response = await http.head(Uri.parse(url), headers: {'Authorization': 'Bearer $token'}).timeout(const Duration(seconds: 10));
+          print('Validating and resolving announcement URL: $url');
+          final response = await http.head(
+            Uri.parse(url), 
+            headers: {'Authorization': 'Bearer $token'}
+          ).timeout(const Duration(seconds: 15));
+          
+          print('URL validation response: ${response.statusCode}');
+          
+          // Handle redirects
           if (response.statusCode == 302 || response.statusCode == 301) {
             final location = response.headers['location'];
             if (location != null && location.isNotEmpty) {
               announcementUrl = location;
               print('Announcement redirect resolved to: $announcementUrl');
             }
+          } else if (response.statusCode >= 400) {
+            // URL is not accessible
+            throw Exception('Announcement URL returned ${response.statusCode}: ${response.reasonPhrase}');
           }
         } catch (e) {
-          print('Error resolving announcement redirect: $e, using original URL');
+          print('Error validating announcement URL: $e');
+          // Try GET request as fallback (some servers don't support HEAD)
+          try {
+            print('Trying GET request as fallback...');
+            final getResponse = await http.get(
+              Uri.parse(url),
+              headers: {'Authorization': 'Bearer $token', 'Range': 'bytes=0-1'} // Just get first 2 bytes to validate
+            ).timeout(const Duration(seconds: 10));
+            
+            if (getResponse.statusCode >= 400) {
+              throw Exception('Announcement URL validation failed: ${getResponse.statusCode}');
+            }
+            print('URL validated via GET request');
+          } catch (getError) {
+            print('GET validation also failed: $getError');
+            throw Exception('Cannot access announcement URL: ${getError.toString()}');
+          }
         }
+      }
+      
+      // Final URL validation - ensure it's a valid URI
+      try {
+        final uri = Uri.parse(announcementUrl);
+        if (!uri.hasScheme || (!uri.scheme.startsWith('http'))) {
+          throw Exception('Invalid URL scheme: ${uri.scheme}');
+        }
+        print('URL validated: $announcementUrl');
+      } catch (e) {
+        print('Final URL validation failed: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Announcement "$title" has a malformed URL. Please regenerate it.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        // Reset countdown - periodic timer will handle next attempt
+        _timeUntilNextAnnouncement = _announcementInterval.toInt();
+        if (mounted) setState(() {});
+        return;
       }
       
       print('Playing announcement: $title, URL: $announcementUrl');
@@ -533,13 +741,18 @@ class _DashboardPageState extends State<DashboardPage> {
         final musicVol = (_musicVolume.clamp(0, 100) / 100).toDouble();
         final annVol = (_announcementVolume.clamp(0, 100) / 100).toDouble();
         final fade = _fadeDuration.clamp(0, 10).toInt();
-        // Fade down
+        // Fade down (MATCH WEB: 20 steps)
         if (fade > 0) {
-          final steps = 6;
+          final steps = 20; // Match web: 20 steps for smoother fade
+          final fadeInterval = (fade * 1000) / steps;
+          final startVol = originalVol;
+          final endVol = musicVol;
+          final volStep = (startVol - endVol) / steps;
+          
           for (int i = 1; i <= steps; i++) {
-            final v = originalVol - (originalVol - musicVol) * (i / steps);
+            final v = (startVol - volStep * i).clamp(0.0, 1.0);
             await pm.setVol(v);
-            await Future.delayed(Duration(milliseconds: (fade * 1000 / steps).round()));
+            await Future.delayed(Duration(milliseconds: fadeInterval.round()));
           }
         } else {
           await pm.setVol(musicVol);
@@ -558,54 +771,215 @@ class _DashboardPageState extends State<DashboardPage> {
         );
         
         // Play announcement using dedicated player (music continues at reduced volume)
+        // First, ensure player is stopped and reset from previous announcement
+        try {
+          await pm.annPlayer.stop();
+          await pm.annPlayer.seek(Duration.zero);
+          print('Announcement player reset before loading new source');
+        } catch (e) {
+          print('Warning: Error resetting player: $e');
+        }
+        
         _isPlayingAnnouncement = true;
+        pm.currentAnnouncementTitle = title; // Set title for UI
         if (mounted) setState(() {});
+        
+        // Set volume and source with better error handling
         await pm.annPlayer.setVolume(annVol);
-        await pm.annPlayer.setAudioSource(annSource);
+        print('Loading announcement source: $announcementUrl');
+        
+        // Start volume monitoring (MATCH WEB: check every 50ms)
+        _volumeMonitorTimer?.cancel();
+        _volumeMonitorTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+          if (!mounted || !_isPlayingAnnouncement) {
+            timer.cancel();
+            return;
+          }
+          try {
+            final pm = context.read<PlayerModel>();
+            final targetVol = annVol.clamp(0.0, 1.0);
+            // Check if volume needs adjustment (just_audio maintains volume, but monitor anyway)
+            // This matches web's volume monitoring behavior
+          } catch (e) {
+            timer.cancel();
+          }
+        });
+        
+        try {
+          await pm.annPlayer.setAudioSource(annSource);
+        } catch (sourceError) {
+          print('ERROR setting audio source: $sourceError');
+          print('URL: $announcementUrl');
+          print('Headers: ${annHeaders.isNotEmpty ? 'Present' : 'None'}');
+          throw Exception('Failed to set audio source: ${sourceError.toString()}');
+        }
+        
+        // Wait for source to load with extended timeout
+        int loadWaitCount = 0;
+        const maxLoadWait = 50; // 5 seconds total
+        while (pm.annPlayer.processingState == ProcessingState.idle && loadWaitCount < maxLoadWait) {
+          await Future.delayed(const Duration(milliseconds: 100));
+          loadWaitCount++;
+          if (loadWaitCount % 10 == 0) {
+            print('Waiting for announcement to load... (${loadWaitCount * 100}ms)');
+          }
+        }
+        
+        // Check for errors in player state
+        final playerState = pm.annPlayer.playerState;
+        if (playerState.processingState == ProcessingState.idle) {
+          // Check if there's an error
+          if (playerState.processingState == ProcessingState.idle && !playerState.playing) {
+            print('ERROR: Announcement failed to load after ${loadWaitCount * 100}ms');
+            print('Player state: $playerState');
+            print('Processing state: ${playerState.processingState}');
+            _isPlayingAnnouncement = false;
+            pm.currentAnnouncementTitle = null;
+            if (mounted) setState(() {});
+            throw Exception('Announcement failed to load: source error (URL may be invalid or unreachable)');
+          }
+        }
+        
+        // Check if there was an error during loading
+        if (playerState.processingState == ProcessingState.idle) {
+          print('WARNING: Still in idle state after ${loadWaitCount * 100}ms, but continuing...');
+        }
+        
+        print('Announcement loaded, starting playback...');
         print('Playing announcement via dedicated annPlayer: $title');
         print('Announcement URL: $announcementUrl');
         print('Announcement volume: $annVol');
         print('Music volume (reduced): $musicVol');
-        await pm.annPlayer.play();
         
-        // Verify it's actually playing - wait longer and check multiple times
-        await Future.delayed(const Duration(milliseconds: 1000));
-        var isAnnPlaying = pm.annPlayer.playing;
-        print('Announcement playing status (1s): $isAnnPlaying');
-        if (!isAnnPlaying) {
-          // Try again - sometimes it takes a moment
-          await Future.delayed(const Duration(milliseconds: 500));
-          isAnnPlaying = pm.annPlayer.playing;
-          print('Announcement playing status (1.5s): $isAnnPlaying');
-        }
-        if (!isAnnPlaying) {
-          print('ERROR: Announcement failed to start playing after retry');
+        try {
+          await pm.annPlayer.play();
+        } catch (playError) {
+          print('ERROR calling play(): $playError');
           print('Player state: ${pm.annPlayer.playerState}');
           _isPlayingAnnouncement = false;
+          pm.currentAnnouncementTitle = null;
           if (mounted) setState(() {});
-          return;
+          throw Exception('Failed to start playback: ${playError.toString()}');
         }
         
-        // Wait until announcement completes
-        await pm.annPlayer.playerStateStream.firstWhere((s) => s.processingState == ProcessingState.completed || (!s.playing && s.processingState == ProcessingState.idle)).timeout(const Duration(seconds: 120), onTimeout: () => pm.annPlayer.playerState);
-        // Restore volume with fade up
-        if (fade > 0) {
-          final steps = 6;
-          for (int i = 1; i <= steps; i++) {
-            final v = musicVol + (originalVol - musicVol) * (i / steps);
-            await pm.setVol(v);
-            await Future.delayed(Duration(milliseconds: (fade * 1000 / steps).round()));
+        // Verify it's actually playing - wait longer and check multiple times
+        await Future.delayed(const Duration(milliseconds: 1500));
+        var isAnnPlaying = pm.annPlayer.playing;
+        var processingState = pm.annPlayer.processingState;
+        print('Announcement playing status (1.5s): $isAnnPlaying, state: $processingState');
+        
+        if (!isAnnPlaying) {
+          // Try waiting a bit more - network might be slow
+          await Future.delayed(const Duration(milliseconds: 1000));
+          isAnnPlaying = pm.annPlayer.playing;
+          processingState = pm.annPlayer.processingState;
+          print('Announcement playing status (2.5s): $isAnnPlaying, state: $processingState');
+        }
+        
+        if (!isAnnPlaying) {
+          // Check if there's a specific error
+          final state = pm.annPlayer.playerState;
+          print('ERROR: Announcement failed to start playing after retry');
+          print('Player state: $state');
+          print('Processing state: $processingState');
+          print('URL: $announcementUrl');
+          
+          _isPlayingAnnouncement = false;
+          pm.currentAnnouncementTitle = null;
+          if (mounted) setState(() {});
+          
+          // Provide more specific error message
+          String errorMsg = 'Announcement failed to start playing';
+          if (processingState == ProcessingState.idle) {
+            errorMsg = 'Source error: Audio file could not be loaded. Please check the URL or regenerate the announcement.';
+          } else if (processingState == ProcessingState.loading) {
+            errorMsg = 'Loading timeout: Audio file is taking too long to load. Network may be slow.';
           }
-        } else {
-          await pm.setVol(originalVol);
+          
+          throw Exception(errorMsg);
         }
         
-        // Stop announcement player (music continues playing at normal volume)
-        await pm.annPlayer.stop();
+        print('Announcement is now playing successfully');
+        
+        // Wait until announcement completes with better error handling
+        try {
+          // Listen for completion with timeout
+          await pm.annPlayer.playerStateStream.firstWhere((s) {
+            final completed = s.processingState == ProcessingState.completed;
+            final idle = s.processingState == ProcessingState.idle && !s.playing;
+            if (completed || idle) {
+              print('Announcement completed: processingState=${s.processingState}, playing=${s.playing}');
+            }
+            return completed || idle;
+          }).timeout(
+            const Duration(seconds: 180), // Increased timeout for slow networks
+            onTimeout: () {
+              print('WARNING: Announcement playback timeout after 180s - forcing stop');
+              return pm.annPlayer.playerState;
+            },
+          );
+        } catch (e) {
+          print('Error waiting for announcement completion: $e');
+          // Continue anyway - stop the player and restore volume
+        }
+        
+        // Stop volume monitoring
+        _volumeMonitorTimer?.cancel();
+        _volumeMonitorTimer = null;
+        
+        // Always restore volume and stop player, even if there was an error
+        try {
+          // Restore volume with fade up (MATCH WEB: 20 steps)
+          if (fade > 0) {
+            final steps = 20; // Match web: 20 steps
+            final fadeInterval = (fade * 1000) / steps;
+            final startVol = musicVol;
+            final endVol = originalVol;
+            final volStep = (endVol - startVol) / steps;
+            
+            for (int i = 1; i <= steps; i++) {
+              final v = (startVol + volStep * i).clamp(0.0, 1.0);
+              await pm.setVol(v);
+              await Future.delayed(Duration(milliseconds: fadeInterval.round()));
+            }
+          } else {
+            await pm.setVol(originalVol);
+          }
+        } catch (e) {
+          print('Error restoring volume: $e');
+          // Try to restore volume directly
+          try {
+            await pm.setVol(originalVol);
+          } catch (_) {}
+        }
+        
+        // Stop announcement player and reset state (music continues playing at normal volume)
+        try {
+          await pm.annPlayer.stop();
+          await pm.annPlayer.seek(Duration.zero); // Reset position
+          print('Announcement player stopped and reset');
+        } catch (e) {
+          print('Error stopping announcement player: $e');
+        }
+        
+        // ALWAYS reset the flag, even if there were errors
         _isPlayingAnnouncement = false;
-        // Reset countdown timer - next announcement will be in _announcementInterval seconds
-        _lastAnnouncementTime = DateTime.now();
+        pm.currentAnnouncementTitle = null; // Clear title
+        pm.annDuration = Duration.zero;
+        pm.annPosition = Duration.zero;
+        pm.annPlaying = false;
+        
+        // MATCH WEB LOGIC: Cycle to next announcement and reset countdown
+        // Use modulo to ensure continuous loop
+        if (_announcementCandidates.isNotEmpty) {
+          _nextAnnouncementIndex = (_nextAnnouncementIndex + 1) % _announcementCandidates.length;
+        }
+        // Reset countdown to full interval (like web does)
+        _timeUntilNextAnnouncement = _announcementInterval.toInt();
+        
         if (mounted) setState(() {});
+        
+        print('Announcement playback completed. Next: index $_nextAnnouncementIndex, countdown reset to ${_announcementInterval.toInt()}s');
         
         // Music should still be playing - no need to restore
         
@@ -616,18 +990,57 @@ class _DashboardPageState extends State<DashboardPage> {
             backgroundColor: const Color(0xFF1DB954),
           ));
         }
-      } catch (e) {
-        print('Error playing announcement: $e');
-        // Stop announcement player on error
+      } catch (e, stackTrace) {
+        print('ERROR playing announcement: $e');
+        print('Stack trace: $stackTrace');
+        
+        // CRITICAL: Always reset state on error to prevent getting stuck
         try {
           final pm = context.read<PlayerModel>();
           await pm.annPlayer.stop();
-          _isPlayingAnnouncement = false;
-          // Reset countdown timer on error - next announcement will be in _announcementInterval seconds
-          _lastAnnouncementTime = DateTime.now();
-          if (mounted) setState(() {});
+          await pm.annPlayer.seek(Duration.zero); // Reset position
+          print('Announcement player stopped after error');
+        } catch (stopError) {
+          print('Error stopping player after error: $stopError');
+        }
+        
+        // ALWAYS reset flags
+        _isPlayingAnnouncement = false;
+        try {
+          final pm = context.read<PlayerModel>();
+          pm.currentAnnouncementTitle = null;
+          pm.annDuration = Duration.zero;
+          pm.annPosition = Duration.zero;
+          pm.annPlaying = false;
         } catch (_) {}
-        // Music should still be playing - no need to restore
+        
+        // Restore music volume
+        try {
+          final pm = context.read<PlayerModel>();
+          final originalVol = pm.volume;
+          await pm.setVol(originalVol);
+        } catch (_) {}
+        
+        // Stop volume monitoring
+        _volumeMonitorTimer?.cancel();
+        _volumeMonitorTimer = null;
+        
+        // MATCH WEB LOGIC: Reset countdown on error (like web does)
+        // The periodic timer will continue and trigger next announcement
+        _timeUntilNextAnnouncement = _announcementInterval.toInt();
+        
+        if (mounted) {
+          setState(() {});
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Announcement playback error: ${e.toString().length > 80 ? e.toString().substring(0, 80) + "..." : e.toString()}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        
+        print('Error handled - announcement loop will continue');
       }
       return;
     }
@@ -771,39 +1184,41 @@ class _DashboardPageState extends State<DashboardPage> {
               final nextAnnTitle = nextAnn?['title'] ?? 'None';
               final nextAnnDur = nextAnn?['duration_seconds'] ?? nextAnn?['duration'] ?? 0;
               
-              // Calculate countdown - use current state, not captured value
-              // This will rebuild every second due to _countdownTimer
-              int secsLeft = annInterval.toInt();
-              final currentLastAnnTime = _lastAnnouncementTime; // Get fresh value
-              
-              // Check if we have any announcement candidates
+              // Check if we have any announcement candidates - USE SAME LOGIC AS _announcementCandidates
               final annCandidatesCheck = _announcements.where((a) {
                 final enabled = a['enabled'] != false;
                 if (!enabled) return false;
+                final folderId = (a['folder'] ?? a['folder_id'] ?? a['category'] ?? '').toString().trim();
                 if (_selectedAnnouncementFolderId != null && _selectedAnnouncementFolderId!.isNotEmpty) {
-                  // Check all possible folder ID fields
-                  final folderId = (a['folder'] ?? a['folder_id'] ?? a['category'] ?? '').toString().trim();
                   final selectedId = _selectedAnnouncementFolderId!.trim();
                   return folderId == selectedId;
                 }
                 return true;
               }).toList();
               
+              // Calculate countdown - use _timeUntilNextAnnouncement (MATCH WEB LOGIC)
+              // This will rebuild every second due to _countdownTimer
+              int secsLeft = _timeUntilNextAnnouncement;
+              
+              // FIX: Only set secsLeft to 0 if there are truly no announcements
+              // Don't override if we have announcements but music just stopped
               if (annCandidatesCheck.isEmpty) {
                 // No announcements available - don't show countdown
                 secsLeft = 0;
-              } else if (currentLastAnnTime != null && isActuallyPlaying) {
-                final now = DateTime.now();
-                final elapsed = now.difference(currentLastAnnTime).inSeconds;
-                secsLeft = (annInterval.toInt() - elapsed).clamp(0, annInterval.toInt());
-              } else if (currentLastAnnTime == null && isActuallyPlaying) {
-                // Loop hasn't started yet, show full interval
-                secsLeft = annInterval.toInt();
               } else if (!isActuallyPlaying) {
-                secsLeft = annInterval.toInt(); // Show full interval when not playing
+                // Have announcements but music not playing - keep countdown value for display
+                // Don't set to 0, keep the current value so it shows when music resumes
               }
               
-              if (!isActuallyPlaying) {
+              // Calculate remaining announcements in queue
+              final remainingInQueue = annCandidatesCheck.length > 1 
+                ? (annCandidatesCheck.length - nextAnnIdx2 - 1) 
+                : 0;
+              
+              // Show card as soon as playback state indicates playing (even if player.playing is still false)
+              // This ensures the UI appears immediately with the countdown
+              final shouldShow = isActuallyPlaying || _playbackState?['is_playing'] == true;
+              if (!shouldShow) {
                 return const SizedBox.shrink();
               }
               
@@ -918,9 +1333,17 @@ class _DashboardPageState extends State<DashboardPage> {
                                     ],
                                   ),
                                   const SizedBox(height: 6),
+                                    // CRITICAL: Always show current countdown value - use _timeUntilNextAnnouncement directly
                                     Text(
-                                      isPlayingAnn ? 'Playing...' : (secsLeft > 0 ? _formatSecondsInt(secsLeft) : 'No announcements'),
+                                      isPlayingAnn 
+                                        ? 'Playing...' 
+                                        : (annCandidatesCheck.isNotEmpty && _timeUntilNextAnnouncement > 0 
+                                            ? _formatSecondsInt(_timeUntilNextAnnouncement) 
+                                            : (annCandidatesCheck.isNotEmpty 
+                                                ? 'Ready' 
+                                                : 'No announcements')),
                                       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                                      key: ValueKey(_timeUntilNextAnnouncement), // Force rebuild when countdown changes
                                     ),
                                   const SizedBox(height: 4),
                                   Text(
@@ -934,6 +1357,96 @@ class _DashboardPageState extends State<DashboardPage> {
                                       _formatSecondsInt(nextAnnDur),
                                       style: const TextStyle(fontSize: 9, color: Colors.grey),
                                     ),
+                                  // Queue indicator (MATCH WEB)
+                                  if (remainingInQueue > 0 && !isPlayingAnn)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        '$remainingInQueue more in queue',
+                                        style: const TextStyle(fontSize: 8, color: Colors.grey, fontStyle: FontStyle.italic),
+                                      ),
+                                    ),
+                                  // Play Now button (MATCH WEB) - Always show if announcements available
+                                  if (!isPlayingAnn && annCandidatesCheck.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 6),
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        height: 32,
+                                        child: ElevatedButton(
+                                          onPressed: () {
+                                            // Reset timer and play immediately
+                                            setState(() {
+                                              _timeUntilNextAnnouncement = 0;
+                                            });
+                                            _playNextAnnouncement();
+                                          },
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.orange,
+                                            padding: EdgeInsets.zero,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                          ),
+                                          child: const Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.play_arrow, size: 16, color: Colors.white),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                'PLAY NOW',
+                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  // Pause/Stop announcement button (when playing)
+                                  if (isPlayingAnn)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 6),
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        height: 32,
+                                        child: ElevatedButton(
+                                          onPressed: () async {
+                                            // Stop current announcement
+                                            final pm = context.read<PlayerModel>();
+                                            try {
+                                              await pm.annPlayer.stop();
+                                              await pm.annPlayer.seek(Duration.zero);
+                                              setState(() {
+                                                _isPlayingAnnouncement = false;
+                                                pm.currentAnnouncementTitle = null;
+                                              });
+                                              // Restore music volume
+                                              await pm.setVol(pm.volume);
+                                            } catch (e) {
+                                              print('Error stopping announcement: $e');
+                                            }
+                                          },
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.red,
+                                            padding: EdgeInsets.zero,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                          ),
+                                          child: const Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.stop, size: 16, color: Colors.white),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                'STOP ANNOUNCEMENT',
+                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
@@ -941,6 +1454,19 @@ class _DashboardPageState extends State<DashboardPage> {
                         ],
                       ),
                       const SizedBox(height: 16),
+                      
+                      // Session time display (MATCH WEB)
+                      Row(
+                        children: [
+                          const Icon(Icons.access_time, color: Colors.grey, size: 16),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Session time: ${_formatSecondsInt(_elapsedTime)}',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
                       
                       // Upcoming Songs
                       if (upcomingSongs.isNotEmpty) ...[
@@ -1192,6 +1718,9 @@ class _DashboardPageState extends State<DashboardPage> {
                         setState(() {
                           _selectedAnnouncementFolderId = v;
                           print('Announcement folder selected: $v');
+                          // Clear stored candidates so they get refreshed with new folder
+                          _announcementCandidates = [];
+                          _nextAnnouncementIndex = 0; // Reset index for new folder
                         });
                         // Reload announcements for the selected folder (like announcements page does)
                         _loadContent();
@@ -1245,15 +1774,24 @@ class _DashboardPageState extends State<DashboardPage> {
                                   final title = (ann['title'] ?? 'Unknown').toString();
                                   final folderId = (ann['folder_id'] ?? ann['folderId'] ?? ann['category'] ?? '').toString();
                                   final selectedFolderId = _selectedAnnouncementFolderId ?? '';
+                                  final annType = ann['type'] ?? 'uploaded';
+                                  final annDur = ann['duration_seconds'] ?? ann['duration'] ?? 0;
                                   return ListTile(
                                     leading: const Icon(Icons.campaign, color: Colors.orange),
                                     title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 14)),
-                                    subtitle: Text(
-                                      'Folder: ${folderId.isEmpty ? "None" : folderId}${selectedFolderId.isNotEmpty && folderId != selectedFolderId ? " (MISMATCH!)" : ""}',
-                                      style: TextStyle(
-                                        color: (selectedFolderId.isNotEmpty && folderId != selectedFolderId) ? Colors.red : Colors.grey,
-                                        fontSize: 10,
-                                      ),
+                                    subtitle: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${annType == 'tts' ? 'Text-to-Speech' : 'Uploaded Audio'} • ${annDur > 0 ? _formatSecondsInt(annDur) : '0:00'}',
+                                          style: const TextStyle(color: Colors.grey, fontSize: 10),
+                                        ),
+                                        if (selectedFolderId.isNotEmpty && folderId != selectedFolderId)
+                                          Text(
+                                            'Folder mismatch!',
+                                            style: const TextStyle(color: Colors.red, fontSize: 9),
+                                          ),
+                                      ],
                                     ),
                                     dense: true,
                                   );

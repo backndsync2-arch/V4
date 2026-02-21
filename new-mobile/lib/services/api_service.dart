@@ -56,23 +56,39 @@ Future<Map<String, String>> _authHeaders() async {
 
 Future<Map<String, dynamic>> login(String email, String password) async {
   final url = Uri.parse('$apiBase/auth/login/');
+  print('Attempting login to: $url');
+  print('Email: ${email.isNotEmpty ? email.substring(0, email.indexOf('@')).padRight(email.length, '*') : 'empty'}');
+  
   try {
     final res = await http.post(
       url, 
       headers: {'Content-Type': 'application/json'}, 
       body: jsonEncode({'email': email, 'password': password})
     ).timeout(const Duration(seconds: 15), onTimeout: () {
-      throw Exception('Login request timeout - check your internet connection');
+      print('Login timeout - no response from server');
+      throw TimeoutException('Login request timeout - check your internet connection');
     });
     
+    print('Login response status: ${res.statusCode}');
+    print('Login response body: ${res.body.length > 200 ? res.body.substring(0, 200) + '...' : res.body}');
+    
     if (res.statusCode >= 200 && res.statusCode < 300) {
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final access = data['access'] as String? ?? '';
-      final refresh = data['refresh'] as String? ?? '';
-      if (access.isNotEmpty && refresh.isNotEmpty) {
-        await setTokens(access, refresh);
+      try {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final access = data['access'] as String? ?? '';
+        final refresh = data['refresh'] as String? ?? '';
+        if (access.isNotEmpty && refresh.isNotEmpty) {
+          await setTokens(access, refresh);
+          print('Login successful - tokens saved');
+          return data;
+        } else {
+          print('Login response missing access or refresh token');
+          throw Exception('Invalid login response: missing authentication tokens');
+        }
+      } catch (e) {
+        print('Error parsing login response: $e');
+        throw Exception('Invalid login response format: ${e.toString()}');
       }
-      return data;
     }
     
     // Parse error response for better error messages
@@ -85,22 +101,40 @@ Future<Map<String, dynamic>> login(String email, String password) async {
         errorMsg = errorData['message'].toString();
       } else if (errorData.containsKey('error')) {
         errorMsg = errorData['error'].toString();
+      } else if (errorData.containsKey('non_field_errors')) {
+        final nonFieldErrors = errorData['non_field_errors'];
+        if (nonFieldErrors is List && nonFieldErrors.isNotEmpty) {
+          errorMsg = nonFieldErrors.first.toString();
+        } else {
+          errorMsg = nonFieldErrors.toString();
+        }
       } else {
-        errorMsg = 'Login failed: ${res.statusCode} - ${res.body}';
+        errorMsg = 'Login failed: ${res.statusCode} - ${res.body.length > 100 ? res.body.substring(0, 100) + '...' : res.body}';
       }
-    } catch (_) {
-      errorMsg = 'Login failed: ${res.statusCode} - ${res.body}';
+    } catch (parseError) {
+      print('Error parsing error response: $parseError');
+      errorMsg = 'Login failed: ${res.statusCode} - ${res.body.length > 100 ? res.body.substring(0, 100) + '...' : res.body}';
     }
+    print('Login error: $errorMsg');
     throw Exception(errorMsg);
   } on SocketException catch (e) {
+    print('Login SocketException: $e');
     throw Exception('Network error: Unable to connect to server. Please check your internet connection. ${e.message}');
   } on FormatException catch (e) {
-    throw Exception('Invalid response from server: ${e.message}');
-  } catch (e) {
-    if (e.toString().contains('timeout')) {
+    print('Login FormatException: $e');
+    throw Exception('Invalid server response. Please try again.');
+  } on TimeoutException catch (e) {
+    print('Login TimeoutException: $e');
+    throw Exception('Login request timeout. Please check your internet connection and try again.');
+  } catch (e, stackTrace) {
+    print('Login unexpected error: $e');
+    print('Stack trace: $stackTrace');
+    final errorStr = e.toString();
+    if (errorStr.contains('Exception:')) {
+      // Already formatted as Exception, rethrow as-is
       rethrow;
     }
-    throw Exception('Login failed: ${e.toString()}');
+    throw Exception('Login failed: ${errorStr}');
   }
 }
 
@@ -574,13 +608,61 @@ Future<List<dynamic>> getAdminClients() async {
   return [];
 }
 
-Future<Map<String, dynamic>> createAdminUser(String email, String name, String role, {String? clientId, String? password}) async {
+Future<Map<String, dynamic>> createClient({
+  required String name,
+  required String email,
+  String? businessName,
+  String? telephone,
+  String? description,
+  String subscriptionTier = 'basic',
+  String subscriptionStatus = 'trial',
+}) async {
+  final url = Uri.parse('$apiBase/admin/clients/');
+  final body = {
+    'name': name, // Required: Client organization name
+    'email': email, // Required: Client organization email
+    if (businessName != null && businessName.isNotEmpty) 'business_name': businessName,
+    if (telephone != null && telephone.isNotEmpty) 'telephone': telephone,
+    if (description != null && description.isNotEmpty) 'description': description,
+    'subscription_tier': subscriptionTier,
+    'subscription_status': subscriptionStatus,
+  };
+  final res = await http.post(url, headers: await _authHeaders(), body: jsonEncode(body));
+  if (res.statusCode < 200 || res.statusCode >= 300) {
+    throw Exception('Failed to create client: ${res.body}');
+  }
+  final data = jsonDecode(res.body);
+  if (data is Map<String, dynamic>) return data;
+  return {};
+}
+
+Future<List<dynamic>> getFloors({String? clientId}) async {
+  var urlStr = '$apiBase/zones/floors/';
+  final headers = await _authHeaders();
+  
+  // If clientId provided, set impersonation header to get floors for that client
+  if (clientId != null && clientId.isNotEmpty) {
+    headers['x-impersonate-client'] = clientId;
+  }
+  
+  final res = await http.get(Uri.parse(urlStr), headers: headers);
+  if (res.statusCode >= 200 && res.statusCode < 300) {
+    final data = jsonDecode(res.body);
+    if (data is List) return data;
+    if (data is Map && data['results'] is List) return data['results'] as List<dynamic>;
+    return [];
+  }
+  return [];
+}
+
+Future<Map<String, dynamic>> createAdminUser(String email, String name, String role, {String? clientId, String? floorId, String? password}) async {
   final url = Uri.parse('$apiBase/admin/users/');
   final body = {
     'email': email,
     'name': name,
     'role': role,
     if (clientId != null) 'client_id': clientId,
+    if (floorId != null) 'floor_id': floorId,
     if (password != null && password.isNotEmpty) 'password': password,
   };
   final res = await http.post(url, headers: await _authHeaders(), body: jsonEncode(body));

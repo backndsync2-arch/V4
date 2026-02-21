@@ -1,7 +1,7 @@
 name: sync2gear
 description: Sync2Gear mobile app
 publish_to: "none"
-version: 2.0.2+3
+version: 1.3.0+1
 environment:
   sdk: ">=3.3.0 <4.0.0"
 dependencies:
